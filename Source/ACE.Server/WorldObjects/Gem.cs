@@ -94,7 +94,7 @@ namespace ACE.Server.WorldObjects
             // Personal Lifestone (2026-11-14): raise an owner-only lifestone - its checks, cooldown and messages (never consumed)
             if (WeenieClassId == Player.PersonalLifestoneItemWcid)
             {
-                player.TryUsePersonalLifestone(this);
+                player.TryUsePersonalLifestone();
                 return;
             }
 

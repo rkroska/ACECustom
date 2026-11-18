@@ -71,6 +71,13 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
+            // the rules as they stand NOW (an admin may have blocked this spot since the stone rose) - for attune and tie alike
+            if (Player.PersonalLifestoneBlockReason(Location) != null)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The stone has lost its hold on this place. It will not bind you here.", ChatMessageType.Broadcast));
+                return false;
+            }
+
             return true;
         }
 
@@ -105,17 +112,28 @@ namespace ACE.Server.WorldObjects
                 player.LastUseTime += stanceTime;
             }
 
-            actionChain.AddAction(this, ActionType.Lifestone_EnqueueSound, () => player.EnqueueBroadcast(new GameMessageSound(player.Guid, Sound.LifestoneOn, 1.0f)));
+            // a personal stone can rot during the animation: an action queued on a destroyed object is dropped, so run its
+            // steps on the player (who then gets "The lifestone has faded."). Ordinary lifestones keep the stock actor.
+            WorldObject actor = IsPersonalLifestone ? player : this;
+
+            actionChain.AddAction(actor, ActionType.Lifestone_EnqueueSound, () =>
+            {
+                if (!IsDestroyed)   // a personal stone may have faded since the click: no "it worked" sound for it
+                    player.EnqueueBroadcast(new GameMessageSound(player.Guid, Sound.LifestoneOn, 1.0f));
+            });
 
             player.LastUseTime += player.EnqueueMotion(actionChain, MotionCommand.Sanctuary);
 
-            actionChain.AddAction(this, ActionType.Lifestone_Use, () =>
+            actionChain.AddAction(actor, ActionType.Lifestone_Use, () =>
             {
                 if (IsDestroyed)
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat("The lifestone has faded.", ChatMessageType.Broadcast));
                 else if (player.IsWithinUseRadiusOf(this))
                 {
-                    player.Sanctuary = new Position(player.Location);
+                    // Personal Lifestone: bind to the STONE's own spot - the one checked when it rose and again by
+                    // CheckPersonalLifestoneAccess - never to where the player stands (that can be across a blocked line,
+                    // e.g. a step into T10 or a house yard). Lifestone Tie records the stone's spot too.
+                    player.Sanctuary = new Position(IsPersonalLifestone ? Location : player.Location);
                     if (IsPersonalLifestone)
                         player.RecordPersonalLifestoneSpot(PositionType.Sanctuary, player.Sanctuary);   // for /plstone audit
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(GetProperty(PropertyString.UseMessage), ChatMessageType.Magic));

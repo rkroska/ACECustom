@@ -15,6 +15,8 @@ using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics.Util;
+using ACE.DatLoader;
+using ACE.DatLoader.FileTypes;
 
 namespace ACE.Server.WorldObjects
 {
@@ -96,27 +98,16 @@ namespace ACE.Server.WorldObjects
             {
                 if (_plOverrides.Raw == raw)
                     return _plOverrides;
-
-                var adds = new Dictionary<ushort, HashSet<int>>();
-                var removes = new Dictionary<ushort, HashSet<int>>();
-
-                foreach (var token in raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-                {
-                    if (!TryParseNoLogToken(token, out var landblock, out var key, out var suppress))
-                        continue;
-                    var target = suppress ? removes : adds;
-                    if (!target.TryGetValue(landblock, out var set))
-                        target[landblock] = set = new HashSet<int>();
-                    set.Add(key);
-                }
-
-                _plOverrides = new PlOverrides(raw, adds, removes);
+                _plOverrides = ParseOverrides(raw);
                 return _plOverrides;
             }
         }
 
-        private static bool PlSetMatches(Dictionary<ushort, HashSet<int>> map, ushort landblock, int variationKey)
-            => map.TryGetValue(landblock, out var set) && (set.Contains(NoLogAllScopeKey) || set.Contains(variationKey));
+        private static PlOverrides ParseOverrides(string raw)
+        {
+            ParseLandblockTokens(raw, out var adds, out var removes);
+            return new PlOverrides(raw, adds, removes);
+        }
 
         /// <summary>The built-in list, for /plstone.</summary>
         public static IReadOnlyDictionary<ushort, string> PersonalLifestoneBuiltIns => PersonalLifestoneBuiltInBlocks;
@@ -130,13 +121,37 @@ namespace ACE.Server.WorldObjects
         {
             if (HouseCell.HouseCells.ContainsKey(pos.Cell))
                 return true;
-            if (!pos.Indoors)
-                return false;
-            var landblock = ACE.Server.Physics.Common.LScape.get_landblock(pos.LandblockId.Raw, pos.Variation);
-            if (landblock != null && landblock.IsDungeon)
+            if (!pos.Indoors || IsDungeonLandblock((ushort)pos.Landblock))
                 return false;
             return HouseCell.HouseCells.ContainsKey(pos.GetOutdoorCell());
         }
+
+        private static readonly ConcurrentDictionary<ushort, bool> DungeonLandblockCache = new();
+
+        /// <summary>
+        /// The physics Landblock.IsDungeon rule (all terrain heights 0, at least one env cell, no buildings, the NW island
+        /// excepted) read from the cell dat - so it is safe off the world thread (/plstone audit from the console) and never
+        /// loads a physics landblock just to answer a question. Cached per landblock.
+        /// </summary>
+        public static bool IsDungeonLandblock(ushort landblock)
+            => DungeonLandblockCache.GetOrAdd(landblock, lb =>
+            {
+                try
+                {
+                    var x = lb >> 8; var y = lb & 0xFF;
+                    if (x * 8 < 64 && y * 8 > 1976)
+                        return false;   // the physics rule's NW island exception
+                    var cl = DatManager.CellDat.ReadFromDat<CellLandblock>(((uint)lb << 16) | 0xFFFF);
+                    if (cl?.Height == null || cl.Height.Any(h => h != 0))
+                        return false;
+                    var info = DatManager.CellDat.ReadFromDat<LandblockInfo>(((uint)lb << 16) | 0xFFFE);
+                    return info != null && info.NumCells > 0 && info.Buildings != null && info.Buildings.Count == 0;
+                }
+                catch
+                {
+                    return false;
+                }
+            });
 
         /// <summary>
         /// Why the Personal Lifestone may not be used at this spot, or null when it may. The text reads after "blocked by"
@@ -153,29 +168,123 @@ namespace ACE.Server.WorldObjects
             if (RoomAssignManager.IsInRoomDungeon(pos))
                 return "a Vaulted Dungeon";
 
-            var landblock = (ushort)pos.Landblock;
-            var key = NoLogVariationKey(pos.Variation);
-            var o = GetPersonalLifestoneOverrides();
+            var rule = LandblockRule(GetPersonalLifestoneOverrides(), (ushort)pos.Landblock, NoLogVariationKey(pos.Variation));
+            if (rule.Kind == RuleKind.Blocked)
+                return rule.Reason;
+            if (rule.Kind == RuleKind.None && ServerConfig.personal_lifestone_block_dungeons.Value && pos.Indoors)
+                return OutdoorsOnlyReason;
 
-            if (PlSetMatches(o.Removes, landblock, key))
-                return null;   // explicitly allowed
-            if (PlSetMatches(o.Adds, landblock, key))
-                return "the excluded list";
+            return null;   // allowed - an explicit '-' token also lifts the outdoors-only switch
+        }
+
+        private const string OutdoorsOnlyReason = "an indoor cell (outdoors-only switch)";
+
+        /// <summary>What the landblock-level rules say: nothing (None), an explicit '-' token (Allowed), or a block.</summary>
+        private enum RuleKind { None, Allowed, Blocked }
+        private readonly record struct RuleResult(RuleKind Kind, string Reason);
+
+        /// <summary>
+        /// The landblock-level rules for one scope key (a variation, NoLogBaseScopeKey or NoLogAllScopeKey). Tokens first, the
+        /// MOST SPECIFIC scope winning (this variation / base before 'all'; at one scope a '-' beats a '+'), then the built-in
+        /// list, the T10 + Valley of Death switch and the no-log areas.
+        /// </summary>
+        /// <param name="anyLayer">Scope 'all' only: true = blocked if a no-log entry hits ANY layer (what 'remove' must lift);
+        /// false = only if EVERY layer is no-log (what 'add' may skip). Other scopes ignore it.</param>
+        private static RuleResult LandblockRule(PlOverrides o, ushort landblock, int scopeKey, bool anyLayer = false)
+        {
+            var scopes = scopeKey == NoLogAllScopeKey ? AllScopeOnly : new[] { scopeKey, NoLogAllScopeKey };
+            foreach (var scope in scopes)
+            {
+                if (o.Removes.TryGetValue(landblock, out var removes) && removes.Contains(scope))
+                    return new RuleResult(RuleKind.Allowed, null);
+                if (o.Adds.TryGetValue(landblock, out var adds) && adds.Contains(scope))
+                    return new RuleResult(RuleKind.Blocked, "the excluded list");
+            }
             if (PersonalLifestoneBuiltInBlocks.TryGetValue(landblock, out var builtIn))
-                return builtIn + " (built-in list)";
+                return new RuleResult(RuleKind.Blocked, builtIn + " (built-in list)");
             if (ServerConfig.personal_lifestone_block_t10_vod.Value)
             {
                 if (LandblockCollections.ThaelarynIslandLandblocks.Contains(landblock))
-                    return "Thaelaryn Island (T10 switch)";
+                    return new RuleResult(RuleKind.Blocked, "Thaelaryn Island (T10 switch)");
                 if (LandblockCollections.ValleyOfDeathLandblocks.Contains(landblock))
-                    return "the Valley of Death (T10 switch)";
+                    return new RuleResult(RuleKind.Blocked, "the Valley of Death (T10 switch)");
             }
-            if (ServerConfig.personal_lifestone_block_nolog_areas.Value && IsNoLogArea(landblock, pos.Variation))
-                return "a no-log area";
-            if (ServerConfig.personal_lifestone_block_dungeons.Value && pos.Indoors)
-                return "an indoor cell (outdoors-only switch)";
+            if (ServerConfig.personal_lifestone_block_nolog_areas.Value)
+            {
+                // one layer: that layer's no-log list (base = the base world). 'all': see anyLayer.
+                var nolog = scopeKey == NoLogAllScopeKey
+                    ? (anyLayer ? IsNoLogAnyLayer(landblock) : IsNoLogEveryLayer(landblock))
+                    : IsNoLogArea(landblock, scopeKey >= 0 ? scopeKey : null);
+                if (nolog)
+                    return new RuleResult(RuleKind.Blocked, "a no-log area");
+            }
+            return new RuleResult(RuleKind.None, null);
+        }
 
-            return null;
+        private static readonly int[] AllScopeOnly = { NoLogAllScopeKey };
+
+        /// <summary>
+        /// /plstone add / remove for a list of landblocks at one scope. The token list is parsed ONCE and kept in step as tokens
+        /// are written. Per landblock: drop our tokens at that scope (an 'all' request speaks for every layer, so it drops the
+        /// landblock's per-variation tokens too), ask the real rule what the scope comes out as, and write a token only when
+        /// that is not already what was asked. 'remove' also lifts the outdoors-only switch (only a '-' token can). Returns
+        /// the new token string; <paramref name="results"/> says, per landblock, what the rule says afterwards.
+        /// </summary>
+        public static string EditPersonalLifestoneTokens(string original, IEnumerable<ushort> landblocks, int scopeKey, bool adding,
+            out List<(ushort Landblock, string State)> results)
+        {
+            var tokens = new List<string>();
+            foreach (var t in (original ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                if (!string.IsNullOrWhiteSpace(t))
+                    tokens.Add(t.Trim());
+            var o = ParseOverrides(string.Join(", ", tokens));
+            var outdoorsOnly = ServerConfig.personal_lifestone_block_dungeons.Value;
+            var all = scopeKey == NoLogAllScopeKey;
+
+            results = new List<(ushort, string)>();
+            foreach (var lb in landblocks.Distinct())
+            {
+                tokens.RemoveAll(t => TryParseNoLogToken(t, out var tlb, out var tkey, out _) && tlb == lb && (all || tkey == scopeKey));
+                foreach (var map in new[] { o.Adds, o.Removes })
+                    if (map.TryGetValue(lb, out var set))
+                    {
+                        if (all) set.Clear(); else set.Remove(scopeKey);
+                    }
+
+                // 'add' may skip only when every layer is already blocked; 'remove' lifts when any layer is
+                var rule = LandblockRule(o, lb, scopeKey, anyLayer: !adding);
+                if (adding && rule.Kind != RuleKind.Blocked)
+                {
+                    tokens.Add(NoLogTokenFor(lb, scopeKey, false));
+                    AddScope(o.Adds, lb, scopeKey);
+                }
+                else if (!adding && (rule.Kind == RuleKind.Blocked || (rule.Kind == RuleKind.None && outdoorsOnly)))
+                {
+                    tokens.Add(NoLogTokenFor(lb, scopeKey, true));
+                    AddScope(o.Removes, lb, scopeKey);
+                }
+
+                var after = LandblockRule(o, lb, scopeKey, anyLayer: !adding);
+                var state = after.Kind == RuleKind.Blocked ? "BLOCKED (" + after.Reason + ")"
+                    : after.Kind == RuleKind.None && outdoorsOnly ? "allowed outdoors; indoor cells blocked (outdoors-only switch)"
+                    : "allowed";
+                if (after.Kind != RuleKind.Blocked && LandblockHasHouses(lb))
+                    state += " - its houses stay blocked";
+                results.Add((lb, state));
+            }
+            return string.Join(", ", tokens);
+        }
+
+        private static readonly Lazy<HashSet<ushort>> HouseLandblocks = new(() => HouseCell.HouseCells.Keys.Select(c => (ushort)(c >> 16)).ToHashSet());
+
+        /// <summary>True when the landblock has house cells (always blocked - no token lifts them).</summary>
+        public static bool LandblockHasHouses(ushort landblock) => HouseLandblocks.Value.Contains(landblock);
+
+        private static void AddScope(Dictionary<ushort, HashSet<int>> map, ushort landblock, int scopeKey)
+        {
+            if (!map.TryGetValue(landblock, out var set))
+                map[landblock] = set = new HashSet<int>();
+            set.Add(scopeKey);
         }
 
         // ---- cooldown ---------------------------------------------------------------------------------------------
@@ -209,22 +318,43 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(new GameMessageSystemChat("The stone is ready. Try again.", ChatMessageType.Broadcast));
         }
 
-        /// <summary>/plstone reset: clear the cooldown.</summary>
+        /// <summary>/pltest: clear this character's cooldown.</summary>
         public void ResetPersonalLifestoneCooldown()
             => RemoveProperty(PropertyInt64.PersonalLifestoneNextUse);
+
+        /// <summary>/plstone reset: clear a character's cooldown, online or offline. Run it on the world thread.</summary>
+        public static void ResetPersonalLifestoneCooldown(IPlayer target)
+        {
+            if (target is OfflinePlayer && PlayerManager.GetOnlinePlayer(target.Guid) is Player nowOnline)
+                target = nowOnline;
+            target.RemoveProperty(PropertyInt64.PersonalLifestoneNextUse);
+            if (target is OfflinePlayer)
+                target.SaveBiotaToDatabase();
+        }
 
         // ---- the use ----------------------------------------------------------------------------------------------
 
         /// <summary>The stone this player has standing right now, or null.</summary>
         public Lifestone GetActivePersonalLifestone()
         {
-            if (ActivePersonalLifestones.TryGetValue(Guid.Full, out var stone) && stone != null && !stone.IsDestroyed)
+            if (!ActivePersonalLifestones.TryGetValue(Guid.Full, out var stone))
+                return null;
+            if (stone != null && !stone.IsDestroyed)
                 return stone;
+            ActivePersonalLifestones.TryRemove(new KeyValuePair<uint, Lifestone>(Guid.Full, stone));   // faded: drop it
             return null;
         }
 
+        /// <summary>Drop every faded stone from ActivePersonalLifestones (run on each raise - the map stays tiny).</summary>
+        private static void PrunePersonalLifestones()
+        {
+            foreach (var kv in ActivePersonalLifestones)
+                if (kv.Value == null || kv.Value.IsDestroyed)
+                    ActivePersonalLifestones.TryRemove(kv);
+        }
+
         /// <summary>Gem.ActOnUse for PersonalLifestoneItemWcid. Busy / in-the-air are already checked there.</summary>
-        public void TryUsePersonalLifestone(WorldObject item)
+        public void TryUsePersonalLifestone()
         {
             if (!ServerConfig.personal_lifestone_enabled.Value)
             {
@@ -306,6 +436,7 @@ namespace ACE.Server.WorldObjects
             }
 
             old?.Destroy();
+            PrunePersonalLifestones();
             ActivePersonalLifestones[Guid.Full] = stone;
 
             // the cooldown is spent only now, after the stone is really standing
@@ -335,6 +466,11 @@ namespace ACE.Server.WorldObjects
                         continue;
                 }
 
+                // the stone must stand where the owner can walk to it: the same cell, or one joined to it by a portal
+                // (a doorway, a corridor join, a building door). 2 m through a thin wall lands in the next room otherwise.
+                if (!IsCellReachable(Location.Cell, spot.Cell))
+                    continue;
+
                 // never across into another landblock's rules: the check above was for the player's spot
                 if (PersonalLifestoneBlockReason(spot) != null)
                     continue;
@@ -343,6 +479,37 @@ namespace ACE.Server.WorldObjects
             }
             return null;
         }
+        /// <summary>
+        /// True when <paramref name="to"/> is <paramref name="from"/> or one portal step from it. Outdoor cells reach each other;
+        /// an indoor cell reaches the outdoors only through a portal to outside (OtherCellId 0xFFFF). Dat geometry (base layer).
+        /// </summary>
+        public static bool IsCellReachable(uint from, uint to)
+        {
+            if (from == to)
+                return true;
+            bool fromIndoor = (from & 0xFFFF) >= 0x100, toIndoor = (to & 0xFFFF) >= 0x100;
+            if (!fromIndoor && !toIndoor)
+                return true;
+            try
+            {
+                if (fromIndoor)
+                {
+                    var env = DatManager.CellDat.ReadFromDat<ACE.DatLoader.FileTypes.EnvCell>(from);
+                    if (env?.CellPortals == null)
+                        return false;
+                    if (toIndoor)
+                        return (from & 0xFFFF0000) == (to & 0xFFFF0000) && env.CellPortals.Any(p => p.OtherCellId == (ushort)(to & 0xFFFF));
+                    return env.CellPortals.Any(p => p.OtherCellId == 0xFFFF);
+                }
+                var target = DatManager.CellDat.ReadFromDat<ACE.DatLoader.FileTypes.EnvCell>(to);
+                return target?.CellPortals != null && target.CellPortals.Any(p => p.OtherCellId == 0xFFFF);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         // ---- /plstone resetls (owner 2026-11-14): clear a player's lifestone point AND tie -------------------------------
 
         /// <summary>Starter towns by name -> their Free Ride spell, whose destination is the town spot a new character falls
@@ -354,6 +521,42 @@ namespace ACE.Server.WorldObjects
             { "Yaraq",    3814 },
             { "Sanamar",  3535 },
         };
+
+        /// <summary>
+        /// /plstone resetls arguments. The WHOLE text is tried as a name / GUID first, so a character whose name ends in a town
+        /// word ("Sir Holtburg") is never split. Only when that finds nobody is a trailing town word read as the town. A last
+        /// word "@town" always means the town - the way to pick a town when the full name and "name + town" both exist.
+        /// </summary>
+        public static bool ParseResetlsTarget(IList<string> words, out IPlayer target, out string townName, out string error)
+        {
+            target = null; townName = null; error = null;
+            var w = words.Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+            if (w.Count == 0) { error = "Usage: /plstone resetls <player name or guid> [town | @town]"; return false; }
+
+            if (w[^1].StartsWith("@", StringComparison.Ordinal))
+            {
+                var town = w[^1].Substring(1);
+                if (!StarterTownFreeRideSpells.ContainsKey(town)) { error = $"Unknown town '{town}'. Use holtburg, shoushi, yaraq or sanamar."; return false; }
+                w.RemoveAt(w.Count - 1);
+                target = FindPlayerByNameOrGuid(string.Join(" ", w), out _);
+                if (target == null) { error = $"No character named '{string.Join(" ", w)}'."; return false; }
+                townName = town;
+                return true;
+            }
+
+            target = FindPlayerByNameOrGuid(string.Join(" ", w), out _);
+            if (target != null)
+                return true;
+
+            if (w.Count > 1 && StarterTownFreeRideSpells.ContainsKey(w[^1]))
+            {
+                target = FindPlayerByNameOrGuid(string.Join(" ", w.Take(w.Count - 1)), out _);
+                if (target != null) { townName = w[^1]; return true; }
+            }
+
+            error = $"No character named '{string.Join(" ", w)}'.";
+            return false;
+        }
 
         /// <summary>The town spot for a starter town name, or null when the name or its spell is unknown.</summary>
         public static Position StarterTownPosition(string town)
@@ -375,12 +578,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public static string ResetLifestonePoints(IPlayer target, Position town)
         {
+            // logged in since the lookup? then the online object is the one that will be saved - change that one
+            if (target is OfflinePlayer && PlayerManager.GetOnlinePlayer(target.Guid) is Player nowOnline)
+                target = nowOnline;
+
             Position instantiation;
             if (target is Player p)
                 instantiation = p.Instantiation;
-            else if (target is OfflinePlayer o && o.Biota.PropertiesPosition != null
-                     && o.Biota.PropertiesPosition.TryGetValue(PositionType.Instantiation, out var pp))
-                instantiation = new Position(pp.ObjCellId, pp.PositionX, pp.PositionY, pp.PositionZ, pp.RotationX, pp.RotationY, pp.RotationZ, pp.RotationW, false, pp.VariationId);
+            else if (target is OfflinePlayer o)
+                instantiation = OfflinePosition(o, PositionType.Instantiation);
             else
                 instantiation = null;
 
@@ -469,12 +675,9 @@ namespace ACE.Server.WorldObjects
             public bool Flagged => (DeathPersonal && DeathBlock != null) || (TiePersonal && TieBlock != null);
         }
 
+        /// <summary>A position from an offline character's biota, read under its database lock.</summary>
         private static Position OfflinePosition(OfflinePlayer o, PositionType type)
-        {
-            if (o.Biota.PropertiesPosition == null || !o.Biota.PropertiesPosition.TryGetValue(type, out var pp))
-                return null;
-            return new Position(pp.ObjCellId, pp.PositionX, pp.PositionY, pp.PositionZ, pp.RotationX, pp.RotationY, pp.RotationZ, pp.RotationW, false, pp.VariationId);
-        }
+            => o.Biota.GetPosition(type, o.BiotaDatabaseLock);
 
         public static PersonalLifestoneSpots GetPersonalLifestoneSpots(IPlayer p)
         {
@@ -500,8 +703,19 @@ namespace ACE.Server.WorldObjects
         /// spot that is blocked now. Only characters that ever used a personal stone are looked at.</summary>
         public static List<PersonalLifestoneSpots> PersonalLifestoneAudit()
         {
+            var list = PersonalLifestoneAudit(online: false);
+            list.AddRange(PersonalLifestoneAudit(online: true));
+            list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            return list;
+        }
+
+        /// <summary>One half of the audit: online players (read on the world thread) or offline characters (their biotas are
+        /// read under their own locks - safe on any thread, so a big shard never stalls the world tick for it).</summary>
+        public static List<PersonalLifestoneSpots> PersonalLifestoneAudit(bool online)
+        {
             var list = new List<PersonalLifestoneSpots>();
-            foreach (var p in PlayerManager.GetAllPlayers())
+            IEnumerable<IPlayer> who = online ? PlayerManager.GetAllOnline() : PlayerManager.GetAllOffline();
+            foreach (var p in who)
             {
                 if (p.GetProperty(PropertyString.PersonalLifestoneAttuneSpot) == null && p.GetProperty(PropertyString.PersonalLifestoneTieSpot) == null)
                     continue;

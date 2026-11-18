@@ -7843,9 +7843,13 @@ namespace ACE.Server.Command.Handlers
                 Msg("      - clear their lifestone point + tie; death");
                 Msg("        goes to their starter town, or to [town]:");
                 Msg("        holtburg | shoushi | yaraq | sanamar");
+                Msg("        (@town forces the town when a name ends");
+                Msg("         in a town word)");
                 Msg("");
                 Msg("  <where>: here | 016C | 016C,016D (one write)");
                 Msg("  scope:   base | 11 | all  ('here' alone = your layer)");
+                Msg("  One variation's entry wins over an 'all' entry;");
+                Msg("  add / remove with 'all' replace every layer's entry.");
                 Msg("  Always blocked: house interiors, Vaulted Dungeons.");
                 return;
             }
@@ -7893,42 +7897,30 @@ namespace ACE.Server.Command.Handlers
 
             if (sub == "resetls")
             {
-                if (parameters.Length < 2) { Msg("Usage: /plstone resetls <player name> [holtburg|shoushi|yaraq|sanamar]"); return; }
-                var words = parameters.Skip(1).ToList();
+                if (!Player.ParseResetlsTarget(parameters.Skip(1).ToList(), out var lsTarget, out var townName, out var lsError)) { Msg(lsError); return; }
                 Position townPos = null;
-                string townName = null;
-                if (words.Count > 1 && Player.StarterTownFreeRideSpells.ContainsKey(words[^1]))
+                if (townName != null)
                 {
-                    townName = words[^1];
-                    words.RemoveAt(words.Count - 1);
                     townPos = Player.StarterTownPosition(townName);
                     if (townPos == null) { Msg($"No spot found for {townName} (its Free Ride spell is missing). Nothing changed."); return; }
                 }
-                var lsName = string.Join(" ", words);
-                var lsTarget = Player.FindPlayerByNameOrGuid(lsName, out _);
-                if (lsTarget == null) { Msg($"No character named '{lsName}'."); return; }
-                var done = Player.ResetLifestonePoints(lsTarget, townPos);
-                Msg($"{lsTarget.Name}: {done}.");
+                var lsGuid = lsTarget.Guid;
+                OnWorldThread(() =>
+                {
+                    // looked up again ON the world thread: online, just logged out or offline - whichever it is now
+                    var now = (IPlayer)PlayerManager.GetOnlinePlayer(lsGuid) ?? PlayerManager.FindByGuid(lsGuid);
+                    Msg(now == null ? "That character is gone." : $"{now.Name}: {Player.ResetLifestonePoints(now, townPos)}.");
+                });
                 PlayerManager.BroadcastToAuditChannel(session?.Player, $"Reset the lifestone point and tie of {lsTarget.Name}{(townName != null ? " to " + townName : "")}");
                 return;
             }
 
             if (sub == "audit")
             {
-                var flagged = Player.PersonalLifestoneAudit();
-                Msg(flagged.Count == 0
-                    ? "Audit: no character has a personal-stone death point or tie in a blocked spot."
-                    : $"Audit: {flagged.Count} character(s) with a personal-stone point in a blocked spot (fix with /plstone resetls <guid>):");
-                string Where(Position p) => p == null ? "-" : $"{p.Cell:X8} v{p.Variation?.ToString() ?? "0"}";
-                foreach (var f in flagged.Take(50))
-                {
-                    var parts = new List<string>();
-                    if (f.DeathPersonal && f.DeathBlock != null) parts.Add($"death {Where(f.Death)} ({f.DeathBlock})");
-                    if (f.TiePersonal && f.TieBlock != null) parts.Add($"tie {Where(f.Tie)} ({f.TieBlock})");
-                    Msg($"  {f.Name} 0x{f.Guid:X8}{(f.Online ? " [online]" : "")}: {string.Join("; ", parts)}");
-                }
-                if (flagged.Count > 50)
-                    Msg($"  ...and {flagged.Count - 50} more.");
+                // offline characters are read here (their biotas under their own locks); only the online half, which reads live
+                // players, runs on the world thread - a big shard never stalls the world tick for the whole scan
+                var offlineFlagged = Player.PersonalLifestoneAudit(online: false);
+                OnWorldThread(() => RunPersonalLifestoneAudit(offlineFlagged, Msg));
                 return;
             }
 
@@ -7936,37 +7928,25 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters.Length < 2) { Msg($"Usage: /plstone {sub} <player name or guid>"); return; }
                 var name = string.Join(" ", parameters.Skip(1));
-                var target = Player.FindPlayerByNameOrGuid(name, out var online);
-                if (target == null) { Msg($"No character named '{name}'."); return; }
+                var found = Player.FindPlayerByNameOrGuid(name, out _);
+                if (found == null) { Msg($"No character named '{name}'."); return; }
+                var guid = found.Guid;
 
                 if (sub == "reset")
                 {
-                    if (online && target is Player p)
-                        p.ResetPersonalLifestoneCooldown();
-                    else
+                    OnWorldThread(() =>
                     {
-                        target.RemoveProperty(PropertyInt64.PersonalLifestoneNextUse);
-                        target.SaveBiotaToDatabase();
-                    }
-                    Msg($"{target.Name}: Personal Lifestone cooldown cleared.");
-                    PlayerManager.BroadcastToAuditChannel(session?.Player, $"Cleared the Personal Lifestone cooldown of {target.Name}");
+                        // looked up again ON the world thread: online, just logged out or offline - whichever it is now
+                        var now = (IPlayer)PlayerManager.GetOnlinePlayer(guid) ?? PlayerManager.FindByGuid(guid);
+                        if (now == null) { Msg("That character is gone."); return; }
+                        Player.ResetPersonalLifestoneCooldown(now);
+                        Msg($"{now.Name}: Personal Lifestone cooldown cleared.");
+                    });
+                    PlayerManager.BroadcastToAuditChannel(session?.Player, $"Cleared the Personal Lifestone cooldown of {found.Name}");
                     return;
                 }
 
-                var next = target.GetProperty(PropertyInt64.PersonalLifestoneNextUse) ?? 0;
-                var left = next - Time.GetUnixTime();
-                Msg($"{target.Name} 0x{target.Guid.Full:X8}{(online ? " [online]" : "")}: {(left > 0 ? "on cooldown, " + Player.FormatPersonalLifestoneTime(left) + " left" : "ready")}.");
-                var spots = Player.GetPersonalLifestoneSpots(target);
-                string Spot(Position p, bool personal, string block) => p == null ? "none"
-                    : $"{p.Cell:X8} [{p.PositionX:0.0} {p.PositionY:0.0} {p.PositionZ:0.0}] v{p.Variation?.ToString() ?? "0"}"
-                      + (personal ? " - set by a personal stone" + (block != null ? $", now BLOCKED ({block})" : "") : "");
-                Msg($"  attuned (death point):     {Spot(spots.Death, spots.DeathPersonal, spots.DeathBlock)}");
-                Msg($"  tied (Lifestone Recall):   {Spot(spots.Tie, spots.TiePersonal, spots.TieBlock)}");
-                if (online && target is Player op)
-                {
-                    var stone = op.GetActivePersonalLifestone();
-                    Msg(stone == null ? "  No stone standing." : $"  Stone 0x{stone.Guid.Full:X8} standing at {stone.Location}.");
-                }
+                OnWorldThread(() => RunPersonalLifestoneStatus(guid, Msg));   // reads live positions: on the world thread
                 return;
             }
 
@@ -7991,33 +7971,18 @@ namespace ACE.Server.Command.Handlers
 
             var adding = sub == "add";
             var original = ServerConfig.personal_lifestone_excluded_landblocks?.Value ?? "";
-            var tokens = SplitNoLogTokens(original);
+            var updated = Player.EditPersonalLifestoneTokens(original, landblocks, variationKey, adding, out var results);
 
-            foreach (var landblock in landblocks)
+            void Report(string verb)
             {
-                var lb = landblock;
-                tokens.RemoveAll(t => Player.TryParseNoLogToken(t, out var tlb, out var tkey, out _) && tlb == lb && tkey == variationKey);
-
-                var builtIn = Player.PersonalLifestoneBuiltIns.ContainsKey(lb);
-                if (adding)
-                {
-                    if (!builtIn)
-                        tokens.Add(Player.NoLogTokenFor(lb, variationKey, false));
-                }
-                else
-                {
-                    // still blocked by something a token can lift? then allow it explicitly
-                    int? probeVariation = variationKey >= 0 ? variationKey : null;
-                    var nolog = ServerConfig.personal_lifestone_block_nolog_areas.Value && Player.IsNoLogArea(lb, probeVariation);
-                    if (builtIn || nolog)
-                        tokens.Add(Player.NoLogTokenFor(lb, variationKey, true));
-                }
+                foreach (var (lb, state) in results)
+                    Msg($"{lb:X4} at {Player.NoLogScopeName(variationKey)}: {verb} {state} for the Personal Lifestone.");
             }
 
-            var updated = string.Join(", ", tokens);
             if (updated == original)
             {
-                Msg($"{DescribeNoLogTargets(landblocks)} at {Player.NoLogScopeName(variationKey)}: already {(adding ? "blocked" : "allowed")} - nothing changed.");
+                Report("already");
+                Msg("Nothing changed.");
                 return;
             }
 
@@ -8028,10 +7993,61 @@ namespace ACE.Server.Command.Handlers
             }
             ServerConfig.WriteUpdatesToDb();   // flush now - the property worker runs every 5 minutes and is not flushed on shutdown
 
-            Msg($"{DescribeNoLogTargets(landblocks)} at {Player.NoLogScopeName(variationKey)}: now {(adding ? "BLOCKED" : "allowed")} for the Personal Lifestone.");
+            Report("now");   // what the rule says NOW, landblock by landblock (never just echo the request)
             Msg(string.IsNullOrWhiteSpace(updated) ? "Overrides: none." : "Overrides: " + updated);
             PlayerManager.BroadcastToAuditChannel(session?.Player,
                 $"Personal Lifestone: {(adding ? "blocked" : "allowed")} {DescribeNoLogTargets(landblocks)} ({Player.NoLogScopeName(variationKey)})");
+        }
+
+        /// <summary>
+        /// Run work on the world thread through WorldManager's own queue. A console command runs on the Command Manager thread
+        /// and must not read or write live players from there; a player's own queue would not do either - it stops being
+        /// processed once the player logs out, so a change queued there could be lost. The work looks the character up again.
+        /// </summary>
+        private static void OnWorldThread(Action action)
+            => WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, action));
+
+        /// <summary>/plstone audit - every personal-stone death point or tie that sits in a spot blocked now.</summary>
+        private static void RunPersonalLifestoneAudit(List<Player.PersonalLifestoneSpots> offlineFlagged, Action<string> msg)
+        {
+            var flagged = offlineFlagged.Concat(Player.PersonalLifestoneAudit(online: true))
+                .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            msg(flagged.Count == 0
+                ? "Audit: no character has a personal-stone death point or tie in a blocked spot."
+                : $"Audit: {flagged.Count} character(s) with a personal-stone point in a blocked spot (fix with /plstone resetls <guid>):");
+            string Where(Position p) => p == null ? "-" : $"{p.Cell:X8} v{p.Variation?.ToString() ?? "0"}";
+            foreach (var f in flagged.Take(50))
+            {
+                var parts = new List<string>();
+                if (f.DeathPersonal && f.DeathBlock != null) parts.Add($"death {Where(f.Death)} ({f.DeathBlock})");
+                if (f.TiePersonal && f.TieBlock != null) parts.Add($"tie {Where(f.Tie)} ({f.TieBlock})");
+                msg($"  {f.Name} 0x{f.Guid:X8}{(f.Online ? " [online]" : "")}: {string.Join("; ", parts)}");
+            }
+            if (flagged.Count > 50)
+                msg($"  ...and {flagged.Count - 50} more.");
+        }
+
+        /// <summary>/plstone status - cooldown, where the character is attuned and tied (any lifestone), stone standing.</summary>
+        private static void RunPersonalLifestoneStatus(ObjectGuid guid, Action<string> msg)
+        {
+            var online = PlayerManager.GetOnlinePlayer(guid);
+            var target = (IPlayer)online ?? PlayerManager.FindByGuid(guid);
+            if (target == null) { msg("That character is gone."); return; }
+
+            var next = target.GetProperty(PropertyInt64.PersonalLifestoneNextUse) ?? 0;
+            var left = next - Time.GetUnixTime();
+            msg($"{target.Name} 0x{target.Guid.Full:X8}{(online != null ? " [online]" : "")}: {(left > 0 ? "on cooldown, " + Player.FormatPersonalLifestoneTime(left) + " left" : "ready")}.");
+            var spots = Player.GetPersonalLifestoneSpots(target);
+            string Spot(Position p, bool personal, string block) => p == null ? "none"
+                : $"{p.Cell:X8} [{p.PositionX:0.0} {p.PositionY:0.0} {p.PositionZ:0.0}] v{p.Variation?.ToString() ?? "0"}"
+                  + (personal ? " - set by a personal stone" + (block != null ? $", now BLOCKED ({block})" : "") : "");
+            msg($"  attuned (death point):     {Spot(spots.Death, spots.DeathPersonal, spots.DeathBlock)}");
+            msg($"  tied (Lifestone Recall):   {Spot(spots.Tie, spots.TiePersonal, spots.TieBlock)}");
+            if (online != null)
+            {
+                var stone = online.GetActivePersonalLifestone();
+                msg(stone == null ? "  No stone standing." : $"  Stone 0x{stone.Guid.Full:X8} standing at {stone.Location}.");
+            }
         }
 
         [CommandHandler("modifystring", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a string", "modifystring (string) (string)")]
