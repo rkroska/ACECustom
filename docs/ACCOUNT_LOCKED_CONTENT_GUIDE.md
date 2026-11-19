@@ -42,7 +42,12 @@ The timer runs from the newest completion by any character on the account. `max_
 account's total. `quest_mindelta_rate` scales `min_Delta` exactly as it does for normal quests (quests
 named `ColoArena...` are never scaled).
 
-"Ever" has one gap: a deleted character counts only until it is purged (section 7).
+"Ever", and any timer longer than the server's purge delay, has one gap: a deleted character counts only
+until it is purged (section 7).
+
+No `quest` row at all makes it an account-wide flag, as with `InqQuest`: once any character on the
+account has the stamp, the account answers QuestSuccess for good. That suits "has anyone on this account
+done X?" checks. For a timer or a solve limit, add the row.
 
 ---
 
@@ -156,10 +161,11 @@ objects already in the world keep the emotes they spawned with.
 - Every character on the player's login account: online, offline, and deleted but not yet purged.
   Deleting the character that did it does not reset the lock.
 - Purging does. If the server purges deleted characters (`PurgeDeletedCharacters` in the server config,
-  after `PurgeDeletedCharactersDays`, 30 by default), a purged character's stamps go with it. A timed lock
-  has long run out by then, but a once-ever lock (`max_Solves`) opens again for that account: a player
+  after `PurgeDeletedCharactersDays`, 30 by default), a purged character's stamps go with it. A player
   could claim, hand the reward to another character, delete the one that claimed it and claim again
-  after the purge. While purging is on, don't use once-ever account locks on rewards worth that.
+  after the purge. That reopens a once-ever lock (`max_Solves`), and a timed lock whose `min_Delta` is
+  longer than the purge delay (at the 30-day default, daily and weekly locks are safe). While purging is
+  on, don't put rewards worth that behind such locks.
 - It is the login account, not the computer or IP. Two accounts on one PC are separate.
 - A character that is still logging out counts right away, so swapping characters quickly doesn't slip
   past the lock.
@@ -172,8 +178,14 @@ objects already in the world keep the emotes they spawned with.
   QuestSuccess nor QuestFailure runs, so the object does nothing when used.
 - **Stamps stay per character.** `StampQuest`, `EraseQuest`, `IncrementQuest`, `SetQuestCompletions` and
   the rest act on the character using the content. The account check only reads them. To clear an
-  account's lock for support, erase the quest on the character that holds it (`@qst erase <quest>` with
-  that character selected).
+  account's lock for support, erase the quest on every character of the account that has it (`@qst list`
+  and `@qst erase <quest>`, with each character selected), then try the gate again: a stamp left on any
+  character still counts.
+- **Keep the gate and the stamp together.** Give the `InqAccountQuest` step, the reward and the
+  `StampQuest` no delay, as the Chests of Chance do: steps without a delay run together in one call. With
+  a delay, the stamp lands later, and in that gap the same character could pass the gate again on another
+  object that uses the same quest. The object itself refuses new uses while its emotes run, and only one
+  character per account can play at a time. `InqQuest` has the same gap.
 - **It fails closed.** If the shard database can't be read, or the emote names no quest, the account is
   treated as having done it (QuestSuccess), so a problem never hands out extra rewards. Those errors are
   logged at most once a minute.
