@@ -141,6 +141,65 @@ namespace ACE.Server.Managers.ZoneControl
             return changes;
         }
 
+        /// <summary>
+        /// <see cref="DiffSections(IReadOnlyDictionary{string, SectionState}, IReadOnlyDictionary{string, SectionState}, string)"/> for a
+        /// save made by a stat edit: the part the stat lives in is compared with its last saved copy PLUS that one stat change, so the
+        /// stat (logged as its own row) is not logged twice, while anything else that differs there is (review 2026-11-19: a change an
+        /// earlier failed save left in memory used to vanish from History when the next stat edit saved it).
+        /// </summary>
+        internal static List<ZoneControlChangeLog.SectionChange> DiffSections(IReadOnlyDictionary<string, SectionState> before, IReadOnlyDictionary<string, SectionState> after, ZoneControlChangeLog.StatSkip skip)
+        {
+            var changes = DiffSections(before, after, skip?.Section);
+            if (skip == null)
+                return changes;
+            before.TryGetValue(skip.Section, out var b);
+            after.TryGetValue(skip.Section, out var a);
+            // a part the stat edit itself created has no earlier copy to carry anything over from
+            if (b == null || a == null)
+                return changes;
+            var expected = WithStatApplied(b.Json, skip);
+            if (expected == null || Canonical(expected) == a.Canonical)
+                return changes;
+            changes.Add(new ZoneControlChangeLog.SectionChange
+            {
+                Section = skip.Section,
+                Label = a.Label,
+                Zone = a.Zone,
+                Variation = a.Variation,
+                OldJson = expected,
+                NewJson = a.Json,
+            });
+            return changes.OrderBy(c => c.Section, StringComparer.Ordinal).ToList();
+        }
+
+        /// <summary>A stored part (one zone or one Default) with one stat change applied, as JSON; null if the row can't be found.</summary>
+        internal static string WithStatApplied(string partJson, ZoneControlChangeLog.StatSkip skip)
+        {
+            var part = JObject.Parse(partJson);
+            var root = new JObject();
+            if (skip.Target.IsDefault)
+                root[nameof(Store.VariationDefaults)] = new JObject { [skip.Target.Variation.ToString()] = part };
+            else
+                root[nameof(Store.Areas)] = new JArray(part);
+            var change = new ZoneControlChange
+            {
+                Zone = skip.Target.IsDefault ? null : skip.Target.Zone,
+                Variation = skip.Target.IsDefault ? skip.Target.Variation : (int?)null,
+                Wcid = skip.Target.Wcid,
+                Rank = ZoneScaling.ZoneRank.Key(skip.Target.Rank),
+                Stat = skip.Stat,
+            };
+            var row = StatsIn(root, change, skip.Next != null, out var zoneMissing);
+            if (zoneMissing)
+                return null;
+            foreach (var p in row?.Properties().Where(p => string.Equals(p.Name, skip.Stat, StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<JProperty>())
+                p.Remove();
+            if (skip.Next != null)
+                SetProp(row, skip.Stat, JObject.FromObject(skip.Next));
+            // the root holds the part itself (not a copy), so the part now carries the change
+            return part.ToString(Formatting.None);
+        }
+
         /// <summary>Called by Save after the store is written: logs what changed since the last write and moves the baseline.
         /// A failure to log never fails the save (the edit is already stored).</summary>
         private static void LogSavedSections(Store store, long? revertsId = null, string reason = null)
@@ -173,44 +232,63 @@ namespace ACE.Server.Managers.ZoneControl
         {
             public ZoneStatEditStatus Status { get; init; }
             public string Message { get; init; }
-            public bool Logged { get; init; } = true;
+            /// <summary>The change log write this revert queued (null = nothing to log).</summary>
+            internal System.Threading.Tasks.Task<bool> LogWrite { get; init; }
+            /// <summary>Waits for the write (up to 15 s): read it only outside the manager lock.</summary>
+            public bool Logged => ZoneControlChangeLog.Outcome(LogWrite);
         }
 
         /// <summary>Puts one part back exactly as a logged change found it, as a new logged change. Refused when the part has changed
         /// since (it must still hold exactly what the change left), and for ladder versions (items compare them, so turning one back
         /// would re-apply a ladder to gear that already has it).</summary>
         public static SectionRevertResult RevertSection(ZoneControlChange change, ZoneStatActor actor, string reason = null, string batchId = null)
+            => RevertSections(change == null ? new List<ZoneControlChange>() : new List<ZoneControlChange> { change }, actor, reason, batchId);
+
+        /// <summary>Puts several parts back together, in ONE store write: every part is checked first, and if any one has moved on, none
+        /// is changed. Used for the two halves of a rename, so a refusal or a failed write never leaves it half undone (review 2026-11-19).</summary>
+        public static SectionRevertResult RevertSections(IReadOnlyList<ZoneControlChange> changes, ZoneStatActor actor, string reason = null, string batchId = null)
         {
-            if (change?.Section == null)
+            if (changes.Count == 0 || changes.Any(c => c?.Section == null))
                 return new SectionRevertResult { Status = ZoneStatEditStatus.Refused, Message = "That change is not a whole-part change." };
-            if (change.Section == SectionLadder)
+            if (changes.Any(c => c.Section == SectionLadder))
                 return new SectionRevertResult { Status = ZoneStatEditStatus.Refused, Message = "Ladder versions cannot be reverted: gear compares them, so going back would re-apply a ladder. Use /zonecontrol ladder." };
 
             EnsureInitialized();
             lock (_lock)
             {
                 var current = SectionsOf(BuildStore());
-                current.TryGetValue(change.Section, out var now);
-                if (now?.Canonical != Canonical(change.NewJson))
-                    return new SectionRevertResult
-                    {
-                        Status = ZoneStatEditStatus.Conflict,
-                        Message = now == null
-                            ? $"{change.Stat} no longer exists as that change left it (renamed or removed since). Nothing was changed."
-                            : $"{change.Stat} has changed since. Revert the later changes first. Nothing was changed.",
-                    };
+                foreach (var change in changes)
+                {
+                    current.TryGetValue(change.Section, out var now);
+                    if (now?.Canonical != Canonical(change.NewJson))
+                        return new SectionRevertResult
+                        {
+                            Status = ZoneStatEditStatus.Conflict,
+                            Message = change.NewJson == null
+                                ? $"{change.Stat}{(change.Zone != null ? " '" + change.Zone + "'" : "")} exists again since. Nothing was changed."
+                                : now == null
+                                    ? $"{change.Stat} no longer exists as that change left it (renamed or removed since). Nothing was changed."
+                                    : $"{change.Stat} has changed since. Revert the later changes first. Nothing was changed.",
+                        };
+                }
 
                 var root = StoreSnapshot();
-                var refusal = ApplySectionToRoot(root, change);
-                if (refusal != null)
-                    return new SectionRevertResult { Status = ZoneStatEditStatus.Conflict, Message = refusal };
+                // newest first, as a group revert undoes them
+                foreach (var change in changes.OrderByDescending(c => c.Id))
+                {
+                    var refusal = ApplySectionToRoot(root, change);
+                    if (refusal != null)
+                        return new SectionRevertResult { Status = ZoneStatEditStatus.Conflict, Message = refusal };
+                }
 
                 // the save-and-reload a settings import uses: checked and size-guarded before writing, rolled back if the reload fails
                 var before = _savedSections;
                 ImportStoreJsonCore(root.ToString(Formatting.None));
                 var after = _savedSections;   // the reload's Load reset the baseline to the store just written
-                var logged = ZoneControlChangeLog.RecordSections(DiffSections(before, after), actor, change.Id, reason, batchId);
-                return new SectionRevertResult { Status = ZoneStatEditStatus.Applied, Logged = logged };
+                // one row per part; a pair reverted together shares a batch so it shows (and reverts again) as one
+                var batch = batchId ?? (changes.Count > 1 ? Guid.NewGuid().ToString("N") : null);
+                var write = ZoneControlChangeLog.RecordSections(DiffSections(before, after), actor, changes.Max(c => c.Id), reason, batch);
+                return new SectionRevertResult { Status = ZoneStatEditStatus.Applied, LogWrite = write };
             }
         }
 
@@ -287,9 +365,15 @@ namespace ACE.Server.Managers.ZoneControl
                 var oldName = old == null ? null : NameOf(old);
                 if (oldName != null && areas.OfType<JObject>().Any(a => !IsThisPart(a) && string.Equals(NameOf(a), oldName, StringComparison.OrdinalIgnoreCase)))
                     return $"Another zone is named '{oldName}' now. Nothing was changed.";
-                foreach (var a in areas.OfType<JObject>().Where(IsThisPart).ToList())
+                // a zone that is still there is put back IN PLACE: the zone order breaks ties when two zones cover the same landblock,
+                // so moving it to the end could hand its landblocks to another zone (review 2026-11-19). Only a zone being restored
+                // (it was removed) is added at the end.
+                var existing = areas.OfType<JObject>().Where(IsThisPart).ToList();
+                if (old != null && existing.Count > 0)
+                    existing[0].Replace(old);
+                foreach (var a in old != null ? existing.Skip(1) : existing)
                     a.Remove();
-                if (old != null)
+                if (old != null && existing.Count == 0)
                     areas.Add(old);
                 return null;
             }
@@ -308,6 +392,20 @@ namespace ACE.Server.Managers.ZoneControl
                 return $"Unknown part '{change.Section}'.";
             SetProp(root, global.Property, old ?? JValue.CreateNull());
             return null;
+        }
+
+        /// <summary>Drops a tier Default from a store copy when it holds nothing, the same rule the live store applies after every Default
+        /// edit (MutateVariationDefaultIf), so Revert all's plan sees the Default gone exactly when the real run will (review 2026-11-19).</summary>
+        internal static void PruneEmptyDefaultIn(JObject root, int? variation)
+        {
+            var defaults = DefaultsIn(root, false);
+            var key = (variation ?? -1).ToString();
+            var p = defaults?.Properties().FirstOrDefault(x => x.Name == key);
+            if (p?.Value is not JObject json)
+                return;
+            var d = json.ToObject<VariationDefault>();
+            if (d != null && d.IsEmpty && string.IsNullOrWhiteSpace(d.Notes))
+                p.Remove();
         }
 
         /// <summary>The Stats map of the row a logged stat change edited, in a store copy. Null when the row does not exist (and

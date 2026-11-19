@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, History, Plus, Power, RefreshCw, Save, Search, Trash2, X } from 'lucide-react'
 import { api } from '../services/api'
 import { AdminToastVariant } from './common/AdminToast'
@@ -104,6 +104,8 @@ interface TierOdds {
   source: string | null
   // the tier Default row's OWN value (null = not set on it; the odds may come from a row above), for the edit's conflict check
   stored: number | null
+  // fingerprint of that row's whole curve, also sent with an edit
+  revision: string | null
   // its value grows by tier or has tier pins: a plain save replaces that
   curved: boolean
   // turned off on the stats page
@@ -170,7 +172,6 @@ type Send = (url: string, body: object, okText?: string) => Promise<boolean>
 type SendMany = (calls: { url: string; body: object }[]) => Promise<void>
 type ItemsTab = 'setup' | 'catalog' | 'chance' | 'mix' | 'mystery'
 
-const TIERS = Array.from({ length: 15 }, (_, i) => i + 11)
 const KILLS_PER_HOUR = 300   // the balance target (kills-per-hour plan); only for the "about one every X hours" estimates
 
 const inputClass =
@@ -241,9 +242,13 @@ const BountiesPanel = ({ mode, onClose, notify, onOpenStat, onOpenHistory }: {
   }, [])
   useEffect(() => { load() }, [load])
 
+  // set at once, before React re-renders: two quick Enters (or Enter and a click) must not both get past the busy check (review 2026-11-19)
+  const inFlight = useRef(false)
+
   /** Sends one change, says how it went, and reloads: the server's answer is the truth (another admin may have edited too). */
   const send = useCallback<Send>(async (url, body, okText) => {
-    if (busy) return false
+    if (inFlight.current) return false
+    inFlight.current = true
     setBusy(true)
     try {
       const result = await api.post<{ message: string }>(url, { ...body, reason: reason.trim() || undefined })
@@ -253,14 +258,16 @@ const BountiesPanel = ({ mode, onClose, notify, onOpenStat, onOpenHistory }: {
       notify(err instanceof Error ? err.message : 'The change failed.', 'error')
       return false
     } finally {
-      setBusy(false)
       await load()
+      inFlight.current = false
+      setBusy(false)
     }
-  }, [busy, reason, notify, load])
+  }, [reason, notify, load])
 
   /** Several changes in order (copying a list); stops at the first failure and says how far it got. */
   const sendMany = useCallback<SendMany>(async calls => {
-    if (busy) return
+    if (inFlight.current) return
+    inFlight.current = true
     setBusy(true)
     let done = 0
     try {
@@ -272,10 +279,11 @@ const BountiesPanel = ({ mode, onClose, notify, onOpenStat, onOpenHistory }: {
     } catch (err) {
       notify(`${err instanceof Error ? err.message : 'A change failed.'} (${done} of ${calls.length} saved)`, 'error')
     } finally {
-      setBusy(false)
       await load()
+      inFlight.current = false
+      setBusy(false)
     }
-  }, [busy, reason, notify, load])
+  }, [reason, notify, load])
 
   const canEdit = data?.canEdit ?? false
   const title = mode === 'kill' ? 'Kill Rewards' : 'Bounty Items'
@@ -613,7 +621,9 @@ interface PlaceState {
   place: Place
   isRegion: boolean
   tier: number | null
+  // undefined = not known: still reading, or the read failed (oddsFailed). Never null for "unknown": null means none drop.
   odds: number | null | undefined
+  oddsFailed: boolean
   oddsSource: string | null
   items: number
   // tiers only: the Default row as read (undefined while reading)
@@ -621,7 +631,7 @@ interface PlaceState {
 }
 
 const placeStatus = (p: PlaceState): { status: Status; text: string } => {
-  if (p.odds === undefined) return { status: 'note', text: 'reading...' }
+  if (p.odds === undefined) return p.oddsFailed ? { status: 'warning', text: 'drop chance unknown (it could not be read)' } : { status: 'note', text: 'reading...' }
   const chance = !!p.odds && p.odds > 0
   if (chance && p.place.total > 0) return { status: 'ok', text: 'dropping' }
   if (chance) return { status: 'problem', text: 'drop chance set, but nothing to drop' }
@@ -640,15 +650,21 @@ const BountyItems = ({ data, canEdit, busy, send, sendMany, onOpenStat, notify, 
   const [healthError, setHealthError] = useState<string | null>(null)
   const [rereading, setRereading] = useState(false)
 
-  // The server's own check (a world DB read): the switches, every bounty item, broken ones, unpaid rewards. Read again
-  // whenever the bounties are (after every change), so it always matches the page.
+  // The server's own check (a world DB scan): the switches, every bounty item, broken ones, unpaid rewards. Read when the panel
+  // opens and again when the bounties change while Setup or Bounty items (the tabs that show it) is open, or on moving to one of
+  // them - not after every edit on the other tabs, where weights and odds can't change an item (review 2026-11-19).
+  const showsHealth = tab === 'setup' || tab === 'catalog'
+  const [healthFor, setHealthFor] = useState<BountyData | null>(null)
   useEffect(() => {
+    if (health && (!showsHealth || healthFor === data)) return
     let live = true
     api.get<BountyHealth>('/api/zonecontrol/bounties/health')
-      .then(h => { if (live) { setHealth(h); setHealthError(null) } })
+      .then(h => { if (live) { setHealth(h); setHealthFor(data); setHealthError(null) } })
       .catch(err => { if (live) setHealthError(err instanceof Error ? err.message : 'Could not run the server check.') })
     return () => { live = false }
-  }, [data])
+    // health / healthFor are read, not watched: a fresh answer must not trigger another read
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, showsHealth])
 
   const reread = async () => {
     if (rereading) return
@@ -668,24 +684,26 @@ const BountyItems = ({ data, canEdit, busy, send, sendMany, onOpenStat, notify, 
   const [tierOdds, setTierOdds] = useState<Record<number, TierOdds>>({})
   const [oddsError, setOddsError] = useState<string | null>(null)
 
-  // Each tier Default's bounty_odds, read the same way the stats page reads it (its Default row, inherited values included).
+  // Each tier Default's bounty_odds, read the same way the stats page reads it (its Default row, inherited values included), in one
+  // request (GET bounties/odds). A failed read leaves the tiers UNKNOWN, never "no drop chance" (review 2026-11-19).
   const loadOdds = useCallback(async () => {
     setOddsError(null)
     try {
-      const results = await Promise.all(TIERS.map(async t => {
-        const d = await api.get<{ rows: { stat: string; value: number | null; curved: boolean; effective: number | null; source: string | null; toggledOff: boolean }[] }>(`/api/zonecontrol/stats?variation=${t}`)
-        const row = d?.rows?.find(r => r.stat === 'bounty_odds')
-        const odds = row && !row.toggledOff && row.effective !== null && row.effective >= 1 ? Math.round(row.effective) : null
-        return [t, {
+      const d = await api.get<{ tiers: { variation: number; value: number | null; revision: string | null; curved: boolean; effective: number | null; source: string | null; toggledOff: boolean }[] }>('/api/zonecontrol/bounties/odds')
+      const results = (d?.tiers ?? []).map(row => {
+        const odds = !row.toggledOff && row.effective !== null && row.effective >= 1 ? Math.round(row.effective) : null
+        return [row.variation, {
           odds,
-          source: odds ? row?.source ?? null : null,
-          stored: row?.value ?? null,
-          curved: row?.curved ?? false,
-          toggledOff: row?.toggledOff ?? false,
+          source: odds ? row.source : null,
+          stored: row.value,
+          revision: row.revision,
+          curved: row.curved,
+          toggledOff: row.toggledOff,
         }] as const
-      }))
+      })
       setTierOdds(Object.fromEntries(results))
     } catch (err) {
+      setTierOdds({})
       setOddsError(err instanceof Error ? err.message : 'Could not read the tiers\' drop chance.')
     }
   }, [])
@@ -700,7 +718,8 @@ const BountyItems = ({ data, canEdit, busy, send, sendMany, onOpenStat, notify, 
       place,
       isRegion: !!region,
       tier,
-      odds: region ? (region.itemOdds > 0 ? region.itemOdds : null) : t ? t.odds : (oddsError ? null : undefined),
+      odds: region ? (region.itemOdds > 0 ? region.itemOdds : null) : t ? t.odds : undefined,
+      oddsFailed: !region && !t && oddsError !== null,
       oddsSource: region ? (region.itemOdds > 0 ? region.name : null) : t?.source ?? null,
       items: data.drops.filter(d => !d.off && (d.weights[place.key] ?? 0) > 0).length,
       tierRow: t,
@@ -774,7 +793,9 @@ const Setup = ({ data, states, oddsError, health, healthError, canEdit, rereadin
   const orphans = data.drops.filter(d => !d.canDrop)
   const notDropping = droppable.filter(d => d.off)
   const emptyTables = data.tables.filter(t => t.totalWeight <= 0)
-  const reading = states.some(s => s.odds === undefined) || (!health && !healthError)
+  // a failed read is not "reading": the headline and the checklist say the drop chances are unknown instead of waiting forever
+  const reading = states.some(s => s.odds === undefined && !s.oddsFailed) || (!health && !healthError)
+  const unknown = states.filter(s => s.oddsFailed)
   const weenies = health?.weenies ?? []
   const broken = weenies.filter(w => w.problem)
   const unpaid = weenies.filter(w => !w.problem && w.unpaidPlaces.length > 0)
@@ -783,6 +804,12 @@ const Setup = ({ data, states, oddsError, health, healthError, canEdit, rereadin
   const names = (list: WeenieHealth[]) => list.slice(0, 6).map(w => `${w.name} (${w.wcid})`).join(', ') + (list.length > 6 ? ` and ${list.length - 6} more` : '')
 
   const checks: Check[] = []
+  if (unknown.length > 0)
+    checks.push({
+      status: 'warning',
+      text: <>The drop chance of {placeRange(data, unknown.map(s => s.place.key))} could not be read{oddsError ? ` (${oddsError})` : ''}, so whether items drop there is unknown.</>,
+      fix: { label: 'Re-read drop chances', go: onRefresh },
+    })
   if (healthError)
     checks.push({ status: 'warning', text: <>The server check could not run ({healthError}), so the switches and broken items are not checked.</> })
 
@@ -853,7 +880,7 @@ const Setup = ({ data, states, oddsError, health, healthError, canEdit, rereadin
 
   // nothing exists yet: only the switches and the one thing to do; the rest would be noise until an item exists
   const empty = !!health && weenies.length === 0
-  if (!reading && !empty && withChance.length === 0)
+  if (!reading && !empty && withChance.length === 0 && unknown.length === 0)
     checks.push({ status: 'off', text: 'No tier or region has a drop chance, so nothing drops anywhere.', fix: { label: 'Set a drop chance', go: () => onTab('chance') } })
   for (const s of chanceNoItems)
     checks.push({
@@ -1074,7 +1101,11 @@ const Catalog = ({ data, states, health, healthError, canEdit, busy, send, onTab
     if (w.drops) {
       // it has a share, but it only really drops where that place also has a drop chance
       const at = states.filter(s => w.places.includes(s.place.key))
-      if (at.some(s => s.odds === undefined)) return { status: 'ok', text: 'in the drop mix' }
+      // never a green OK before the drop chances are known (review 2026-11-19)
+      if (at.some(s => s.odds === undefined))
+        return at.some(s => s.oddsFailed)
+          ? { status: 'warning', text: 'in the drop mix; whether it drops is unknown (the drop chances could not be read)' }
+          : { status: 'note', text: 'in the drop mix (reading the drop chances...)' }
       const live = at.filter(s => !!s.odds && s.odds > 0).map(s => s.place.key)
       if (live.length === 0)
         return { status: 'off', text: `in the mix, but ${placeRange(data, w.places)} ${w.places.length === 1 ? 'has' : 'have'} no drop chance, so none drop`, fix: { label: 'Set a drop chance', go: () => onTab('chance') } }
@@ -1599,9 +1630,49 @@ const DropChance = ({ data, states, canEdit, busy, send, oddsError, onOpenStat, 
 )
 
 /**
+ * The "1 in N" box both drop-chance rows use (a tier's and a region's), so they behave the same: Enter or Save, the range hint, the
+ * 0 warning and the "about one every" preview of the number typed. blankIsZero: an empty box means 0 (regions) instead of nothing
+ * typed yet (tiers, where Clear is the way back to unset). confirmSave: Save asks first (a tier curve it would replace), and Enter
+ * then does not save.
+ */
+const OddsInput = ({ place, initial, limits, busy, blankIsZero, isUnchanged, confirmSave, onSave, extra, hint }: {
+  place: string
+  initial: string
+  limits: Limits
+  busy: boolean
+  blankIsZero: boolean
+  isUnchanged: (value: number) => boolean
+  confirmSave?: string
+  onSave: (value: number) => void
+  extra?: ReactNode
+  hint: ReactNode
+}) => {
+  const [text, setText] = useState(initial)
+  useEffect(() => { setText(initial) }, [initial])
+  const value = blankIsZero && text.trim() === '' ? 0 : num(text)
+  const valid = value !== undefined && Number.isInteger(value) && value >= 0 && value <= limits.maxItemBountyOdds
+  const unchanged = valid && isUnchanged(value!)
+  const save = () => { if (valid && !unchanged) onSave(value!) }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <span>1 in</span>
+      <input value={text} onChange={e => setText(e.target.value)} inputMode="numeric" placeholder="not set" aria-label={`${place} drop chance`} className={`${inputClass} w-24`}
+        onKeyDown={e => { if (e.key === 'Enter' && !confirmSave) save() }} />
+      {confirmSave
+        ? <ConfirmButton label="Save" confirm={confirmSave} icon={false} disabled={busy || !valid || unchanged} onConfirm={save} />
+        : <button type="button" className={buttonClass} disabled={busy || !valid || unchanged} onClick={save}><Save className="w-3 h-3" aria-hidden />Save</button>}
+      {extra}
+      {text.trim() !== '' && !valid && <span className="text-red-400">0 to {limits.maxItemBountyOdds.toLocaleString()}, whole number</span>}
+      {valid && value === 0 && !unchanged && <span className="text-amber-400">{blankIsZero ? 'blank or 0' : '0'} = no bounty item drops in {place}</span>}
+      {valid && !unchanged ? (value! > 0 && <span className="text-neutral-500">about one every {hoursPerDrop(value!)}</span>) : hint}
+    </span>
+  )
+}
+
+/**
  * One tier's drop chance, edited in place: the tier Default's bounty_odds through the same stat/set and stat/clear the stats page
- * uses (logged, revertable, refused if the row changed since it was read). 0 saves "off" on this tier even when a row above sets a
- * number; Clear removes the tier's own number.
+ * uses (logged, revertable, refused if the row - its whole curve - changed since it was read). 0 saves "off" on this tier even when a
+ * row above sets a number; Clear removes the tier's own number.
  */
 const TierOddsEditor = ({ state, limits, canEdit, busy, send, onSaved, onOpenStat }: {
   state: PlaceState
@@ -1614,85 +1685,48 @@ const TierOddsEditor = ({ state, limits, canEdit, busy, send, onSaved, onOpenSta
 }) => {
   const row = state.tierRow
   const tier = state.tier!
-  const shown = row?.odds ? String(row.odds) : ''
-  const [text, setText] = useState(shown)
-  useEffect(() => { setText(shown) }, [shown])
-  if (!row) return <span>{oddsText(state.odds)}</span>
+  if (!row) return <span>{state.oddsFailed ? 'unknown (read failed)' : oddsText(state.odds)}</span>
   const hint = state.odds ? <span className="text-neutral-600">about one every {hoursPerDrop(state.odds)} at {KILLS_PER_HOUR} kills an hour</span> : null
   if (!canEdit) return <span className="inline-flex flex-wrap items-center gap-1.5">{oddsText(state.odds)}{hint}</span>
   if (row.toggledOff)
     return <span>turned off on the stats page <button type="button" className={linkClass} onClick={() => onOpenStat(tier)}>Open</button></span>
 
-  const value = num(text)
-  const valid = value !== undefined && Number.isInteger(value) && value >= 0 && value <= limits.maxItemBountyOdds
-  const unchanged = value === (row.odds ?? 0) && (value !== 0 || row.stored !== null || row.odds === null)
-  const body = (extra: object) => ({ variation: tier, stat: 'bounty_odds', expected: row.stored, ...extra })
-  const save = async () => {
-    const ok = value! > 0 ? `T${tier} drop chance: 1 in ${value!.toLocaleString()}.` : `T${tier}: no bounty items drop (saved as 0).`
-    if (valid && await send('/api/zonecontrol/stat/set', body({ value: String(value) }), ok)) onSaved()
+  const body = (extra: object) => ({ variation: tier, stat: 'bounty_odds', expected: row.stored, expectedRevision: row.revision ?? undefined, ...extra })
+  const save = async (value: number) => {
+    const ok = value > 0 ? `T${tier} drop chance: 1 in ${value.toLocaleString()}.` : `T${tier}: no bounty items drop (saved as 0).`
+    if (await send('/api/zonecontrol/stat/set', body({ value: String(value) }), ok)) onSaved()
   }
   const clear = async () => { if (await send('/api/zonecontrol/stat/clear', body({}), `T${tier} drop chance cleared.`)) onSaved() }
-  const preview = valid && !unchanged ? (value! > 0 && <span className="text-neutral-500">about one every {hoursPerDrop(value!)}</span>) : hint
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
-      <span>1 in</span>
-      <input value={text} onChange={e => setText(e.target.value)} inputMode="numeric" placeholder="not set" aria-label={`T${tier} drop chance`} className={`${inputClass} w-24`}
-        onKeyDown={e => { if (e.key === 'Enter' && !row.curved && valid && !unchanged) save() }} />
-      {row.curved
-        ? <ConfirmButton label="Save" confirm="Replace its tier curve?" disabled={busy || !valid || unchanged} onConfirm={save} />
-        : <button type="button" className={buttonClass} disabled={busy || !valid || unchanged} onClick={save}><Save className="w-3 h-3" aria-hidden />Save</button>}
-      {row.stored !== null && <ConfirmButton label="Clear" confirm={`Clear T${tier}?`} icon={false} disabled={busy} onConfirm={clear} />}
-      {text.trim() !== '' && !valid && <span className="text-red-400">0 to {limits.maxItemBountyOdds.toLocaleString()}, whole number</span>}
-      {valid && value === 0 && !unchanged && <span className="text-amber-400">0 = no bounty item drops in T{tier}</span>}
-      {preview}
-    </span>
+    <OddsInput place={`T${tier}`} initial={row.odds ? String(row.odds) : ''} limits={limits} busy={busy} blankIsZero={false}
+      // the same number again is no change, except 0 typed over an inherited number (that pins "off" on this tier)
+      isUnchanged={v => v === (row.odds ?? 0) && (v !== 0 || row.stored !== null || row.odds === null)}
+      confirmSave={row.curved ? 'Replace its tier curve?' : undefined}
+      onSave={save} hint={hint}
+      extra={row.stored !== null && <ConfirmButton label="Clear" confirm={`Clear T${tier}?`} icon={false} disabled={busy} onConfirm={clear} />} />
   )
 }
 
-/** A region's drop chance (BountyConfig.ItemBountyOdds), edited in place like a tier's: Enter or Save, blank or 0 = none drop. */
+/** A region's drop chance (BountyConfig.ItemBountyOdds), edited in place like a tier's: blank or 0 = none drop. Refused when another
+ * admin changed it since the page read it. */
 const RegionOdds = ({ region, limits, canEdit, busy, send }: { region: RegionBounty; limits: Limits; canEdit: boolean; busy: boolean; send: Send }) => {
-  const shown = region.itemOdds > 0 ? String(region.itemOdds) : ''
-  const [text, setText] = useState(shown)
-  useEffect(() => { setText(shown) }, [shown])
   const hint = region.itemOdds > 0 ? <span className="text-neutral-600">about one every {hoursPerDrop(region.itemOdds)} at {KILLS_PER_HOUR} kills an hour</span> : null
   if (!canEdit)
     return <span className="inline-flex flex-wrap items-center gap-1.5">{region.itemOdds > 0 ? `1 in ${region.itemOdds.toLocaleString()}` : 'not set'}{hint}</span>
-
-  const value = text.trim() === '' ? 0 : num(text)
-  const valid = value !== undefined && Number.isInteger(value) && value >= 0 && value <= limits.maxItemBountyOdds
-  const unchanged = value === region.itemOdds
-  const save = () => {
-    if (valid && !unchanged)
-      send('/api/zonecontrol/bounties/edit', { kind: 'region', name: region.key, op: 'itemodds', odds: value },
-        value! > 0 ? `${region.name} drop chance: 1 in ${value!.toLocaleString()}.` : `${region.name}: no bounty items drop.`)
+  const save = (value: number) => {
+    send('/api/zonecontrol/bounties/edit', { kind: 'region', name: region.key, op: 'itemodds', odds: value, expectedOdds: region.itemOdds },
+      value > 0 ? `${region.name} drop chance: 1 in ${value.toLocaleString()}.` : `${region.name}: no bounty items drop.`)
   }
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
-      <span>1 in</span>
-      <input value={text} onChange={e => setText(e.target.value)} inputMode="numeric" placeholder="not set" aria-label={`${region.name} drop chance`} className={`${inputClass} w-24`}
-        onKeyDown={e => { if (e.key === 'Enter') save() }} />
-      <button type="button" className={buttonClass} disabled={busy || !valid || unchanged} onClick={save}>
-        <Save className="w-3 h-3" aria-hidden />Save
-      </button>
-      {!valid && <span className="text-red-400">0 to {limits.maxItemBountyOdds.toLocaleString()}, whole number</span>}
-      {valid && value === 0 && !unchanged && <span className="text-amber-400">blank or 0 = no bounty item drops in {region.name}</span>}
-      {valid && !unchanged ? (value! > 0 && <span className="text-neutral-500">about one every {hoursPerDrop(value!)}</span>) : hint}
-    </span>
+    <OddsInput place={region.name} initial={region.itemOdds > 0 ? String(region.itemOdds) : ''} limits={limits} busy={busy} blankIsZero
+      isUnchanged={v => v === region.itemOdds} onSave={save} hint={hint} />
   )
 }
 
 // ---- 4. Drop mix: which bounty item a winning roll gives ----
 
 type ApplyTo = 'here' | 'tiers' | 'all'
-
-/** True where the item's own (weenie) share applies: its region, or its tier band. Elsewhere a share only exists if Zone Control added one. */
-const builtInAt = (d: DropRow, key: string) => {
-  if (d.own <= 0) return false
-  if (d.region) return d.region === key
-  const t = /^t\d+$/.test(key) ? Number(key.slice(1)) : NaN
-  return t >= d.minTier && t <= d.maxTier
-}
 
 const DropMix = ({ data, canEdit, busy, send, place, onPlace, regionKeys, health, states, onChance }: SectionProps & {
   place: string
@@ -1736,7 +1770,8 @@ const DropMix = ({ data, canEdit, busy, send, place, onPlace, regionKeys, health
         <p className="text-xs text-neutral-500">No bounty item can drop from monsters yet, so there is nothing to mix. A developer has to add bounty items first.</p>
       )}
       {(data.drops.length > 0 || unshared.length > 0) && current && view === 'one' && (
-        <OnePlace data={data} place={current} canEdit={canEdit} busy={busy} weightSend={weightSend} isRegion={regionKeys.has(current.key)}
+        // keyed by the place: switching places drops an open share edit, so its Save can never land on the new place
+        <OnePlace key={current.key} data={data} place={current} canEdit={canEdit} busy={busy} weightSend={weightSend} isRegion={regionKeys.has(current.key)}
           unshared={unshared.filter(w => w.canDropAt.includes(current.key))} odds={states.find(st => st.place.key === current.key)?.odds} onChance={onChance} />
       )}
       {data.drops.length > 0 && view === 'grid' && (
@@ -1829,8 +1864,8 @@ const OnePlace = ({ data, place, canEdit, busy, weightSend, isRegion, unshared, 
                   {canEdit && (
                     <span className="inline-flex gap-1">
                       <button type="button" className={buttonClass} disabled={busy || editing !== null} onClick={() => setEditing(d.wcid)}>Edit</button>
-                      <button type="button" className={buttonClass} disabled={busy} onClick={() => weightSend(d.wcid, changed && !builtInAt(d, key) ? 'clear' : '0', [key])}
-                        title={changed && !builtInAt(d, key) ? `Undo adding it to ${place.label}` : `Share 0 at ${place.label}`}>Remove from {place.label}</button>
+                      {/* share 0 here; where it has no built-in share the server simply drops the entry, so nothing stray is left */}
+                      <button type="button" className={buttonClass} disabled={busy} onClick={() => weightSend(d.wcid, '0', [key])} title={`Share 0 at ${place.label}`}>Remove from {place.label}</button>
                       {changed && <button type="button" className={buttonClass} disabled={busy} onClick={() => weightSend(d.wcid, 'clear', [key])}>Back to built-in</button>}
                       <ConfirmButton label="Stop dropping" confirm="Stop everywhere?" icon={false} disabled={busy} onConfirm={() => weightSend(d.wcid, 'off')} />
                     </span>

@@ -54,8 +54,12 @@ namespace ACE.Server.Managers.ZoneControl
         public StatCurve Old { get; init; }
         public StatCurve New { get; init; }
 
-        /// <summary>False when the change applied but its change log row could not be written (portal edits only; game edits log in the background).</summary>
-        public bool Logged { get; set; } = true;
+        /// <summary>The change log write this edit queued (null = nothing to log).</summary>
+        internal System.Threading.Tasks.Task<bool> LogWrite { get; set; }
+
+        /// <summary>False when the change applied but its change log row could not be written. Waits for the write (up to 15 s), so read
+        /// it only after the manager lock is released (the portal's answer does; game commands never read it).</summary>
+        public bool Logged => ZoneControlChangeLog.Outcome(LogWrite);
     }
 
     /// <summary>
@@ -143,14 +147,19 @@ namespace ACE.Server.Managers.ZoneControl
         private static ZoneStatEditResult ApplyLocked(ZoneStatTarget target, string stat, StatCurve next, ZoneStatActor actor, ZoneStatExpectation expected, long? revertsId, string reason, string batchId)
         {
             ZoneStatEditResult result = null;
-            // this edit logs its own exact row below, so the store save it triggers skips the part it touched (no double entry)
+            // the row the log names: a zone edit by the zone's real name ("my_zone" can find "My Zone"), so History, its whole-zone
+            // check and Revert all look for the name the store holds (review 2026-11-19)
+            var logged = target;
+            // this edit logs its own exact row below, so the store save it triggers leaves out exactly that stat change. Anything else
+            // that differs in the part (a change an earlier failed save left in memory) is still logged (review 2026-11-19).
             using var skip = ZoneControlChangeLog.StatEditOn(null);
             if (target.IsDefault)
             {
                 ZoneControlManager.MutateVariationDefaultIf(target.Variation, d =>
                 {
-                    ZoneControlChangeLog.SetSkipSection(ZoneControlManager.DefaultSectionKey(target.Variation));
                     result = ApplyToRow(create => d.Profile.RankLayer(target.Rank, create), stat, next, expected);
+                    if (result.Status == ZoneStatEditStatus.Applied)
+                        ZoneControlChangeLog.SetSkipSection(new ZoneControlChangeLog.StatSkip(ZoneControlManager.DefaultSectionKey(target.Variation), target, stat, next));
                     return result.Status == ZoneStatEditStatus.Applied;
                 });
             }
@@ -158,8 +167,10 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var found = ZoneControlManager.MutateAreaIf(target.Zone, a =>
                 {
-                    ZoneControlChangeLog.SetSkipSection(ZoneControlManager.ZoneSectionKey(a.Name));
+                    logged = ZoneStatTarget.ForZone(a.Name, target.Wcid, target.Rank);
                     result = ApplyToRow(create => RowFor(a.Profile, target.Wcid, target.Rank, create, out _), stat, next, expected);
+                    if (result.Status == ZoneStatEditStatus.Applied)
+                        ZoneControlChangeLog.SetSkipSection(new ZoneControlChangeLog.StatSkip(ZoneControlManager.ZoneSectionKey(a.Name), logged, stat, next));
                     return result.Status == ZoneStatEditStatus.Applied;
                 });
                 if (!found)
@@ -167,7 +178,7 @@ namespace ACE.Server.Managers.ZoneControl
             }
 
             if (result.Status == ZoneStatEditStatus.Applied && !SameCurve(result.Old, result.New))
-                result.Logged = ZoneControlChangeLog.Record(target, stat, result.Old, result.New, actor, revertsId, reason, batchId);
+                result.LogWrite = ZoneControlChangeLog.Record(logged, stat, result.Old, result.New, actor, revertsId, reason, batchId);
             return result;
         }
 
@@ -202,7 +213,8 @@ namespace ACE.Server.Managers.ZoneControl
 
         private static string ConflictMessage(string stat, StatCurve now, ZoneStatExpectation expected)
         {
-            if (now != null && expected.WholeCurve && expected.Curve != null && expected.Curve.Base == now.Base)
+            var sameBase = now != null && (expected.WholeCurve ? expected.Curve != null && expected.Curve.Base == now.Base : expected.Base == now.Base);
+            if (sameBase)
                 return $"{stat} changed since: the value is the same, but its growth, additive flag or tier pins were edited. Nothing was changed.";
             return $"{stat} changed since you loaded it: it is now {(now == null ? "not set" : now.Base.ToString("0.####", CultureInfo.InvariantCulture))}. Nothing was changed.";
         }
@@ -235,10 +247,35 @@ namespace ACE.Server.Managers.ZoneControl
         public bool WholeCurve { get; private init; }
         public StatCurve Curve { get; private init; }
 
+        /// <summary>The whole curve the editor loaded, as <see cref="RevisionOf"/> gave it (null = only the number is checked). The
+        /// portal sends it so a stale form can't overwrite a growth or tier pin added since with the same base (review 2026-11-19).</summary>
+        public string Revision { get; init; }
+
         public static ZoneStatExpectation Exactly(StatCurve curve) => new ZoneStatExpectation { Base = curve?.Base, Curve = curve, WholeCurve = true };
 
-        public bool Matches(StatCurve current) =>
-            WholeCurve ? ZoneStatEditor.SameCurve(Curve, current)
-            : Base.HasValue ? current != null && current.Base == Base.Value : current == null;
+        /// <summary>The number the form showed, and when it sent one, the revision of the whole curve.</summary>
+        public static ZoneStatExpectation Loaded(double? baseValue, string revision) =>
+            new ZoneStatExpectation { Base = baseValue, Revision = string.IsNullOrWhiteSpace(revision) ? null : revision.Trim() };
+
+        public bool Matches(StatCurve current)
+        {
+            if (WholeCurve)
+                return ZoneStatEditor.SameCurve(Curve, current);
+            var baseMatches = Base.HasValue ? current != null && current.Base == Base.Value : current == null;
+            return baseMatches && (Revision == null || Revision == RevisionOf(current));
+        }
+
+        /// <summary>A short fingerprint of a whole stored curve (base, growth, additive, tier pins), null when the stat is not set.
+        /// Two curves get the same revision exactly when <see cref="ZoneStatEditor.SameCurve"/> says they are the same.</summary>
+        public static string RevisionOf(StatCurve c)
+        {
+            if (c == null)
+                return null;
+            var pins = string.Join(",", (c.Overrides ?? new Dictionary<int, double>()).OrderBy(kv => kv.Key)
+                .Select(kv => kv.Key.ToString(CultureInfo.InvariantCulture) + "=" + kv.Value.ToString("R", CultureInfo.InvariantCulture)));
+            var text = string.Join("|", c.Base.ToString("R", CultureInfo.InvariantCulture), c.Growth.ToString("R", CultureInfo.InvariantCulture), c.Additive ? "1" : "0", pins);
+            var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text));
+            return Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
+        }
     }
 }

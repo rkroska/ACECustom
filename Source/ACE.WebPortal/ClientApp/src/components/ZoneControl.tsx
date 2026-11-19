@@ -28,6 +28,8 @@ interface StatRow {
   group: string
   known: boolean
   value: number | null
+  // fingerprint of the whole stored curve (null = not set), sent back with an edit
+  revision: string | null
   curved: boolean
   effective: number | null
   source: string | null
@@ -162,6 +164,7 @@ interface EditBody {
   rank?: string
   stat?: string
   expected?: number | null
+  expectedRevision?: string
 }
 
 const REASON_MAX = 255
@@ -237,6 +240,8 @@ const ZoneControl = () => {
   const [wcid, setWcid] = useState<number | null>(null)
   const [wcidText, setWcidText] = useState('')
   const [rows, setRows] = useState<StatRow[]>([])
+  // the selection the rows were loaded for: editing only works when it is the one on screen (review 2026-11-19)
+  const [rowsKey, setRowsKey] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [search, setSearch] = useState('')
   const [zoneSearch, setZoneSearch] = useState('')
@@ -244,6 +249,8 @@ const ZoneControl = () => {
   const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({})
   const [view, setView] = useState<'stats' | 'history'>('stats')
   const [groups, setGroups] = useState<ChangeGroup[]>([])
+  // the History filter the groups were loaded for: another filter's groups (and Revert buttons) are never shown
+  const [groupsKey, setGroupsKey] = useState<string | null>(null)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   // Single Revert asks in an in-page dialog: window.confirm is suppressed in some embedded browsers (it returns Cancel at once,
   // so the button silently did nothing - found 2026-11-11 in the desktop app's browser pane).
@@ -275,8 +282,12 @@ const ZoneControl = () => {
   const historyKey = `${targetKey}|${historyAll}`
   const historyRef = useRef(historyKey)
   historyRef.current = historyKey
+  const shownGroups = groupsKey === historyKey ? groups : []
   // bumped whenever the ladder cache is emptied, so a ladder still in flight from before cannot refill it with old data
   const ladderGen = useRef(0)
+  // request counters: after A -> B -> A, an answer from the FIRST visit to A is older than the newest request and is dropped too
+  const rowsSeq = useRef(0)
+  const changesSeq = useRef(0)
 
   const loadOverview = useCallback(async () => {
     try {
@@ -289,18 +300,22 @@ const ZoneControl = () => {
   const loadRows = useCallback(async () => {
     if (!scope) return
     const key = `${scopeParams(scope, wcid, rank)}`
+    const seq = ++rowsSeq.current
+    const fresh = () => rowsSeq.current === seq && targetRef.current === key
     try {
       const data = await api.get<{ rows: StatRow[] }>(`/api/zonecontrol/stats?${key}`)
-      if (targetRef.current !== key) return
+      if (!fresh()) return
       setRows(data?.rows ?? [])
+      setRowsKey(key)
       setDrafts({})
       // the stack may have moved (an edit, another scope): open rows fetch their ladder again
       ladderGen.current++
       setLadders({})
       setLoadError(null)
     } catch (err) {
-      if (targetRef.current !== key) return
+      if (!fresh()) return
       setRows([])
+      setRowsKey(key)
       setLoadError(err instanceof Error ? err.message : 'Failed to load stats.')
     }
   }, [scope, wcid, rank])
@@ -311,15 +326,23 @@ const ZoneControl = () => {
     if (historyAll) q.set('limit', '300')
     else if (scope.kind === 'zone') q.set('zone', scope.zone)
     else q.set('variation', String(scope.variation))
-    const key = historyRef.current
+    // the identity of THIS request, from what it asks for (not from whatever is selected when it is called): a callback kept from
+    // zone A that runs after a move to B asks for A, and its answer is then dropped as not B's
+    const key = `${scopeParams(scope, wcid, rank)}|${historyAll}`
+    const seq = ++changesSeq.current
+    const fresh = () => changesSeq.current === seq && historyRef.current === key
     try {
       const data = await api.get<ChangeGroup[]>(`/api/zonecontrol/changes/groups?${q}`)
-      if (historyRef.current !== key) return
+      if (!fresh()) return
       setGroups(data ?? [])
+      setGroupsKey(key)
     } catch (err) {
+      if (!fresh()) return
+      setGroups([])
+      setGroupsKey(key)
       setToast({ message: err instanceof Error ? err.message : 'Failed to load history.', variant: 'error' })
     }
-  }, [scope, historyAll])
+  }, [scope, wcid, rank, historyAll])
 
   useEffect(() => { loadOverview() }, [loadOverview])
   useEffect(() => {
@@ -328,6 +351,12 @@ const ZoneControl = () => {
   }, [])
 
   const helpByStat = useMemo(() => new Map((help?.stats ?? []).map(h => [h.stat, h])), [help])
+  // a new selection starts empty: the last one's rows and drafts must never sit under the new name while it loads
+  useEffect(() => {
+    setRows([])
+    setRowsKey(null)
+    setDrafts({})
+  }, [targetKey])
   useEffect(() => { loadRows() }, [loadRows])
 
   // Each open stat loads its ladder once; loadRows empties the cache, so an edit or a scope change refetches.
@@ -396,6 +425,8 @@ const ZoneControl = () => {
       rank: rank === 'default' ? undefined : rank,
       stat: row.stat,
       expected: row.value,
+      // the whole curve as loaded: a growth or tier pin added since (same number) also refuses the edit
+      expectedRevision: row.revision ?? undefined,
     }
   }
 
@@ -403,6 +434,8 @@ const ZoneControl = () => {
   const openPreview = async (row: StatRow, mode: 'set' | 'clear') => {
     const value = drafts[row.stat]?.trim()
     if (busy || (mode === 'set' && !value)) return
+    // only rows loaded for the selection on screen can be edited (they carry its expected value and revision)
+    if (rowsKey !== targetRef.current) return
     // captured before the request: the preview, the dialog and the save all name this one target
     const body = editBody(row)
     const where = rowName()
@@ -878,9 +911,10 @@ const ZoneControl = () => {
                     <input type="checkbox" checked={historyAll} onChange={e => setHistoryAll(e.target.checked)} />
                     Show every change (all zones, tiers and server-wide lists)
                   </label>
-                  <div className="px-4 pb-2"><HistoryExample groups={groups} /></div>
-                  {groups.length === 0 && <p className="p-8 text-center text-sm text-neutral-500">No logged changes yet.</p>}
-                  {groups.length > 0 && (
+                  <div className="px-4 pb-2"><HistoryExample groups={shownGroups} /></div>
+                  {groupsKey !== historyKey && <p className="p-8 text-center text-sm text-neutral-500">Loading history...</p>}
+                  {groupsKey === historyKey && shownGroups.length === 0 && <p className="p-8 text-center text-sm text-neutral-500">No logged changes yet.</p>}
+                  {shownGroups.length > 0 && (
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 bg-neutral-900 text-left text-[10px] uppercase tracking-widest text-neutral-500">
                         <tr>
@@ -894,7 +928,7 @@ const ZoneControl = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {groups.map((g, gi) => {
+                        {shownGroups.map((g, gi) => {
                           const open = openGroups[g.key] ?? gi === 0
                           const revertible = g.changes.filter(c => c.revertible).length
                           const from = new Date(g.fromUtc), to = new Date(g.toUtc)

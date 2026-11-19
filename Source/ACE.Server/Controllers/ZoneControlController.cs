@@ -38,7 +38,14 @@ namespace ACE.Server.Web.Controllers
         {
             try
             {
-                return action();
+                // the change log rows this request's saves queue are waited for here, after the work has let go of the manager lock,
+                // so History shows the change as soon as the page re-reads it (and a slow log never holds the game's readers)
+                using (ZoneControlChangeLog.TrackWrites())
+                {
+                    var answer = action();
+                    ZoneControlChangeLog.WaitTracked();
+                    return answer;
+                }
             }
             catch (Exception ex)
             {
@@ -151,6 +158,8 @@ namespace ACE.Server.Web.Controllers
                         Group = ZoneStatCatalog.GroupOf(stat),
                         Known = ZoneStatEditor.NormalizeStat(stat) != null,
                         Value = curve?.Base,
+                        // the whole stored curve's fingerprint: sent back with an edit, so a growth or tier pin added since is not overwritten
+                        Revision = ZoneStatExpectation.RevisionOf(curve),
                         // Set replaces the whole curve, so the page warns before overwriting growth or tier pins
                         Curved = curve != null && (curve.Growth != 1.0 || curve.Additive || curve.Overrides is { Count: > 0 }),
                         Effective = hasEffective ? eval.GetT(stat, 0, tier) : (double?)null,
@@ -230,6 +239,8 @@ namespace ACE.Server.Web.Controllers
             public string Value { get; set; }
             /// <summary>The value the editor was looking at; null = it was not set. The edit is refused if the row has moved on.</summary>
             public double? Expected { get; set; }
+            /// <summary>The row's Revision as loaded (the whole curve); null = only Expected is checked.</summary>
+            public string ExpectedRevision { get; set; }
             /// <summary>Why, as typed by the editor. Optional; stored in the change log (plain ASCII, cut to length).</summary>
             public string Reason { get; set; }
             /// <summary>Preview only: true previews a clear instead of a set.</summary>
@@ -268,7 +279,7 @@ namespace ACE.Server.Web.Controllers
 
             return Run(() =>
             {
-                var impact = ZoneControlManager.PreviewStatEdit(target, stat, next, new ZoneStatExpectation { Base = request.Expected });
+                var impact = ZoneControlManager.PreviewStatEdit(target, stat, next, ZoneStatExpectation.Loaded(request.Expected, request.ExpectedRevision));
                 if (impact.Status == ZoneStatEditStatus.NoSuchZone)
                     return NotFound(new { impact.Message });
                 var help = ZoneStatHelp.For(stat);
@@ -299,7 +310,7 @@ namespace ACE.Server.Web.Controllers
             if (!ZoneStatEditor.TryParseValue(request.Value, out var value))
                 return BadRequest(new { Message = "value must be a number." });
 
-            return Run(() => Answer(target, ZoneStatEditor.Set(target, request.Stat, value, PortalActor(), new ZoneStatExpectation { Base = request.Expected }, request.Reason), request.Reason), "edit");
+            return Run(() => Answer(target, ZoneStatEditor.Set(target, request.Stat, value, PortalActor(), ZoneStatExpectation.Loaded(request.Expected, request.ExpectedRevision), request.Reason), request.Reason), "edit");
         }
 
         [HttpPost("stat/clear")]
@@ -312,7 +323,7 @@ namespace ACE.Server.Web.Controllers
             if (!TryTarget(request.Zone, request.Variation, request.Wcid, request.Rank, out var target, out var problem))
                 return BadRequest(new { Message = problem });
 
-            return Run(() => Answer(target, ZoneStatEditor.Clear(target, request.Stat, PortalActor(), new ZoneStatExpectation { Base = request.Expected }, request.Reason), request.Reason), "edit");
+            return Run(() => Answer(target, ZoneStatEditor.Clear(target, request.Stat, PortalActor(), ZoneStatExpectation.Loaded(request.Expected, request.ExpectedRevision), request.Reason), request.Reason), "edit");
         }
 
         [HttpGet("changes")]

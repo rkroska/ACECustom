@@ -27,6 +27,9 @@ namespace ACE.Server.Managers.ZoneControl
         public List<ZoneControlChange> Revert { get; } = new List<ZoneControlChange>();
         /// <summary>Changes left alone, with why.</summary>
         public List<(ZoneControlChange Change, string Why)> Skipped { get; } = new List<(ZoneControlChange, string)>();
+        /// <summary><see cref="Revert"/> in the units the run carries out: one change, or the halves of a rename that go back together
+        /// in one store write.</summary>
+        internal List<List<ZoneControlChange>> Units { get; } = new List<List<ZoneControlChange>>();
     }
 
     public sealed class ZoneControlGroupRevertResult
@@ -36,7 +39,10 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Set when a revert failed part way: that change, and why. The ones before it stay reverted (each is logged).</summary>
         public long? StoppedAt { get; set; }
         public string StopReason { get; set; }
-        public bool Logged { get; set; } = true;
+        /// <summary>The change log writes the reverts queued.</summary>
+        internal List<System.Threading.Tasks.Task<bool>> LogWrites { get; } = new List<System.Threading.Tasks.Task<bool>>();
+        /// <summary>True when every revert's log row was written. Waits for them: read it only outside the manager lock.</summary>
+        public bool Logged => LogWrites.All(ZoneControlChangeLog.Outcome);
     }
 
     /// <summary>
@@ -67,10 +73,15 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var c in newestFirst)
             {
                 var last = current?.LastOrDefault();
+                // a save's batch (a settings import, a rename, a Revert all) is its own group: rows with a batch id only join rows of
+                // the same batch, and the time gap only joins rows that have none (review 2026-11-19: an import and a stat edit a
+                // minute later used to share a group, so Revert all undid both)
                 var joins = last != null
                     && string.Equals(last.Actor, c.Actor, StringComparison.OrdinalIgnoreCase)
                     && last.Source == c.Source
-                    && ((c.BatchId != null && c.BatchId == last.BatchId) || last.ChangedAtUtc - c.ChangedAtUtc <= limit);
+                    && (c.BatchId != null || last.BatchId != null
+                        ? c.BatchId == last.BatchId
+                        : last.ChangedAtUtc - c.ChangedAtUtc <= limit);
                 if (!joins)
                 {
                     current = new List<ZoneControlChange>();
@@ -113,12 +124,48 @@ namespace ACE.Server.Managers.ZoneControl
         {
             var plan = new ZoneControlGroupRevertPlan();
             var seen = new HashSet<string>();
+            var handled = new HashSet<long>();
+            var linked = LinkedZoneChanges(group);
             foreach (var c in group.OrderByDescending(c => c.Id))
             {
+                if (!handled.Add(c.Id))
+                    continue;
                 var key = KeyOf(c);
                 var newerInGroup = !seen.Add(key);
                 var moved = newerInGroup ? "Changed by someone else in between." : "Changed again after this group.";
                 string why = null;
+
+                // the halves of a rename (a zone removed and a zone created in one save) are checked together and undone together:
+                // undoing only one would bring back the old zone while the new one still covers its landblocks (review 2026-11-19)
+                if (linked.TryGetValue(c.Id, out var unit))
+                {
+                    foreach (var other in unit)
+                    {
+                        handled.Add(other.Id);
+                        seen.Add(KeyOf(other));
+                    }
+                    var trial = (JObject)root.DeepClone();
+                    foreach (var u in unit.OrderByDescending(u => u.Id))
+                    {
+                        if (ZoneControlManager.SectionCanonicalIn(trial, u.Section) != ZoneControlManager.Canonical(u.NewJson))
+                            why = $"{u.Stat}{(u.Zone != null ? " '" + u.Zone + "'" : "")} changed again after this group, so the rename is left alone as a whole.";
+                        else
+                            why = ZoneControlManager.ApplySectionToRoot(trial, u);
+                        if (why != null)
+                            break;
+                    }
+                    if (why == null)
+                    {
+                        foreach (var u in unit.OrderByDescending(u => u.Id))
+                            ZoneControlManager.ApplySectionToRoot(root, u);
+                        plan.Revert.AddRange(unit.OrderByDescending(u => u.Id));
+                        plan.Units.Add(unit.OrderByDescending(u => u.Id).ToList());
+                    }
+                    else
+                        foreach (var u in unit)
+                            plan.Skipped.Add((u, why));
+                    continue;
+                }
 
                 if (c.Kind == ZoneControlChangeLog.KindSection)
                 {
@@ -146,12 +193,19 @@ namespace ACE.Server.Managers.ZoneControl
                                 p.Remove();
                             if (c.OldCurve != null)
                                 ZoneControlManager.SetProp(row, c.Stat, JObject.FromObject(c.OldCurve));
+                            // the live edit drops a tier Default left holding nothing; so must the copy, or a later "Default
+                            // removed" change in this group would look moved on and be skipped (review 2026-11-19)
+                            if (c.Zone == null)
+                                ZoneControlManager.PruneEmptyDefaultIn(root, c.Variation);
                         }
                     }
                 }
 
                 if (why == null)
+                {
                     plan.Revert.Add(c);
+                    plan.Units.Add(new List<ZoneControlChange> { c });
+                }
                 else
                     plan.Skipped.Add((c, why));
             }
@@ -159,6 +213,24 @@ namespace ACE.Server.Managers.ZoneControl
 
             static JToken Prop(JObject o, string name) =>
                 o.Properties().FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Value;
+        }
+
+        /// <summary>Whole-zone changes that must go back together: in each save (batch), the zones it CREATED and REMOVED, when there are
+        /// two or more of them (a rename is one of each). Keyed by every member's id.</summary>
+        internal static Dictionary<long, List<ZoneControlChange>> LinkedZoneChanges(IReadOnlyList<ZoneControlChange> group)
+        {
+            var map = new Dictionary<long, List<ZoneControlChange>>();
+            foreach (var batch in group
+                .Where(c => c.Kind == ZoneControlChangeLog.KindSection && c.BatchId != null && c.Zone != null && (c.OldJson == null || c.NewJson == null))
+                .GroupBy(c => c.BatchId))
+            {
+                var unit = batch.ToList();
+                if (unit.Count < 2)
+                    continue;
+                foreach (var c in unit)
+                    map[c.Id] = unit;
+            }
+            return map;
         }
 
         /// <summary>The row a logged stat change edited, or null with <paramref name="problem"/> set.</summary>
@@ -192,27 +264,30 @@ namespace ACE.Server.Managers.ZoneControl
                 foreach (var (change, why) in plan.Skipped)
                     result.Skipped.Add((change.Id, why));
 
-                foreach (var change in plan.Revert)
+                foreach (var unit in plan.Units)
                 {
+                    var change = unit[0];
                     ZoneStatEditStatus status;
                     string message;
-                    bool logged;
+                    // the log write is only collected here: waiting for it would hold the manager lock (result.Logged waits later)
+                    System.Threading.Tasks.Task<bool> logged;
                     try
                     {
                         if (change.Kind == ZoneControlChangeLog.KindSection)
                         {
-                            var done = ZoneControlManager.RevertSection(change, actor, reason, batch);
-                            (status, message, logged) = (done.Status, done.Message, done.Logged);
+                            // one change, or a rename's two halves in one store write
+                            var done = ZoneControlManager.RevertSections(unit, actor, reason, batch);
+                            (status, message, logged) = (done.Status, done.Message, done.LogWrite);
                         }
                         else
                         {
                             var target = TargetOf(change, out var problem);
                             if (target == null)
-                                (status, message, logged) = (ZoneStatEditStatus.Refused, problem, true);
+                                (status, message, logged) = (ZoneStatEditStatus.Refused, problem, null);
                             else
                             {
                                 var done = ZoneStatEditor.Restore(target, change.Stat, change.OldCurve, actor, ZoneStatExpectation.Exactly(change.NewCurve), change.Id, reason, batch);
-                                (status, message, logged) = (done.Status, done.Message, done.Logged);
+                                (status, message, logged) = (done.Status, done.Message, done.LogWrite);
                             }
                         }
                     }
@@ -225,11 +300,13 @@ namespace ACE.Server.Managers.ZoneControl
 
                     if (status == ZoneStatEditStatus.Applied)
                     {
-                        result.Reverted.Add(change.Id);
-                        result.Logged &= logged;
+                        result.Reverted.AddRange(unit.Select(u => u.Id));
+                        if (logged != null)
+                            result.LogWrites.Add(logged);
                     }
                     else if (status == ZoneStatEditStatus.Conflict)
-                        result.Skipped.Add((change.Id, message ?? "Changed since."));
+                        foreach (var u in unit)
+                            result.Skipped.Add((u.Id, message ?? "Changed since."));
                     else
                     {
                         result.StoppedAt = change.Id;

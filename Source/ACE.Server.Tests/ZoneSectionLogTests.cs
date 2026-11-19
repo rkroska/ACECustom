@@ -167,10 +167,40 @@ namespace ACE.Server.Tests
         {
             using (ZoneControlChangeLog.StatEditOn(null))
             {
-                ZoneControlChangeLog.SetSkipSection("zone:a");
-                Assert.AreEqual("zone:a", ZoneControlChangeLog.SkipSection);
+                ZoneControlChangeLog.SetSkipSection(new ZoneControlChangeLog.StatSkip("zone:a", ZoneStatTarget.ForZone("A", null, ACE.Server.Managers.ZoneScaling.ZcRank.None), "max_health", null));
+                Assert.AreEqual("zone:a", ZoneControlChangeLog.SkipSection.Section);
             }
             Assert.IsNull(ZoneControlChangeLog.SkipSection);
+        }
+
+        private static ZoneControlChangeLog.StatSkip HealthTo(double value) => new ZoneControlChangeLog.StatSkip(
+            "zone:a", ZoneStatTarget.ForZone("A", null, ACE.Server.Managers.ZoneScaling.ZcRank.None), "max_health",
+            new ACE.Server.Managers.ZoneScaling.StatCurve { Base = value, Growth = 1.0, Additive = false });
+
+        // A stat edit's own change is left out of the part: one stat row, no whole-zone row.
+        [TestMethod]
+        public void Diff_StatSkip_LeavesOutExactlyTheStatChange()
+        {
+            var before = Parts(Part("zone:a", "{\"Name\":\"A\",\"Profile\":{\"Minion\":{\"Stats\":{\"max_health\":{\"Base\":100.0,\"Growth\":1.0,\"Additive\":false}}}}}", "A"));
+            var after = Parts(Part("zone:a", "{\"Name\":\"A\",\"Profile\":{\"Minion\":{\"Stats\":{\"max_health\":{\"Base\":110.0,\"Growth\":1.0,\"Additive\":false}}}}}", "A"));
+
+            Assert.AreEqual(0, ZoneControlManager.DiffSections(before, after, HealthTo(110)).Count);
+        }
+
+        // A change an earlier failed save left in memory (Enabled) rides along with the next stat edit's save: it is still logged, as
+        // the part before and after with the stat edit itself already applied on both sides.
+        [TestMethod]
+        public void Diff_StatSkip_StillLogsOtherChangesInThePart()
+        {
+            var before = Parts(Part("zone:a", "{\"Name\":\"A\",\"Enabled\":true,\"Profile\":{\"Minion\":{\"Stats\":{\"max_health\":{\"Base\":100.0,\"Growth\":1.0,\"Additive\":false}}}}}", "A"));
+            var after = Parts(Part("zone:a", "{\"Name\":\"A\",\"Enabled\":false,\"Profile\":{\"Minion\":{\"Stats\":{\"max_health\":{\"Base\":110.0,\"Growth\":1.0,\"Additive\":false}}}}}", "A"));
+
+            var change = ZoneControlManager.DiffSections(before, after, HealthTo(110)).Single();
+
+            Assert.AreEqual("zone:a", change.Section);
+            var lines = ZoneControlManager.DescribeSectionChange(change.OldJson, change.NewJson);
+            CollectionAssert.Contains(lines, "Enabled: true -> false");
+            Assert.IsFalse(lines.Any(l => l.Contains("Base")), "the stat edit itself is its own row: " + string.Join("; ", lines));
         }
 
         [TestMethod]

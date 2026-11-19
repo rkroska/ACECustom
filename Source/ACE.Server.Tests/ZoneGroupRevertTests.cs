@@ -103,7 +103,85 @@ namespace ACE.Server.Tests
             Assert.AreEqual(1, groups.Count);
         }
 
+        // a save's batch (an import) never shares a group with a separate edit made a minute later
+        [TestMethod]
+        public void Group_KeepsABatchApartFromNearbyUnbatchedEdits()
+        {
+            var groups = ZoneControlRevert.Group(NewestFirst(Stat(1, 1, 2, minutes: 0, batch: "import"), Stat(2, 2, 3, minutes: 0, batch: "import"), Stat(3, 3, 4, minutes: 1)));
+
+            Assert.AreEqual(2, groups.Count);
+            CollectionAssert.AreEqual(new long[] { 3 }, Ids(groups[0].Changes));
+            CollectionAssert.AreEqual(new long[] { 2, 1 }, Ids(groups[1].Changes));
+        }
+
         // ---- plan
+
+        // a zone put back while it still exists keeps its place in the list (the order breaks landblock ties)
+        [TestMethod]
+        public void ApplySection_PutsAZoneBackInPlace()
+        {
+            var root = Store(Zone(false, 3, "A"), Zone(true, 1, "B"));
+            var change = Part(1, Zone(true, 3, "A"), Zone(false, 3, "A"), section: "zone:a");
+
+            Assert.IsNull(ZoneControlManager.ApplySectionToRoot(root, change));
+
+            Assert.AreEqual("A", (string)root["Areas"][0]["Name"]);
+            Assert.AreEqual(true, (bool)root["Areas"][0]["Enabled"]);
+            Assert.AreEqual("B", (string)root["Areas"][1]["Name"]);
+        }
+
+        // undoing the stat that recreated a removed Default leaves the copy without that Default, as the live store would, so the
+        // older "Default removed" change still matches and is reverted too
+        [TestMethod]
+        public void Plan_PrunesADefaultLeftEmpty_SoItsRemovalStillReverts()
+        {
+            var t14 = new JObject { ["Profile"] = new JObject { ["Stats"] = new JObject { ["max_health"] = JObject.FromObject(new StatCurve { Base = 5 }) } } };
+            var root = Store();
+            root["VariationDefaults"]["14"] = t14.DeepClone();
+            var oldDefault = new JObject { ["Notes"] = "kept", ["Profile"] = new JObject() }.ToString(Formatting.None);
+
+            var removed = Part(1, oldDefault, null, section: "default:14");
+            removed.Zone = null;
+            removed.Variation = 14;
+            var recreated = Stat(2, null, 5, zone: null);
+            recreated.Variation = 14;
+
+            var plan = ZoneControlRevert.Plan(NewestFirst(removed, recreated), root);
+
+            CollectionAssert.AreEqual(new long[] { 2, 1 }, Ids(plan.Revert), string.Join("; ", plan.Skipped.Select(s => s.Why)));
+            Assert.AreEqual("kept", (string)root["VariationDefaults"]["14"]["Notes"]);
+        }
+
+        // a rename (zone A removed, zone B created, one save) goes back as one unit, or not at all
+        [TestMethod]
+        public void Plan_RevertsARenameTogether()
+        {
+            var root = Store(Zone(true, 3, "B"));
+            var gone = Part(1, Zone(true, 3, "A"), null, section: "zone:a");
+            var made = Part(2, null, Zone(true, 3, "B"), section: "zone:b");
+            gone.BatchId = made.BatchId = "rename";
+
+            var plan = ZoneControlRevert.Plan(NewestFirst(gone, made), root);
+
+            CollectionAssert.AreEquivalent(new long[] { 1, 2 }, Ids(plan.Revert));
+            Assert.AreEqual(1, plan.Units.Count);
+            Assert.AreEqual("A", (string)((JArray)root["Areas"]).Single()["Name"]);
+        }
+
+        [TestMethod]
+        public void Plan_LeavesARenameAlone_WhenTheNewZoneWasEditedSince()
+        {
+            var root = Store(Zone(false, 3, "B"));   // B was disabled after the rename
+            var gone = Part(1, Zone(true, 3, "A"), null, section: "zone:a");
+            var made = Part(2, null, Zone(true, 3, "B"), section: "zone:b");
+            gone.BatchId = made.BatchId = "rename";
+
+            var plan = ZoneControlRevert.Plan(NewestFirst(gone, made), root);
+
+            Assert.AreEqual(0, plan.Revert.Count);
+            CollectionAssert.AreEquivalent(new long[] { 1, 2 }, plan.Skipped.Select(s => s.Change.Id).ToArray());
+            Assert.AreEqual("B", (string)((JArray)root["Areas"]).Single()["Name"], "nothing changed in the copy");
+        }
 
         [TestMethod]
         public void Plan_RevertsEverything_NewestFirst_WhenNothingMovedOn()

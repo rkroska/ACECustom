@@ -89,18 +89,37 @@ namespace ACE.Server.Managers.ZoneControl
             return new Restore(() => _reason.Value = previous);
         }
 
-        // A stat edit logs its own exact row (old and new curve), so the save it triggers must not ALSO log the whole zone it touched.
-        // Set by ZoneStatEditor inside the mutate (same thread as the save); every other part that changed is still logged.
-        [ThreadStatic] private static string _skipSection;
+        /// <summary>The one stat change a stat edit logs as its own row: the save it triggers leaves exactly that change out of the part
+        /// (<see cref="Section"/>) and logs whatever else differs there.</summary>
+        internal sealed class StatSkip
+        {
+            public string Section { get; }
+            public ZoneStatTarget Target { get; }
+            public string Stat { get; }
+            /// <summary>The curve the stat now holds; null = cleared.</summary>
+            public StatCurve Next { get; }
 
-        internal static string SkipSection => _skipSection;
+            public StatSkip(string section, ZoneStatTarget target, string stat, StatCurve next)
+            {
+                Section = section;
+                Target = target;
+                Stat = stat;
+                Next = next;
+            }
+        }
 
-        internal static void SetSkipSection(string sectionKey) => _skipSection = sectionKey;
+        // A stat edit logs its own exact row (old and new curve), so the save it triggers must not ALSO log that change inside the whole
+        // zone it touched. Set by ZoneStatEditor inside the mutate (same thread as the save); every other change is still logged.
+        [ThreadStatic] private static StatSkip _skipSection;
 
-        internal static IDisposable StatEditOn(string sectionKey)
+        internal static StatSkip SkipSection => _skipSection;
+
+        internal static void SetSkipSection(StatSkip skip) => _skipSection = skip;
+
+        internal static IDisposable StatEditOn(StatSkip skip)
         {
             var previous = _skipSection;
-            _skipSection = sectionKey;
+            _skipSection = skip;
             return new Restore(() => _skipSection = previous);
         }
 
@@ -126,12 +145,12 @@ namespace ACE.Server.Managers.ZoneControl
             public string NewJson { get; init; }
         }
 
-        /// <summary>Logs the parts one save changed, as one batch. Portal edits write on the request thread (so a revert can say when
-        /// the log missed it); game and server saves write in the background, like stat edits.</summary>
-        internal static bool RecordSections(IReadOnlyList<SectionChange> changes, ZoneStatActor actor, long? revertsId, string reason = null, string batchId = null)
+        /// <summary>Logs the parts one save changed, as one batch, all rows in one transaction. Never waits: callers hold the manager
+        /// lock. The task says whether the rows were written (see <see cref="Outcome"/> and <see cref="TrackWrites"/>).</summary>
+        internal static Task<bool> RecordSections(IReadOnlyList<SectionChange> changes, ZoneStatActor actor, long? revertsId, string reason = null, string batchId = null)
         {
             if (changes == null || changes.Count == 0)
-                return true;
+                return Task.FromResult(true);
             var batch = batchId ?? (changes.Count > 1 ? Guid.NewGuid().ToString("N") : null);
             var rows = changes.Select(c => new ZoneControlChange
             {
@@ -150,31 +169,59 @@ namespace ACE.Server.Managers.ZoneControl
                 BatchId = batch,
             }).ToList();
 
-            return Write(rows, wait: actor?.Source == ZoneStatActor.SourcePortal);
+            return Write(rows);
         }
 
-        // ORDERED WRITER (review 2026-11-12): every row goes through ONE queue drained by ONE thread, so rows reach the table - and get
-        // their ids and timestamps - in the order the saves were made. Revert all and the History chain checks read id order as edit
+        // ORDERED WRITER (review 2026-11-12): every save's rows go through ONE queue drained by ONE thread, so rows reach the table - and
+        // get their ids and timestamps - in the order the saves were made. Revert all and the History chain checks read id order as edit
         // order; separate Task.Run inserts could swap two quick edits. Callers enqueue under the manager lock (saves hold it), so
-        // enqueue order is save order. Portal callers wait for their rows, so the page can say when the log missed one.
-        private static readonly BlockingCollection<(ZoneControlChange Row, TaskCompletionSource<bool> Done)> _queue =
-            new BlockingCollection<(ZoneControlChange, TaskCompletionSource<bool>)>();
+        // enqueue order is save order. One queue item per save, written in ONE transaction (review 2026-11-19): History never shows half
+        // a save (a rename's removal without its creation). Nobody waits under the manager lock (review 2026-11-19: a slow shard DB
+        // held every Zone Control reader for up to 15 s); portal requests wait after their work, outside it (TrackWrites).
+        private static readonly BlockingCollection<(List<ZoneControlChange> Rows, TaskCompletionSource<bool> Done)> _queue =
+            new BlockingCollection<(List<ZoneControlChange>, TaskCompletionSource<bool>)>();
         private static readonly object _writerLock = new object();
         private static Thread _writer;
         private static readonly TimeSpan PortalWait = TimeSpan.FromSeconds(15);
 
-        private static bool Write(IReadOnlyList<ZoneControlChange> rows, bool wait)
+        // the writes a portal request queued, so it can wait for them once it has let go of the manager lock
+        private static readonly AsyncLocal<List<Task<bool>>> _tracked = new AsyncLocal<List<Task<bool>>>();
+
+        private static Task<bool> Write(IReadOnlyList<ZoneControlChange> rows)
         {
             EnsureWriter();
-            var done = wait ? rows.Select(_ => new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously)).ToList() : null;
-            for (var i = 0; i < rows.Count; i++)
-                _queue.Add((rows[i], done?[i]));
-            if (!wait)
-                return true;
-            // wait for every row (never stop at the first failure: the rest of the batch is still written)
-            var tasks = done.Select(d => d.Task).ToArray();
-            return Task.WaitAll(tasks, PortalWait) && tasks.All(t => t.Result);
+            var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _queue.Add((rows.ToList(), done));
+            var tracked = _tracked.Value;
+            if (tracked != null)
+                lock (tracked)
+                    tracked.Add(done.Task);
+            return done.Task;
         }
+
+        /// <summary>Every change log write queued inside the using block (on this request's flow) is remembered for <see cref="WaitTracked"/>.</summary>
+        public static IDisposable TrackWrites()
+        {
+            var previous = _tracked.Value;
+            _tracked.Value = new List<Task<bool>>();
+            return new Restore(() => _tracked.Value = previous);
+        }
+
+        /// <summary>Waits (up to 15 s) for the writes queued since <see cref="TrackWrites"/>. True when every one was written. Call it
+        /// only outside the manager lock.</summary>
+        public static bool WaitTracked()
+        {
+            var tracked = _tracked.Value;
+            if (tracked == null)
+                return true;
+            Task<bool>[] tasks;
+            lock (tracked)
+                tasks = tracked.ToArray();
+            return tasks.Length == 0 || (Task.WaitAll(tasks, PortalWait) && tasks.All(t => t.Result));
+        }
+
+        /// <summary>Whether one write landed: waits up to 15 s. Null (nothing to write) counts as written. Never call it under the manager lock.</summary>
+        public static bool Outcome(Task<bool> write) => write == null || (write.Wait(PortalWait) && write.Result);
 
         private static void EnsureWriter()
         {
@@ -184,8 +231,13 @@ namespace ACE.Server.Managers.ZoneControl
                 if (_writer != null) return;
                 _writer = new Thread(() =>
                 {
-                    foreach (var (row, done) in _queue.GetConsumingEnumerable())
-                        done?.TrySetResult(TryInsert(row));
+                    // every item is written and completed, whether anyone waits for it or not (review 2026-11-19: a null-conditional
+                    // call used to skip the insert itself for game and console edits)
+                    foreach (var (rows, done) in _queue.GetConsumingEnumerable())
+                    {
+                        var ok = TryInsertAll(rows);
+                        done.TrySetResult(ok);
+                    }
                 })
                 { IsBackground = true, Name = "ZoneControl change log" };
                 _writer.Start();
@@ -221,9 +273,8 @@ namespace ACE.Server.Managers.ZoneControl
             return text.Length == 0 ? null : text;
         }
 
-        /// <summary>Portal edits write on the request thread, so the page can say when the log missed one. Everything else writes in the
-        /// background: a command runs on a game thread, which must not wait on this table.</summary>
-        internal static bool Record(ZoneStatTarget target, string stat, StatCurve oldCurve, StatCurve newCurve, ZoneStatActor actor, long? revertsId,
+        /// <summary>Queues one stat change. Never waits (callers hold the manager lock); the task says whether it was written.</summary>
+        internal static Task<bool> Record(ZoneStatTarget target, string stat, StatCurve oldCurve, StatCurve newCurve, ZoneStatActor actor, long? revertsId,
             string reason = null, string batchId = null)
         {
             var change = new ZoneControlChange
@@ -245,21 +296,42 @@ namespace ACE.Server.Managers.ZoneControl
             if (change.BatchId != null && change.BatchId.Length > BatchIdMaxLength)
                 change.BatchId = change.BatchId.Substring(0, BatchIdMaxLength);
 
-            return Write(new[] { change }, wait: change.Source == ZoneStatActor.SourcePortal);
+            return Write(new[] { change });
         }
 
         internal static string WriteCurve(StatCurve curve) => curve == null ? null : JsonConvert.SerializeObject(curve);
 
         internal static StatCurve ReadCurve(string json) => string.IsNullOrEmpty(json) ? null : JsonConvert.DeserializeObject<StatCurve>(json);
 
-        private static bool TryInsert(ZoneControlChange c)
+        /// <summary>One save's rows in one transaction: all of them land, or none (and the error is logged).</summary>
+        private static bool TryInsertAll(List<ZoneControlChange> rows)
         {
+            if (rows.Count == 0)
+                return true;
             try
             {
                 EnsureSchema();
                 using var ctx = new ShardDbContext();
                 var con = Open(ctx);
+                using var tx = con.BeginTransaction();
+                foreach (var c in rows)
+                    Insert(con, tx, c);
+                tx.Commit();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                var c = rows[0];
+                log.Error($"[ZoneControl] change log write failed ({rows.Count} row(s), none written): {c.Actor} {c.Stat} on {c.Zone ?? "v" + c.Variation}: {ex.GetBaseException().Message}");
+                return false;
+            }
+        }
+
+        private static void Insert(DbConnection con, DbTransaction tx, ZoneControlChange c)
+        {
+            {
                 using var cmd = NewCommand(con);
+                cmd.Transaction = tx;
                 cmd.CommandText = @"
 INSERT INTO zone_control_change_log (changed_at, actor, source, zone_name, variation, wcid, rank_key, stat, old_curve, new_curve, reverts_id, kind, reason, batch_id, section, old_json, new_json)
 VALUES (UTC_TIMESTAMP(), @actor, @source, @zone, @variation, @wcid, @rank, @stat, @old, @new, @reverts, @kind, @reason, @batch, @section, @oldjson, @newjson)";
@@ -280,12 +352,6 @@ VALUES (UTC_TIMESTAMP(), @actor, @source, @zone, @variation, @wcid, @rank, @stat
                 AddParam(cmd, "@oldjson", c.OldJson);
                 AddParam(cmd, "@newjson", c.NewJson);
                 cmd.ExecuteNonQuery();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                log.Error($"[ZoneControl] change log write failed: {c.Actor} {c.Stat} on {c.Zone ?? "v" + c.Variation}: {ex.GetBaseException().Message}");
-                return false;
             }
         }
 

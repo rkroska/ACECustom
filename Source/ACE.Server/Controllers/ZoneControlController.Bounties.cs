@@ -194,6 +194,42 @@ namespace ACE.Server.Web.Controllers
             };
         }
 
+        /// <summary>
+        /// Bounty Items' drop chance per tier: bounty_odds on each T11-T25 Default row, read the same way the stats page reads one row
+        /// (what is stored there, what is in effect after the v11 anchor, where it comes from, a toggle). One request instead of 15
+        /// whole stats reads (review 2026-11-19).
+        /// </summary>
+        [HttpGet("bounties/odds")]
+        public IActionResult GetTierBountyOdds()
+        {
+            if (!HasPortalAccess(PortalPages.ZoneControl))
+                return Forbid();
+            return Run(() =>
+            {
+                var stat = ACE.Server.Managers.ZoneScaling.ZoneStat.BountyOdds;
+                var tiers = Enumerable.Range(ItemBounties.MinTier, ItemBounties.MaxTier - ItemBounties.MinTier + 1).Select(v =>
+                {
+                    var target = ZoneStatTarget.ForDefault(v, ACE.Server.Managers.ZoneScaling.ZcRank.None);
+                    var authored = ReadRow(target, out var tier) ?? new Dictionary<string, ACE.Server.Managers.ZoneScaling.StatCurve>();
+                    authored.TryGetValue(stat, out var curve);
+                    var eval = ZoneControlManager.EvaluateDefaultForDisplay(v, ACE.Server.Managers.ZoneScaling.ZcRank.None);
+                    var inEffect = eval?.Values != null && eval.Values.ContainsKey(stat);
+                    var source = ZoneControlManager.ResolveDefaultStatSource(v, ACE.Server.Managers.ZoneScaling.ZcRank.None, stat);
+                    return new
+                    {
+                        Variation = v,
+                        Value = curve?.Base,
+                        Revision = ZoneStatExpectation.RevisionOf(curve),
+                        Curved = curve != null && (curve.Growth != 1.0 || curve.Additive || curve.Overrides is { Count: > 0 }),
+                        Effective = inEffect ? eval.GetT(stat, 0, tier) : (double?)null,
+                        Source = source,
+                        ToggledOff = !inEffect && source != null && IsTurnedOff(target, stat),
+                    };
+                }).ToList();
+                return Ok(new { Tiers = tiers });
+            }, "bounty odds");
+        }
+
         private static readonly Lazy<object[]> CreatureTypeChoices = new(() => Enum.GetValues<ACE.Entity.Enum.CreatureType>()
             .Where(c => (int)c > 0)
             .Select(c => (object)new { Id = (int)c, Name = ACE.Server.Entity.GearEssences.SpeciesName(c) })
@@ -256,6 +292,8 @@ namespace ACE.Server.Web.Controllers
             public double? Minutes { get; set; }
             public int? MinQb { get; set; }
             public int? Odds { get; set; }
+            /// <summary>itemodds: the odds the page showed (0 = none). Refused when the region holds something else now; null = not checked.</summary>
+            public int? ExpectedOdds { get; set; }
             public string Reason { get; set; }
         }
 
@@ -286,7 +324,16 @@ namespace ACE.Server.Web.Controllers
                     var odds = request.Odds ?? -1;
                     if (odds < 0 || odds > BountyConfig.MaxItemBountyOdds)
                         return BadRequest(new { Message = $"Item bounty odds: 1 in N kills, N from 1 to {BountyConfig.MaxItemBountyOdds:N0}; 0 = none drop." });
-                    change = c => { oddsBefore = c.ItemBountyOdds; c.ItemBountyOdds = odds; return null; };
+                    var expectedOdds = request.ExpectedOdds;
+                    change = c =>
+                    {
+                        // like a tier's drop chance: a page left open never overwrites another admin's newer change (review 2026-11-19)
+                        if (expectedOdds.HasValue && c.ItemBountyOdds != expectedOdds.Value)
+                            return $"the drop chance changed since you loaded it: it is now {OddsText(c.ItemBountyOdds)}. Nothing was changed.";
+                        oddsBefore = c.ItemBountyOdds;
+                        c.ItemBountyOdds = odds;
+                        return null;
+                    };
                 }
 
                 using (ZoneControlChangeLog.ActingAs(actor))

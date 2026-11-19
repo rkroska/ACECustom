@@ -1701,7 +1701,9 @@ namespace ACE.Server.Managers
         public static void InvalidateDropTable() => _dropTableBuiltAt = double.NegativeInfinity;
 
         /// <summary>The background read in flight or last finished (/bounty droptable waits for it).</summary>
-        private static System.Threading.Tasks.Task _dropTableBuild = System.Threading.Tasks.Task.CompletedTask;
+        private static volatile System.Threading.Tasks.Task _dropTableBuild = System.Threading.Tasks.Task.CompletedTask;
+        /// <summary>A count of drop table reads started, so "Re-read now" can tell a read it started from one already running.</summary>
+        private static long _dropTableBuildsStarted;
 
         /// <summary>
         /// The droppable bounties: every world weenie with an ItemBountyDropWeight, and every one Zone Control gives a weight,
@@ -1714,6 +1716,7 @@ namespace ACE.Server.Managers
             if (now - _dropTableBuiltAt > DropTableRefreshSeconds && Interlocked.Exchange(ref _dropTableBuilding, 1) == 0)
             {
                 _dropTableBuiltAt = now;
+                Interlocked.Increment(ref _dropTableBuildsStarted);
                 _dropTableBuild = System.Threading.Tasks.Task.Run(BuildDropTable);
             }
             return _dropTable;
@@ -2069,14 +2072,21 @@ namespace ACE.Server.Managers
         public static bool RefreshNow()
         {
             var wait = TimeSpan.FromSeconds(30);
-            try { _dropTableBuild.Wait(wait); } catch (Exception) { /* a failed read was logged; read again below */ }
             foreach (var id in BountyWeenieIdsFromDb().Union(ZoneControlManager.BountyPlaceWeightSnapshot().Keys))
                 ACE.Database.DatabaseManager.World.ClearCachedWeenie(id);
             // and the Bounty Ledger's weenie, so a ledger SQL imported after a lookup missed is seen without @clearcache
             if (LedgerWcid != 0)
                 ACE.Database.DatabaseManager.World.ClearCachedWeenie(LedgerWcid);
+
+            // A read already running may have taken its weenies before the clear above: let it finish, then start a NEW read, which
+            // can only see fresh copies. Success means that new read finished (review 2026-11-19: waiting on the running read alone
+            // reported "re-read" while the table still held the old terms).
+            var startedBefore = Interlocked.Read(ref _dropTableBuildsStarted);
+            try { _dropTableBuild.Wait(wait); } catch (Exception) { /* a failed read was logged; read again below */ }
             InvalidateDropTable();
             DropTable();
+            if (Interlocked.Read(ref _dropTableBuildsStarted) == startedBefore)
+                return false;   // the earlier read is still running (it did not finish in 30 s), so no fresh read could start
             try { return _dropTableBuild.Wait(wait); }
             catch (Exception ex) { log.Warn($"[ItemBounty] refresh: the read failed ({ex.Message})"); return false; }
         }
@@ -2294,7 +2304,17 @@ namespace ACE.Server.Managers
                     case "on": set.Off = false; break;
                     case "reset": set.Off = false; set.Places.Clear(); break;
                     case "clear": foreach (var x in places) set.Places.Remove(x); break;
-                    default: foreach (var x in places) set.Places[x] = value.Value; break;
+                    default:
+                        foreach (var x in places)
+                        {
+                            // 0 where its own weenie gives it no share anyway is the same as no Zone Control weight: store nothing, so
+                            // "remove from here" on a place it was only added to leaves no stray 0 behind (review 2026-11-19)
+                            if (value.Value == 0 && WeightAt(entry.Value, x, null) == 0)
+                                set.Places.Remove(x);
+                            else
+                                set.Places[x] = value.Value;
+                        }
+                        break;
                 }
                 return null;
             }, out var before, out _);
