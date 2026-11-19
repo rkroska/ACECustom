@@ -434,7 +434,13 @@ namespace ACE.Server.Command.Handlers
                 if (lumAugSkillCredits.TryGetValue(player.Guid.Full, out var lumSkillCredits))
                     questCredits += lumSkillCredits;
 
-                var totalCredits = startCredits + levelCredits + questCredits;
+                // a skill credit for each Specialized Skill Augmentation already paid (augs bought before then are paid at the next login)
+                var specAugCredits = (int)Math.Clamp(player.GetProperty(PropertyInt64.SpecAugSkillCreditsGranted) ?? 0, 0, int.MaxValue);
+
+                // each Specialized Skill Augmentation also raises the specialization limit by 1
+                var specLimit = 70 + Math.Max(0, player.GetProperty(PropertyInt64.LumAugSpecializeCount) ?? 0);
+
+                var totalCredits = startCredits + levelCredits + questCredits + specAugCredits;
 
                 //Console.WriteLine($"{player.Name} (0x{player.Guid}) Heritage: {heritage}, Level: {player.Level}, Base Credits: {startCredits}, Additional Level Credits: {levelCredits}, Quest Credits: {questCredits}, Total Skill Credits: {totalCredits}");
 
@@ -499,12 +505,12 @@ namespace ACE.Server.Command.Handlers
                     continue;
                 }
 
-                if (specCreditsSpent > 70)
+                if (specCreditsSpent > specLimit)
                 {
                     // if the player has already spent more skill credits than they should have,
                     // unfortunately this situation requires a partial reset..
 
-                    Console.WriteLine($"{player.Name} (0x{player.Guid}) has spent {specCreditsSpent} skill credits on specialization, {specCreditsSpent - 70} over the limit of 70. To fix this situation, specialized skill reset will need to be applied{fixStr}");
+                    Console.WriteLine($"{player.Name} (0x{player.Guid}) has spent {specCreditsSpent} skill credits on specialization, {specCreditsSpent - specLimit} over the limit of {specLimit}. To fix this situation, specialized skill reset will need to be applied{fixStr}");
                     foundIssues = true;
 
                     if (fix)
@@ -551,6 +557,10 @@ namespace ACE.Server.Command.Handlers
 
         public static int GetAdditionalCredits(int level)
         {
+            // past the table, a credit every 5th level (Player.CheckForLevelup): 46 at 275, 47 at 280, ...
+            if (level >= 275)
+                return 46 + (level - 275) / 5;
+
             foreach (var kvp in AdditionalCredits.Reverse())
                 if (level >= kvp.Key)
                     return kvp.Value;

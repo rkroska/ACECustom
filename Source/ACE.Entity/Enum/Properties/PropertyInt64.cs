@@ -85,6 +85,12 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         BankedEnlightenmentTokens = 50602,
         /// <summary>
+        /// Server-only (no SendOnLogin): the skill credits already given for Specialized Skill Augmentations (LumAugSpecializeCount),
+        /// one per aug (owner 2026-11-19). Augs bought before credits came with them are paid at the next login
+        /// (Player.GrantSpecAugSkillCredits). 50603, free in EVERY Property enum.
+        /// </summary>
+        SpecAugSkillCreditsGranted = 50603,
+        /// <summary>
         /// Triune earning (owner 2026-11-01), on a CHARACTER: the start of the week its Triune kill count belongs to (Unix
         /// seconds of the last weekly reset). A kill in a newer week resets the count. 50650, free in EVERY Property enum.
         /// </summary>

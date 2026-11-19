@@ -207,6 +207,7 @@ namespace ACE.Server.Command.Handlers
             player.LuminanceAugmentVoidCount = 0;
             player.LuminanceAugmentSpellDurationCount = 0;
             player.LuminanceAugmentSpecializeCount = 0;
+            player.SpecAugSkillCreditsGranted = 0;   // the skill credits were reset above, the spec aug credits with them
             player.LuminanceAugmentSummonCount = 0;
             player.LuminanceAugmentMeleeCount = 0;
             player.LuminanceAugmentMissileCount = 0;
@@ -378,6 +379,10 @@ namespace ACE.Server.Command.Handlers
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.LumAugSummonCount, player.LuminanceAugmentSummonCount ?? 0));
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.LumAugMeleeCount, player.LuminanceAugmentMeleeCount ?? 0));
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.LumAugMissileCount, player.LuminanceAugmentMissileCount ?? 0));
+
+            // a skill credit for each Specialized Skill Augmentation not paid yet
+            if (player.GrantSpecAugSkillCredits() > 0)
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));
         }
 
         /// <summary>/testchar set|apply|save — the Admin > Character tab's Apply batch

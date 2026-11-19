@@ -3445,8 +3445,14 @@ namespace ACE.Server.WorldObjects.Managers
                                                 return;
                                             }
 
-                                            // Apply the augmentations
-                                            player.LuminanceAugmentSpecializeCount = specAugs + augCount;
+                                            // Apply the augmentations, to the live count: another gem confirmed while this prompt was
+                                            // open must not be overwritten (it would take that gem's augs and skill credits away)
+                                            player.LuminanceAugmentSpecializeCount = (player.LuminanceAugmentSpecializeCount ?? 0) + augCount;
+
+                                            // each aug also gives a skill credit
+                                            var creditsGiven = player.GrantSpecAugSkillCredits();
+                                            if (creditsGiven > 0)
+                                                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));
 
                                             // Consume the correct item based on augCount
                                             int itemId = augCount == 1 ? 300021 :
@@ -3457,8 +3463,8 @@ namespace ACE.Server.WorldObjects.Managers
                                             if (itemId != 0)
                                                 player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
-                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Max Specialized Skill Credits by {augCount}.", ChatMessageType.Broadcast));
-                                        }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your max specialized skill credits. Are you sure?");
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Max Specialized Skill Credits by {augCount} and gained {creditsGiven} skill credits.", ChatMessageType.Broadcast));
+                                        }), $"You are about to spend {totalCost:N0} luminance to add {augCount} to your max specialized skill credits and gain {augCount} skill credits. Are you sure?");
                                     }
                                 }
                                 break;

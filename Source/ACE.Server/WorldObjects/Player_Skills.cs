@@ -617,6 +617,36 @@ namespace ACE.Server.WorldObjects
             return !AlwaysTrained.Contains(skill);
         }
 
+        /// <summary>
+        /// Each Specialized Skill Augmentation (LuminanceAugmentSpecializeCount) raises the specialization limit by 1 and gives 1 skill credit.
+        /// Gives the credits not given yet - at purchase, and at login for augs bought before credits came with them - and returns
+        /// how many. The caller tells the client.
+        /// </summary>
+        public int GrantSpecAugSkillCredits()
+        {
+            var granted = Math.Max(0, SpecAugSkillCreditsGranted ?? 0);
+            var owed = SpecAugSkillCreditsOwed(LuminanceAugmentSpecializeCount ?? 0, granted);
+
+            if (owed == 0)
+                return 0;
+
+            AvailableSkillCredits = (AvailableSkillCredits ?? 0) + owed;
+            TotalSkillCredits = (TotalSkillCredits ?? 0) + owed;
+            SpecAugSkillCreditsGranted = granted + owed;
+
+            return owed;
+        }
+
+        /// <summary>
+        /// The skill credits still owed for Specialized Skill Augmentations: augs bought minus credits given, never negative
+        /// </summary>
+        internal static int SpecAugSkillCreditsOwed(long specAugCount, long creditsGranted)
+        {
+            var owed = specAugCount - Math.Max(0, creditsGranted);
+
+            return owed <= 0 ? 0 : (int)Math.Min(owed, int.MaxValue);
+        }
+
         public bool IsSkillSpecializedViaAugmentation(Skill skill, out bool playerHasAugmentation)
         {
             playerHasAugmentation = false;
