@@ -968,6 +968,10 @@ namespace ACE.Entity.Enum.Properties
         /// when enlightening lowers the level to enl_keeps_level_up_to, so leveling back up does not give them again; cleared by
         /// the full enlightenment reset, which rebuilds the credit pool. 50604, free in EVERY Property enum.</summary>
         SkillCreditsGivenThroughLevel = 50604,
+        /// <summary>Server-only (owner 2026-11-19): 1 after the character used a Level Retention Stone; its next enlightenment keeps
+        /// the level (up to enl_keeps_level_up_to) instead of returning it to 1, and removes the mark (a full reset leaves it).
+        /// 50605, free in EVERY Property enum.</summary>
+        LevelRetentionPending = 50605,
         /// <summary>School gems past the cap (owner 2026-11-01): the tier an earned school gem dropped in. Its ceiling is
         /// TriuneEarning.GemCeiling(tier). 50651, free in EVERY Property enum.</summary>
         EarnedGemTier = 50651,

@@ -91,6 +91,13 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Level Retention Stone: its own checks and Yes/No; one is used up on Yes (Enlightenment.UseLevelRetentionStone)
+            if (WeenieClassId == Enlightenment.LevelRetentionStoneWcid)
+            {
+                Enlightenment.UseLevelRetentionStone(player);
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(UseSendsSignal))
             {
                 player.CurrentLandblock?.EmitSignal(player, UseSendsSignal);
