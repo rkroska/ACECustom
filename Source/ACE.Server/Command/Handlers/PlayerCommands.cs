@@ -1318,25 +1318,21 @@ namespace ACE.Server.Command.Handlers
             }
             // Enlightenment spends only its luminance cost and keeps unspent experience, so neither is promised away here.
             // The rest follows Enlightenment.HandleEnlightenment: dequip, leave the fellowship (and the society while
-            // enl_removes_society is on), return to the lifestone, dispel.
-            // Level and skills: kept from Enlightenment enl_keeps_level_and_skills_from on (Enlightenment.ResetsLevelAndSkills).
-            // Kept levels stop at enl_keeps_level_up_to (Enlightenment.KeptLevel; 0 = no limit).
-            // The ritual gets the outcome promised here and stops, before spending anything, if it no longer holds.
+            // enl_removes_society is on), return to the lifestone, dispel, reset skills. The level returns to 1 unless a Level
+            // Retention Stone was used (Enlightenment.PlannedOutcome); the ritual gets the outcome promised here and stops,
+            // before spending anything, if it no longer holds.
             var outcome = Enlightenment.PlannedOutcome(session.Player);
             var keepUpTo = ServerConfig.enl_keeps_level_up_to.Value;
             var upTo = keepUpTo > 0 ? $", up to level {keepUpTo}" : "";
-            var unlockNote = ServerConfig.enl_resets_level_and_skills.Value
-                ? ""
-                : $" (from Enlightenment {ServerConfig.enl_keeps_level_and_skills_from.Value} on, enlightening keeps your skills, and a Level Retention Stone keeps your level{upTo})";
-            var keeps = outcome.ResetsLevelAndSkills
-                ? $"Your level will return to 1 and your skills to their base state{unlockNote}. You will keep your attributes and unspent experience.{(session.Player.LevelRetentionPending ? " Your Level Retention Stone cannot help with this enlightenment and stays ready for the next one." : "")}"
-                : !session.Player.LevelRetentionPending
-                    ? $"Your level will return to 1. You will keep your skills, skill credits, attributes and unspent experience. (Use a Level Retention Stone first to keep your level{upTo}.)"
-                    : outcome.LevelDropsTo.HasValue
-                        ? $"Your Level Retention Stone keeps your level{upTo}: your level will drop to {outcome.LevelDropsTo.Value}. You will keep your skills, skill credits, attributes and unspent experience."
-                        : "Your Level Retention Stone keeps your level. You will keep your level, skills, attributes and unspent experience.";
+            var level = !outcome.KeepsLevel
+                ? session.Player.Enlightenment >= ServerConfig.enl_level_retention_from.Value
+                    ? $"Your level will return to 1 (use a Level Retention Stone first to keep your level{upTo})."
+                    : "Your level will return to 1."
+                : outcome.LevelDropsTo.HasValue
+                    ? $"Your Level Retention Stone keeps your level{upTo}: your level will drop to {outcome.LevelDropsTo.Value}."
+                    : "Your Level Retention Stone keeps your level.";
             var leaves = ServerConfig.enl_removes_society.Value ? "your fellowship and your society" : "your fellowship";
-            var message = $"Are you certain that you'd like to Enlighten? {keeps} Your equipment will be unequipped and your enchantments dispelled, you will leave {leaves}, and you will return to your lifestone.";
+            var message = $"Are you certain that you'd like to Enlighten? {level} Your skills will return to their base state and your skill credits will be recalculated. You will keep your attributes and unspent experience. Your equipment will be unequipped and your enchantments dispelled, you will leave {leaves}, and you will return to your lifestone.";
             void onResponse(bool response, bool _) { if (response) { Enlightenment.HandleEnlightenment(session.Player, outcome); } }
             var confirm = session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, onResponse), message);
 

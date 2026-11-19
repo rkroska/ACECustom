@@ -1,10 +1,13 @@
-/* Level Retention Stone (98760530): from Enlightenment 50 (enl_keeps_level_and_skills_from) enlightening keeps skills,
-   specializations and skill credits but returns the level to 1. Using one of these stones first makes the NEXT enlightenment
-   keep the level too, up to level 700 (enl_keeps_level_up_to); that enlightenment removes the mark, so every enlightenment
-   needs a new stone. Using it asks Yes/No and is refused below Enlightenment 50 or when the next enlightenment is already
-   covered; one stone is used up on Yes. Stackable, Bonded (kept on death), Sticky Attuned (no trading, giving or dropping,
-   not even to NPCs that take anything), unsellable (Attuned alone does not stop vendors buying it), never expires. Value 25,000,000 pyreals = 100 MMD (a vendor with SellPrice 1.0 charges exactly that; the vendor is not
-   part of this file).
+/* Level Retention Stone (98760530): using one at Enlightenment 50 or higher (enl_level_retention_from) makes the character's
+   NEXT enlightenment keep its level instead of returning it to 1, up to level 700 (enl_keeps_level_up_to); above 700 the
+   level drops to 700. It only keeps the level: skills still reset, and the skill credit pool is rebuilt for the kept level.
+   That enlightenment removes the mark, so every enlightenment needs a new stone. Using it asks Yes/No and is refused below
+   Enlightenment 50 or when the next enlightenment is already covered; one stone is used up on Yes.
+   Stacks to 1,000. Bonded (kept on death), Sticky Attuned (no trading, giving or dropping, not even to NPCs that take
+   anything), unsellable (Attuned alone does not stop vendors buying it), never expires.
+   Value 100: priced in MMD notes. A vendor whose AlternateCurrency is the MMD note (20630) and whose SellPrice is 1.0
+   charges 100 MMD a stone, from MMD notes in the pack first, then banked pyreals. A pyreal Value of 25,000,000 would
+   overflow the int Value of a stack past 85 stones. The vendor is not part of this file.
    Code: Enlightenment.UseLevelRetentionStone / LevelRetentionStoneWcid, hooked in Gem.ActOnUse; the mark is
    PropertyInt.LevelRetentionPending (50605).
    Built like the Enlarging / Shrinking Stones (2026-10-10-00-Size-Stones.sql) and the Deedkeeper's Writ
@@ -20,23 +23,24 @@ INSERT INTO weenie_properties_bool (object_Id, type, value)
 VALUES (98760530, 11, 1)  /* IgnoreCollisions */
      , (98760530, 13, 1)  /* Ethereal */
      , (98760530, 14, 1)  /* GravityStatus */
-     , (98760530, 69, 0); /* IsSellable - False: some vendors buy gems at full or double Value */
+     , (98760530, 69, 0); /* IsSellable - False */
 
 DELETE FROM weenie_properties_int WHERE object_Id = 98760530;
 INSERT INTO weenie_properties_int (object_Id, type, value)
-VALUES (98760530,   1,     2048)  /* ItemType - Gem */
-     , (98760530,   5,        5)  /* EncumbranceVal */
-     , (98760530,   8,        5)  /* Mass */
-     , (98760530,  11,       50)  /* MaxStackSize - 50 x 25M = 1.25B, under the int stack Value limit */
-     , (98760530,  12,        1)  /* StackSize */
-     , (98760530,  13,        5)  /* StackUnitEncumbrance */
-     , (98760530,  14,        5)  /* StackUnitMass */
-     , (98760530,  16,        8)  /* ItemUseable - Contained (used from the packs) */
-     , (98760530,  18,        1)  /* UiEffects - Magical */
-     , (98760530,  19, 25000000)  /* Value - 25,000,000 Pyreals (100 MMD) */
-     , (98760530,  33,        1)  /* Bonded - kept on death */
-     , (98760530,  93,     1044)  /* PhysicsState - Ethereal, IgnoreCollisions, Gravity */
-     , (98760530, 114,        2); /* Attuned - Sticky: no trade, give, sell or drop */
+VALUES (98760530,   1, 2048)  /* ItemType - Gem */
+     , (98760530,   5,    1)  /* EncumbranceVal */
+     , (98760530,   8,    1)  /* Mass */
+     , (98760530,  11, 1000)  /* MaxStackSize */
+     , (98760530,  12,    1)  /* StackSize */
+     , (98760530,  13,    1)  /* StackUnitEncumbrance - a full stack of 1,000 weighs 1,000 */
+     , (98760530,  14,    1)  /* StackUnitMass */
+     , (98760530,  15,  100)  /* StackUnitValue */
+     , (98760530,  16,    8)  /* ItemUseable - Contained (used from the packs) */
+     , (98760530,  18,    1)  /* UiEffects - Magical */
+     , (98760530,  19,  100)  /* Value - 100 (MMD notes at the stone's vendor) */
+     , (98760530,  33,    1)  /* Bonded - kept on death */
+     , (98760530,  93, 1044)  /* PhysicsState - Ethereal, IgnoreCollisions, Gravity */
+     , (98760530, 114,    2); /* Attuned - Sticky: no trade, give, sell or drop */
 
 DELETE FROM weenie_properties_d_i_d WHERE object_Id = 98760530;
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value)
@@ -46,7 +50,7 @@ VALUES (98760530,  1,   33556407) /* Setup (0x020007B7) - stone */
 DELETE FROM weenie_properties_string WHERE object_Id = 98760530;
 INSERT INTO weenie_properties_string (object_Id, type, value)
 VALUES (98760530,  1, 'Level Retention Stone')
-     , (98760530, 14, 'Use this stone at Enlightenment 50 or higher, and your next enlightenment keeps your level (up to level 700) instead of returning it to 1. One stone covers one enlightenment.')
+     , (98760530, 14, 'Use this stone at Enlightenment 50 or higher, and your next enlightenment keeps your level (up to level 700) instead of returning it to 1. Your skills still reset. One stone covers one enlightenment.')
      , (98760530, 15, 'A smooth, heavy stone that holds on to what you have earned.')
-     , (98760530, 16, 'A smooth, heavy stone that holds on to what you have earned. Used before you enlighten, it keeps your level through the ritual, up to level 700.')
+     , (98760530, 16, 'A smooth, heavy stone that holds on to what you have earned. Used before you enlighten, it keeps your level through the ritual, up to level 700. It does not keep your skills.')
      , (98760530, 20, 'Level Retention Stones');

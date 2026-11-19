@@ -204,17 +204,8 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// The highest level whose level-up skill credits the character already has (set when enlightening lowers the level)
-        /// </summary>
-        public int? SkillCreditsGivenThroughLevel
-        {
-            get => GetProperty(PropertyInt.SkillCreditsGivenThroughLevel);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt.SkillCreditsGivenThroughLevel); else SetProperty(PropertyInt.SkillCreditsGivenThroughLevel, value.Value); }
-        }
-
-        /// <summary>
         /// True after the character used a Level Retention Stone: its next enlightenment keeps the level, and removes the mark
-        /// unless it was a full reset (stored as PropertyInt.LevelRetentionPending = 1)
+        /// (stored as PropertyInt.LevelRetentionPending = 1)
         /// </summary>
         public bool LevelRetentionPending
         {

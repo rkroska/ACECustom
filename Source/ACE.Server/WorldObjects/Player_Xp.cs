@@ -445,13 +445,10 @@ namespace ACE.Server.WorldObjects
             {
                 Level++;
 
-                // a level whose credits the character already has (enlightening lowered its level) gives none again
-                var creditAlreadyGiven = LevelSkillCreditAlreadyGiven(Level ?? 0, SkillCreditsGivenThroughLevel);
-
                 // increase the skill credits if the chart allows this level to grant a credit
                 if (Level <= 274)
                 {
-                    if (xpTable.CharacterLevelSkillCreditList[Level ?? 0] > 0 && !creditAlreadyGiven)
+                    if (xpTable.CharacterLevelSkillCreditList[Level ?? 0] > 0)
                     {
                         AvailableSkillCredits += (int)xpTable.CharacterLevelSkillCreditList[Level ?? 0];
                         TotalSkillCredits += (int)xpTable.CharacterLevelSkillCreditList[Level ?? 0];
@@ -460,7 +457,7 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    if (Level % 5 == 0 && !creditAlreadyGiven) //skill credit every 5th
+                    if (Level % 5 == 0) //skill credit every 5th
                     {
                         AvailableSkillCredits += 1;
                         TotalSkillCredits += 1;
@@ -488,16 +485,15 @@ namespace ACE.Server.WorldObjects
                 if (Level != maxLevel && !creditEarned)
                 {
                     var nextLevelWithCredits = 0;
-
-                    // past the levels whose credits the character already has; the chart through 274, then every 5th level
-                    for (int i = Math.Max(Level ?? 0, SkillCreditsGivenThroughLevel ?? 0) + 1; i <= maxLevel; i++)
+                    
+                    for (int i = (Level ?? 0) + 1; i <= maxLevel; i++)
                     {
-                        if (i <= 274 && xpTable.CharacterLevelSkillCreditList[i] > 0)
+                        if (Level <= 275 && xpTable.CharacterLevelSkillCreditList[i] > 0)
                         {
                             nextLevelWithCredits = i;
                             break;
                         }
-                        else if (i >= 275 && i % 5 == 0)
+                        else if (Level > 275 && i % 5 == 0)
                         {
                             nextLevelWithCredits = i;
                             break;
@@ -521,15 +517,6 @@ namespace ACE.Server.WorldObjects
 
                 Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Advancement), currentCredits);
             }
-        }
-
-        /// <summary>
-        /// True for a level whose level-up skill credits the character already has: enlightening lowered its level
-        /// (enl_keeps_level_up_to) from givenThroughLevel, so leveling back up to it gives none again
-        /// </summary>
-        internal static bool LevelSkillCreditAlreadyGiven(int level, int? givenThroughLevel)
-        {
-            return givenThroughLevel.HasValue && level <= givenThroughLevel.Value;
         }
 
         /// <summary>
