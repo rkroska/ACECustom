@@ -79,7 +79,7 @@ These still live in `Enlightenment.cs` and should behave as before:
 - That enlightenment removes the stone's mark (PropertyInt 50605): the next `/enlighten` without a new stone says the level will return to 1.
 - `enl_keeps_level_up_to` 0: a stone keeps any level. `enl_level_retention_from` 0: any character can use a stone.
 - `/enlighten` prompt: without a stone, the level returns to 1 (and at Enlightenment 50 or higher, to use a stone first); with one, the stone keeps the level, or drops it to 700 above level 700. Skills reset in every case; the society is named only while `enl_removes_society` is on.
-- Confirm `/enlighten` with a stone at level 699 and pass level 700 before the ritual ends (or change `enl_keeps_level_up_to`): it stops before spending luminance or tier items with "What enlightening would do to your level has changed since you confirmed. Nothing was spent. Use /enlighten again to see what it will do now." A stone can't be used while the `/enlighten` box is open or during the ritual.
+- Confirm `/enlighten` with a stone at level 699, then reach level 701 or higher before the ritual ends (or lower `enl_keeps_level_up_to` below the character's level): it stops before spending luminance or tier items with "What enlightening would do to your level has changed since you confirmed. Nothing was spent. Use /enlighten again to see what it will do now." Reaching level 700, or raising `enl_keeps_level_up_to`, keeps the same outcome and does not stop it. A stone can't be used while the `/enlighten` box is open or during the ritual.
 
 ## 6. Runtime reload
 

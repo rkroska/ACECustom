@@ -46,7 +46,7 @@ namespace ACE.Server.Entity
         {
             if (!VerifyRequirements(player)) return;
 
-            if (!ConfirmedOutcomeHolds(player, confirmed)) return;
+            if (!ConfirmedOutcomeHolds(player, confirmed, out _)) return;
 
             player.SendMotionAsCommands(MotionCommand.MarketplaceRecall, MotionStance.NonCombat);
 
@@ -71,8 +71,9 @@ namespace ACE.Server.Entity
                 // Re-validate since 14 seconds have passed.
                 if (!VerifyRequirements(player, isRevalidation: true)) return;
 
-                // and what the player was told still holds (the level can pass enl_keeps_level_up_to while the prompt is open)
-                if (!ConfirmedOutcomeHolds(player, confirmed)) return;
+                // and what the player was told still holds (the level can pass enl_keeps_level_up_to while the prompt is open).
+                // The ritual then carries out this outcome, without reading the settings again.
+                if (!ConfirmedOutcomeHolds(player, confirmed, out var outcome)) return;
 
                 if (!SpendLuminance(player))
                 {
@@ -91,9 +92,9 @@ namespace ACE.Server.Entity
 
                 // A Level Retention Stone keeps the level (up to enl_keeps_level_up_to); each stone covers one enlightenment.
                 // Skills reset either way.
-                if (player.LevelRetentionPending)
+                if (outcome.KeepsLevel)
                 {
-                    RetainLevel(player);
+                    RetainLevel(player, outcome.LevelDropsTo ?? player.Level ?? 1);
                     player.LevelRetentionPending = false;
                 }
                 else
@@ -390,10 +391,11 @@ namespace ACE.Server.Entity
         /// so the credits for levels 2 up to the kept level go back in, as CheckForLevelup gave them on the way up. Leveling
         /// past the kept level again gives the credits above it, as for any character.
         /// </summary>
-        private static void RetainLevel(Player player)
+        /// <param name="plannedLevel">The level of the outcome checked before anything was spent (PlannedOutcome).</param>
+        private static void RetainLevel(Player player, int plannedLevel)
         {
             var level = player.Level ?? 1;
-            var keptLevel = KeptLevel(level, ServerConfig.enl_keeps_level_up_to.Value);
+            var keptLevel = Math.Min(plannedLevel, level);
 
             if (keptLevel < level)
             {
@@ -480,9 +482,12 @@ namespace ACE.Server.Entity
         /// False, with a message, when what the player confirmed no longer holds: the character's level passed
         /// enl_keeps_level_up_to, or the setting changed. Called before anything is spent.
         /// </summary>
-        private static bool ConfirmedOutcomeHolds(Player player, Outcome? confirmed)
+        /// <param name="planned">The outcome now, which the ritual carries out when this returns true.</param>
+        private static bool ConfirmedOutcomeHolds(Player player, Outcome? confirmed, out Outcome planned)
         {
-            if (!confirmed.HasValue || PlannedOutcome(player) == confirmed.Value)
+            planned = PlannedOutcome(player);
+
+            if (!confirmed.HasValue || planned == confirmed.Value)
                 return true;
 
             player.SendMessage("What enlightening would do to your level has changed since you confirmed. Nothing was spent. Use /enlighten again to see what it will do now.", ChatMessageType.Broadcast);
