@@ -1198,6 +1198,21 @@ namespace ACE.Server.WorldObjects.Managers
 
                     break;
 
+                case EmoteType.InqAccountQuest:
+
+                    // ILT custom: InqQuest counted across every character on the player's account, so any content gated on
+                    // InqQuest can be account-locked by switching that step to this one (docs/ACCOUNT_LOCKED_CONTENT_GUIDE.md).
+                    // QuestSuccess = a character on the account has the quest and the account can't solve it yet
+                    // (max solves reached across the account, or the newest completion's timer still running).
+                    if (player != null)
+                    {
+                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message);
+
+                        ExecuteEmoteSet(accountQuestDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+
+                    break;
+
                 case EmoteType.InqMyQuestBitsOff:
                 case EmoteType.InqQuestBitsOff:
 
@@ -4132,6 +4147,7 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 case EmoteType.UpdateQuest:
                 case EmoteType.InqQuest:
+                case EmoteType.InqAccountQuest:
                 case EmoteType.InqQuestSolves:
                 case EmoteType.InqServerQuestSolves:
                 case EmoteType.InqBoolStat:
@@ -4269,6 +4285,16 @@ namespace ACE.Server.WorldObjects.Managers
                 result = result.Replace("%tqm", !string.IsNullOrWhiteSpace(quest) ? QuestManager.GetMaxSolves(questName).ToString() : "");
 
                 result = result.Replace("%tqc", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetCurrentSolves(questName).ToString() : "");
+
+                // ILT custom: %tqt and %tqc for the whole account (InqAccountQuest content). Only read when the text uses them.
+                if (result.Contains("%aqt") || result.Contains("%aqc"))
+                {
+                    var account = !string.IsNullOrWhiteSpace(quest) ? AccountQuestLimits.GetStatus(targetPlayer, questName) : null;
+
+                    result = result.Replace("%aqt", account.HasValue ? account.Value.NextSolveTime.GetFriendlyString() : "");
+
+                    result = result.Replace("%aqc", account.HasValue ? account.Value.Completions.ToString() : "");
+                }
             }
 
             if (source is Creature sourceCreature)
