@@ -42,6 +42,8 @@ The timer runs from the newest completion by any character on the account. `max_
 account's total. `quest_mindelta_rate` scales `min_Delta` exactly as it does for normal quests (quests
 named `ColoArena...` are never scaled).
 
+"Ever" has one gap: a deleted character counts only until it is purged (section 7).
+
 ---
 
 ## 3. Adding it to a weenie SQL file
@@ -153,6 +155,11 @@ objects already in the world keep the emotes they spawned with.
 
 - Every character on the player's login account: online, offline, and deleted but not yet purged.
   Deleting the character that did it does not reset the lock.
+- Purging does. If the server purges deleted characters (`PurgeDeletedCharacters` in the server config,
+  after `PurgeDeletedCharactersDays`, 30 by default), a purged character's stamps go with it. A timed lock
+  has long run out by then, but a once-ever lock (`max_Solves`) opens again for that account: a player
+  could claim, hand the reward to another character, delete the one that claimed it and claim again
+  after the purge. While purging is on, don't use once-ever account locks on rewards worth that.
 - It is the login account, not the computer or IP. Two accounts on one PC are separate.
 - A character that is still logging out counts right away, so swapping characters quickly doesn't slip
   past the lock.
