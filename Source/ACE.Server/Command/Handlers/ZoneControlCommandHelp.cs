@@ -59,7 +59,7 @@ namespace ACE.Server.Command.Handlers
             E("Plugin Sync", "/zonecontrol propsof", "<wcid> <i|f|b|l>:<id>,...", "A weenie's own values for a list of properties (the Props tab's hints)."),
             E("Plugin Sync", "/zonecontrol selinfo", "", "What you have selected in game (wcid, name, creature or not)."),
             E("Plugin Sync", "/zonecontrol findmob", "<text or wcid>", "Search creature weenies by name or id."),
-            E("Plugin Sync", "/zonecontrol help", "[--wire]", "This list. --wire feeds the Chat Commands tab."),
+            E("Plugin Sync", "/zonecontrol help", "[--wire | <stat> | <text>]", "This list. <stat> = what that stat does, how to set it and undo it; <text> filters the list; --wire feeds the Chat Commands tab."),
 
             // ── Stats + ranks ─────────────────────────────────────────────────
             E("Stats", "/zonecontrol set", "<name> <stat> <value> [--wcid <id>] [--rank regular|leader|boss]", "Author a stat on the zone, one monster's bucket, or a rank row."),

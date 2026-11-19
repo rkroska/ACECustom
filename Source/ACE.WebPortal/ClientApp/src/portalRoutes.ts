@@ -24,6 +24,7 @@ import {
   Shirt,
   Coins,
   Landmark,
+  SlidersHorizontal,
 } from 'lucide-react'
 
 export interface PortalRouteDefinition {
@@ -59,6 +60,7 @@ export const PORTAL_ROUTES: PortalRouteDefinition[] = [
   { key: 'weenie', path: '/weenie', label: 'Weenie Editor', section: 'Content Tools', icon: FileCode, placeholder: true },
   { key: 'console', path: '/console', label: 'Console', section: 'Server Management', icon: Terminal, placeholder: true },
   { key: 'params', path: '/params', label: 'Server Params', section: 'Server Management', icon: Settings },
+  { key: 'zone-control', path: '/zone-control', label: 'Zone Control', section: 'Server Management', icon: SlidersHorizontal },
   { key: 'events', path: '/events', label: 'Server Events', section: 'Server Management', icon: Calendar },
   { key: 'portal-security', path: '/portal-security', label: 'Portal Security', section: 'Server Management', icon: Shield },
   { key: 'patch-notes-admin', path: '/patch-notes/manage', label: 'Manage Patch Notes', section: 'Server Management', icon: FileText },

@@ -582,6 +582,59 @@ namespace ACE.Server.Tests
             Assert.IsNull(ItemBounties.EntryFor(nowhere), "unknown region");
         }
 
+        /// <summary>When a bounty can't drop, EntryFor says why (the portal's health check shows it); a good one has no reason.</summary>
+        [TestMethod]
+        public void EntryFor_SaysWhy()
+        {
+            var weight = (PropertyInt.ItemBountyDropWeight, 10);
+            var reward = (PropertyInt.ItemBountyRewardWcid, 78780315);
+            var range = (PropertyInt.ItemBountyKillsMin, 1000);
+            string Why(ACE.Entity.Models.Weenie w, bool overridden = false)
+            {
+                ItemBounties.EntryFor(w, overridden, out var problem);
+                return problem;
+            }
+
+            Assert.IsNull(Why(BountyWeenie(99985001, weight, reward, range)));
+            StringAssert.Contains(Why(BountyWeenie(99985001, reward, range)), "no drop weight");
+            Assert.IsNull(Why(BountyWeenie(99985001, reward, range), overridden: true), "terms complete; only the weight is missing");
+            StringAssert.Contains(Why(BountyWeenie(99985001, weight, range)), "ItemBountyRewardWcid");
+            StringAssert.Contains(Why(BountyWeenie(99985001, weight, reward)), "kill count");
+            StringAssert.Contains(Why(BountyWeenie(99985001, weight, reward, range, (PropertyInt.ItemBountyKind, 3))), "unknown kind 3");
+            StringAssert.Contains(Why(BountyWeenie(99985001, weight, reward, range, (PropertyInt.ItemBountyKind, ItemBounties.KindSpecies))), "ItemBountyTarget");
+            StringAssert.Contains(Why(BountyWeenie(99985001, weight, reward, (PropertyInt.ItemBountyKills, BountyManager.MaxKills + 1))), "over the most");
+
+            var mystery = BountyWeenie(99985001, weight, range, (PropertyInt.ItemBountyMystery, 2));
+            StringAssert.Contains(Why(mystery), "names no reward list");
+            mystery.PropertiesString[PropertyString.ItemBountyRewardTable] = "Not A Name!";
+            StringAssert.Contains(Why(mystery), "isn't a valid name");
+
+            var nowhere = BountyWeenie(99985001, weight, reward, range);
+            nowhere.PropertiesString[PropertyString.ItemBountyRegion] = "atlantis";
+            StringAssert.Contains(Why(nowhere), "isn't a bounty region");
+            Assert.AreEqual("not in the world database", Why(null));
+
+            foreach (var w in new[] { BountyWeenie(99985001, weight, range), nowhere, mystery })
+                Assert.IsTrue(Why(w).All(c => c < 128), "plain ASCII");
+        }
+
+        /// <summary>The catalog's task sentence for a weenie: fixed count, rolled range, hidden count, species, region, fixed tier.</summary>
+        [TestMethod]
+        public void CatalogTask_Words()
+        {
+            const int sweep = ItemBounties.KindSweep, species = ItemBounties.KindSpecies;
+            Assert.AreEqual("Kill 1,000 creatures in the tier it dropped in.", ItemBounties.CatalogTask(sweep, null, 1000, 0, 0, false, null, 0));
+            Assert.AreEqual("Kill 500-1,500 creatures in the tier it dropped in (each new item rolls its own count).",
+                ItemBounties.CatalogTask(sweep, null, 0, 1500, 500, false, "", 0), "a backwards range is swapped");
+            Assert.AreEqual("Kill 300 Banderlings in Tier 15.", ItemBounties.CatalogTask(species, "Banderlings", 0, 300, 0, false, null, 15));
+            Assert.AreEqual("Kill a hidden number of creatures in Valley of Death (200-400, revealed when the bounty is started).",
+                ItemBounties.CatalogTask(sweep, null, 0, 200, 400, true, " VoD ", 15), "a region beats the tier");
+            Assert.AreEqual("Kill creatures of one type in the tier it dropped in (no kill count set).",
+                ItemBounties.CatalogTask(species, " ", 0, 0, 0, false, null, 30), "a tier outside 11-25 is not a fixed tier");
+            foreach (var text in new[] { ItemBounties.CatalogTask(sweep, null, 5, 0, 0, true, "t10", 0), ItemBounties.CatalogTask(species, "Gear Knight", 1_000_000, 0, 0, false, null, 25) })
+                Assert.IsTrue(text.All(c => c < 128), "plain ASCII: " + text);
+        }
+
         /// <summary>The progress words: kills for a Sweep, the target's name for a Species bounty (en-US digit grouping).</summary>
         [TestMethod]
         public void ProgressText_Words()

@@ -365,10 +365,13 @@ namespace ACE.Server.Managers
         /// there is none: the admins control mystery rewards completely, so nothing older is ever paid instead.
         /// <paramref name="tableUsed"/> names the table read (for the log).
         /// </summary>
-        private static List<RewardOption> MysteryOptions(Slot s, out string tableUsed)
+        private static List<RewardOption> MysteryOptions(Slot s, out string tableUsed) => MysteryOptionsAt(s.RewardTableName, PlaceKey(s), out tableUsed);
+
+        /// <summary><see cref="MysteryOptions"/> for a reward table's name and a place key ("t15", "vod").</summary>
+        internal static List<RewardOption> MysteryOptionsAt(string tableName, string place, out string tableUsed)
         {
-            var live = ZoneControlManager.ResolveBountyRewardTable(s.RewardTableName, PlaceKey(s), e => BountyManager.IsGivableItem(e.Wcid));
-            tableUsed = live?.Name ?? s.RewardTableName;
+            var live = ZoneControlManager.ResolveBountyRewardTable(tableName, place, e => BountyManager.IsGivableItem(e.Wcid));
+            tableUsed = live?.Name ?? tableName;
             return live.HasValue
                 ? live.Value.Table.Valid.Select(e => new RewardOption(e.Wcid, e.Amount, e.Weight)).Where(o => BountyManager.IsGivableItem(o.Wcid)).ToList()
                 : new List<RewardOption>();
@@ -1625,25 +1628,41 @@ namespace ACE.Server.Managers
         /// at each roll, PoolAt) - or null when it can't drop: broken terms, or no weight of its own unless
         /// <paramref name="overridden"/> (Zone Control gives it a weight somewhere).
         /// </summary>
-        internal static DropEntry? EntryFor(ACE.Entity.Models.Weenie w, bool overridden = false)
+        internal static DropEntry? EntryFor(ACE.Entity.Models.Weenie w, bool overridden = false) => EntryFor(w, overridden, out _);
+
+        /// <summary>
+        /// <see cref="EntryFor(ACE.Entity.Models.Weenie, bool)"/>, and when it can't drop, why (<paramref name="problem"/>, plain
+        /// ASCII: the portal's bounty health check and the log show it). The one place the drop rules live.
+        /// </summary>
+        internal static DropEntry? EntryFor(ACE.Entity.Models.Weenie w, bool overridden, out string problem)
         {
-            if (w?.PropertiesInt == null) return null;
+            problem = null;
+            if (w?.PropertiesInt == null) { problem = "not in the world database"; return null; }
             int Int(PropertyInt p, int dflt) => w.PropertiesInt.TryGetValue(p, out var v) ? v : dflt;
 
             var weight = Math.Max(0, Int(PropertyInt.ItemBountyDropWeight, 0));
-            if (weight <= 0 && !overridden) return null;
+            if (weight <= 0 && !overridden) { problem = "no drop weight"; return null; }
             // a reward: one fixed item, or a mystery naming its Zone Control reward table
             string table = null;
             w.PropertiesString?.TryGetValue(PropertyString.ItemBountyRewardTable, out table);
             var mysteryReward = (Int(PropertyInt.ItemBountyMystery, 0) & MysteryReward) != 0;
-            if (mysteryReward ? !ZoneControlManager.IsValidRewardTableName((table ?? "").Trim().ToLowerInvariant()) : Int(PropertyInt.ItemBountyRewardWcid, 0) <= 0) return null;
+            if (mysteryReward && !ZoneControlManager.IsValidRewardTableName((table ?? "").Trim().ToLowerInvariant()))
+            {
+                problem = string.IsNullOrWhiteSpace(table) ? "a mystery reward that names no reward list (ItemBountyRewardTable)" : $"a mystery reward whose list name '{table}' isn't a valid name";
+                return null;
+            }
+            if (!mysteryReward && Int(PropertyInt.ItemBountyRewardWcid, 0) <= 0) { problem = "no reward item (ItemBountyRewardWcid)"; return null; }
             // the same terms TermsOf asks of a made item, so a bounty nobody could apply never drops
             var kills = Int(PropertyInt.ItemBountyKills, 0);
-            if (kills <= 0 && Int(PropertyInt.ItemBountyKillsMin, 0) <= 0 && Int(PropertyInt.ItemBountyKillsMax, 0) <= 0) return null;
-            if (kills > BountyManager.MaxKills) return null;
+            if (kills <= 0 && Int(PropertyInt.ItemBountyKillsMin, 0) <= 0 && Int(PropertyInt.ItemBountyKillsMax, 0) <= 0)
+            {
+                problem = "no kill count (ItemBountyKills, or a KillsMin / KillsMax range)";
+                return null;
+            }
+            if (kills > BountyManager.MaxKills) { problem = $"asks {kills:N0} kills, over the most a bounty can ask ({BountyManager.MaxKills:N0})"; return null; }
             var kind = Int(PropertyInt.ItemBountyKind, KindSweep);
-            if (kind != KindSweep && kind != KindSpecies) return null;
-            if (kind == KindSpecies && Int(PropertyInt.ItemBountyTarget, 0) <= 0) return null;
+            if (kind != KindSweep && kind != KindSpecies) { problem = $"unknown kind {kind} (ItemBountyKind: 1 = any kill, 2 = one species)"; return null; }
+            if (kind == KindSpecies && Int(PropertyInt.ItemBountyTarget, 0) <= 0) { problem = "a one-species bounty with no creature type (ItemBountyTarget)"; return null; }
 
             string name = null;
             w.PropertiesString?.TryGetValue(PropertyString.Name, out name);
@@ -1654,7 +1673,12 @@ namespace ACE.Server.Managers
             w.PropertiesString?.TryGetValue(PropertyString.ItemBountyRegion, out region);
             region = (region ?? "").Trim().ToLowerInvariant();
             if (region.Length > 0)
-                return ZoneControlManager.FindBountyRegion(region) == null ? null : new DropEntry(w.WeenieClassId, weight, 0, 0, true, name, region);
+            {
+                if (ZoneControlManager.FindBountyRegion(region) != null)
+                    return new DropEntry(w.WeenieClassId, weight, 0, 0, true, name, region);
+                problem = $"region '{region}' isn't a bounty region ({string.Join(", ", ZoneControlManager.BountyRegions.Select(r => r.Key))})";
+                return null;
+            }
 
             var tier = Int(PropertyInt.ItemBountyTier, 0);
             var fixedTier = tier >= MinTier && tier <= MaxTier;
@@ -1667,6 +1691,8 @@ namespace ACE.Server.Managers
         private static double _dropTableBuiltAt = double.NegativeInfinity;
         private static int _dropTableBuilding;
         private const double DropTableRefreshSeconds = 300;
+        /// <summary>When the last read of the drop table FINISHED (unix seconds; NegativeInfinity = never yet).</summary>
+        private static double _dropTableReadAt = double.NegativeInfinity;
 
         /// <summary>
         /// Rebuilds the drop table on the next roll (in the background) - after a Zone Control weight change, so a bounty
@@ -1717,11 +1743,12 @@ namespace ACE.Server.Managers
                 var list = new List<DropEntry>();
                 foreach (var id in ids.Union(sets.Where(kv => Gives(kv.Value)).Select(kv => kv.Key)))
                 {
-                    var entry = EntryFor(ACE.Database.DatabaseManager.World.GetCachedWeenie(id), sets.TryGetValue(id, out var set) && Gives(set));
+                    var entry = EntryFor(ACE.Database.DatabaseManager.World.GetCachedWeenie(id), sets.TryGetValue(id, out var set) && Gives(set), out var problem);
                     if (entry.HasValue) list.Add(entry.Value);
-                    else log.Warn($"[ItemBounty] drop table: weenie {id} has a drop weight but no complete bounty terms - skipped");
+                    else log.Warn($"[ItemBounty] drop table: weenie {id} has a drop weight but can't drop ({problem}) - skipped");
                 }
                 _dropTable = list;
+                _dropTableReadAt = Time.GetUnixTime();
             }
             catch (Exception ex)
             {
@@ -1865,6 +1892,193 @@ namespace ACE.Server.Managers
                 var odds = ZoneControlManager.RegionItemBountyOdds(place);
                 Tell(viewer, $"{RegionName(place)} ({(odds > 0 ? $"1 in {odds:N0} kills" : $"none drop: /zonecontrol regionbounty {place} itemodds N")}): {shares}");
             }
+        }
+
+        // ── Health (the portal's Bounty Items > Setup check) ──
+
+        /// <summary>One bounty weenie in the world database, as the portal's health check reads it.</summary>
+        public sealed class WeenieHealth
+        {
+            public uint Wcid { get; init; }
+            public string Name { get; init; }
+            /// <summary>In the drop table as last read, with a share above 0 somewhere.</summary>
+            public bool Drops { get; init; }
+            public int OwnWeight { get; init; }
+            public bool ZoneControlWeight { get; init; }
+            public bool Off { get; init; }
+            /// <summary>Why it can't be applied or drop (broken terms on the weenie); null = its terms are complete.</summary>
+            public string Problem { get; init; }
+            /// <summary>Place keys it drops at now, else the ones it would count in ("t15", "vod"); empty when broken.</summary>
+            public List<string> Places { get; init; } = new();
+            /// <summary>Every place Zone Control may give it a share at (a fixed tier, its region, else any tier); empty when broken.</summary>
+            public List<string> CanDropAt { get; init; } = new();
+            public bool MysteryReward { get; init; }
+            public string RewardList { get; init; }
+            public uint RewardWcid { get; init; }
+            public string RewardName { get; init; }
+            public int RewardAmount { get; init; }
+            /// <summary>Of Places, the ones where its reward can't be paid as things stand (all of them for a bad fixed reward).</summary>
+            public List<string> UnpaidPlaces { get; init; } = new();
+            // the catalog (Bounty items tab): the weenie's terms as stored, and the task as one sentence (CatalogTask)
+            public int Kind { get; init; }
+            public string TargetName { get; init; }
+            public int Kills { get; init; }
+            public int KillsMin { get; init; }
+            public int KillsMax { get; init; }
+            public bool HiddenKills { get; init; }
+            public string Region { get; init; }
+            /// <summary>ItemBountyTier when it is a fixed tier (11-25), else 0: the bounty takes the tier it drops in.</summary>
+            public int FixedTier { get; init; }
+            public string Task { get; init; }
+        }
+
+        /// <summary>What the health check found: every bounty weenie, and the drop table's state.</summary>
+        public sealed class HealthReport
+        {
+            public List<WeenieHealth> Weenies { get; init; } = new();
+            public int DropTableCount { get; init; }
+            /// <summary>Seconds since the drop table was last read; null = not read yet since the server started.</summary>
+            public double? DropTableAgeSeconds { get; init; }
+            public bool Reading { get; init; }
+            public int RefreshSeconds { get; init; } = (int)DropTableRefreshSeconds;
+        }
+
+        /// <summary>
+        /// Every world weenie carrying any bounty property (ints 57700-57711, the region or reward-table string), read off the
+        /// DB. Never on a landblock or the world thread: the portal calls it from a web request.
+        /// </summary>
+        private static List<uint> BountyWeenieIdsFromDb()
+        {
+            const ushort lo = (ushort)PropertyInt.ItemBountyTier, hi = (ushort)PropertyInt.ItemBountyMystery;
+            const ushort region = (ushort)PropertyString.ItemBountyRegion, table = (ushort)PropertyString.ItemBountyRewardTable;
+            using var ctx = new ACE.Database.Models.World.WorldDbContext();
+            var ints = ctx.WeeniePropertiesInt.Where(p => p.Type >= lo && p.Type <= hi).Select(p => p.ObjectId).Distinct().ToList();
+            var strings = ctx.WeeniePropertiesString.Where(p => p.Type == region || p.Type == table).Select(p => p.ObjectId).Distinct().ToList();
+            return ints.Union(strings).OrderBy(x => x).ToList();
+        }
+
+        /// <summary>
+        /// The catalog's "what the player must do" for a bounty WEENIE, one plain-ASCII sentence: what to kill, how many (a
+        /// fixed count, the range each new item rolls from, or a hidden count and its band) and where. The same words as
+        /// <see cref="Describe"/> where they overlap; kept beside the weenie's own rules so the portal can't drift from them.
+        /// </summary>
+        internal static string CatalogTask(int kind, string targetName, int kills, int killsMin, int killsMax, bool hiddenKills, string region, int fixedTier)
+        {
+            static string N(int n) => n.ToString("N0", CultureInfo.InvariantCulture);
+            var what = kind == KindSpecies ? (string.IsNullOrWhiteSpace(targetName) ? "creatures of one type" : targetName.Trim()) : "creatures";
+            region = (region ?? "").Trim().ToLowerInvariant();
+            var place = region.Length > 0 ? RegionName(region)
+                : fixedTier >= MinTier && fixedTier <= MaxTier ? $"Tier {fixedTier}"
+                : "the tier it dropped in";
+
+            int lo = killsMin > 0 ? killsMin : killsMax, hi = killsMax > 0 ? killsMax : killsMin;
+            if (lo > hi) (lo, hi) = (hi, lo);
+            var range = lo > 0 ? (lo == hi ? N(lo) : $"{N(lo)}-{N(hi)}") : null;
+
+            if (hiddenKills)
+                return $"Kill a hidden number of {what} in {place} ({range ?? (kills > 0 ? N(kills) : "no count set")}, revealed when the bounty is started).";
+            if (range != null)
+                return lo == hi ? $"Kill {range} {what} in {place}." : $"Kill {range} {what} in {place} (each new item rolls its own count).";
+            return kills > 0 ? $"Kill {N(kills)} {what} in {place}." : $"Kill {what} in {place} (no kill count set).";
+        }
+
+        /// <summary>
+        /// The health check: each bounty weenie's terms (the drop rules' own reasons, EntryFor), where it drops or counts,
+        /// and where its reward can't be paid now. Reads the weenies as the server has them cached - the same copy the drop
+        /// table and new items use.
+        /// </summary>
+        public static HealthReport Health()
+        {
+            var table = DropTable();
+            var sets = ZoneControlManager.BountyPlaceWeightSnapshot();
+            var ids = BountyWeenieIdsFromDb().Union(sets.Keys).Distinct().OrderBy(x => x);
+            var list = new List<WeenieHealth>();
+            foreach (var id in ids)
+            {
+                var w = ACE.Database.DatabaseManager.World.GetCachedWeenie(id);
+                sets.TryGetValue(id, out var set);
+                var entry = EntryFor(w, true, out var problem);
+                int Int(PropertyInt p) => w?.PropertiesInt != null && w.PropertiesInt.TryGetValue(p, out var v) ? v : 0;
+                string Str(PropertyString p) => w?.PropertiesString != null && w.PropertiesString.TryGetValue(p, out var v) ? v : null;
+
+                var inTable = table.FirstOrDefault(e => e.Wcid == id);
+                var dropPlaces = inTable.Wcid == id ? AllPlaces.Where(pl => WeightAt(inTable, pl, set) > 0).ToList() : new List<string>();
+                var places = dropPlaces.Count > 0 ? dropPlaces
+                    : entry.HasValue ? AllPlaces.Where(pl => NaturalAt(entry.Value, pl)).ToList() : new List<string>();
+
+                var mystery = (Int(PropertyInt.ItemBountyMystery) & MysteryReward) != 0;
+                var listName = (Str(PropertyString.ItemBountyRewardTable) ?? "").Trim().ToLowerInvariant();
+                var rewardWcid = (uint)Math.Max(0, Int(PropertyInt.ItemBountyRewardWcid));
+                var unpaid = problem != null ? new List<string>()
+                    : mystery ? places.Where(pl => MysteryOptionsAt(listName, pl, out _).Count == 0).ToList()
+                    : BountyManager.IsGivableItem(rewardWcid) ? new List<string>() : places.ToList();
+                var amount = Int(PropertyInt.ItemBountyRewardAmount);
+                var kind = Int(PropertyInt.ItemBountyKind) is var k && k != 0 ? k : KindSweep;
+                var target = Int(PropertyInt.ItemBountyTarget);
+                var targetName = kind == KindSpecies && target > 0
+                    ? (Str(PropertyString.ItemBountyTargetName) ?? ACE.Server.Entity.GearEssences.SpeciesName((CreatureType)target))
+                    : null;
+                var hiddenKills = (Int(PropertyInt.ItemBountyMystery) & MysteryKills) != 0;
+                var region = (Str(PropertyString.ItemBountyRegion) ?? "").Trim().ToLowerInvariant();
+                var tierProp = Int(PropertyInt.ItemBountyTier);
+                var fixedTier = region.Length == 0 && tierProp >= MinTier && tierProp <= MaxTier ? tierProp : 0;
+
+                list.Add(new WeenieHealth
+                {
+                    Wcid = id,
+                    Name = w == null ? "WCID " + id : RoomAssignManager.ItemName(id),
+                    Drops = dropPlaces.Count > 0,
+                    OwnWeight = Math.Max(0, Int(PropertyInt.ItemBountyDropWeight)),
+                    ZoneControlWeight = set?.Places?.Count > 0,
+                    Off = set?.Off ?? false,
+                    Problem = problem,
+                    Places = places,
+                    CanDropAt = entry.HasValue ? AllPlaces.Where(pl => CanDropAt(entry.Value, pl)).ToList() : new List<string>(),
+                    MysteryReward = mystery,
+                    RewardList = mystery ? listName : null,
+                    RewardWcid = mystery ? 0 : rewardWcid,
+                    RewardName = mystery || rewardWcid == 0 ? null : RoomAssignManager.ItemName(rewardWcid),
+                    RewardAmount = Math.Clamp(amount > 0 ? amount : 1, 1, BountyManager.MaxAmount),
+                    UnpaidPlaces = unpaid,
+                    Kind = kind,
+                    TargetName = targetName,
+                    Kills = Math.Max(0, Int(PropertyInt.ItemBountyKills)),
+                    KillsMin = Math.Max(0, Int(PropertyInt.ItemBountyKillsMin)),
+                    KillsMax = Math.Max(0, Int(PropertyInt.ItemBountyKillsMax)),
+                    HiddenKills = hiddenKills,
+                    Region = region.Length > 0 ? region : null,
+                    FixedTier = fixedTier,
+                    Task = w == null ? null : CatalogTask(kind, targetName, Int(PropertyInt.ItemBountyKills), Int(PropertyInt.ItemBountyKillsMin),
+                        Int(PropertyInt.ItemBountyKillsMax), hiddenKills, region, fixedTier),
+                });
+            }
+            var readAt = _dropTableReadAt;
+            return new HealthReport
+            {
+                Weenies = list,
+                DropTableCount = table.Count,
+                DropTableAgeSeconds = double.IsNegativeInfinity(readAt) ? null : Math.Max(0, Time.GetUnixTime() - readAt),
+                Reading = Volatile.Read(ref _dropTableBuilding) == 1,
+            };
+        }
+
+        /// <summary>
+        /// "Re-read now": drops the cached copy of every bounty weenie (so a weenie edited in the DB is read fresh) and reads the
+        /// drop table again, waiting up to 30 seconds for each read. True when the new read finished in time.
+        /// </summary>
+        public static bool RefreshNow()
+        {
+            var wait = TimeSpan.FromSeconds(30);
+            try { _dropTableBuild.Wait(wait); } catch (Exception) { /* a failed read was logged; read again below */ }
+            foreach (var id in BountyWeenieIdsFromDb().Union(ZoneControlManager.BountyPlaceWeightSnapshot().Keys))
+                ACE.Database.DatabaseManager.World.ClearCachedWeenie(id);
+            // and the Bounty Ledger's weenie, so a ledger SQL imported after a lookup missed is seen without @clearcache
+            if (LedgerWcid != 0)
+                ACE.Database.DatabaseManager.World.ClearCachedWeenie(LedgerWcid);
+            InvalidateDropTable();
+            DropTable();
+            try { return _dropTableBuild.Wait(wait); }
+            catch (Exception ex) { log.Warn($"[ItemBounty] refresh: the read failed ({ex.Message})"); return false; }
         }
 
         // ── /zonecontrol bountyweight and bountypool (ZoneControlCommands) ─────
@@ -2098,8 +2312,8 @@ namespace ACE.Server.Managers
                 "off" => $"{name} ({id}) is OFF: it drops nowhere (its weights are kept for when it is back on).",
                 "on" => $"{name} ({id}) is on again: it drops by its weights.",
                 "reset" => $"{name} ({id}): every Zone Control weight removed - its own weight {OwnWeight(wcid):N0} in its own places again.",
-                "clear" => $"{name} ({id}): back to its own weight at {token}.",
-                _ => $"{name} ({id}): weight {value.Value:N0} at {token}{(value.Value == 0 ? " - out of those pools" : "")}."
+                "clear" => $"{name} ({id}): back to its built-in weight at {token}.",
+                _ => $"{name} ({id}): weight {value.Value:N0} at {token}{(value.Value == 0 ? " - it no longer drops there" : "")}."
                     + (skipped.Count > 0 ? $" Skipped {string.Join(", ", skipped.Select(PlaceLabel))}: {WhereItCanDrop(entry.Value)}." : ""),
             });
             if (entry.HasValue && after.Off == false && places != null)
