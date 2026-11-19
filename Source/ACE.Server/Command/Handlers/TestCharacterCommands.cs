@@ -185,9 +185,11 @@ namespace ACE.Server.Command.Handlers
             player.AvailableLuminance = 0;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.AvailableLuminance, 0));
 
-            // 5. Reset Skill Credits to 46 (starting amount)
+            // 5. Reset Skill Credits to 46 (starting amount), the total with them: spec aug credits paid again later count once
             player.AvailableSkillCredits = 46;
+            player.TotalSkillCredits = 46;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, 46));
+            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.TotalSkillCredits, 46));
 
             // 6. Reset all Skills to Untrained with 0 ranks and 0 spent XP
             foreach (var skill in player.Skills.Values)
