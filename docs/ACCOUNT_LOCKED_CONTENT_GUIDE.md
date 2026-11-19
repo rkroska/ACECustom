@@ -164,9 +164,10 @@ objects already in the world keep the emotes they spawned with.
   after `PurgeDeletedCharactersDays`, 30 by default), a purged character's stamps go with it. A player
   could claim, hand the reward to another character, delete the one that claimed it and claim again
   after the purge. That reopens a once-ever lock (`max_Solves`), and a timed lock whose cooldown
-  (`min_Delta` x `quest_mindelta_rate`) is longer than the purge delay. At the defaults (purge after 30
-  days, rate 1), daily and weekly locks are safe; a higher rate can push them past it. While purging is
-  on, don't put rewards worth that behind such locks.
+  (`min_Delta` x `quest_mindelta_rate`; just `min_Delta` for quests named `ColoArena...`, which never
+  scale) is longer than the purge delay. At the defaults (purge after 30 days, rate 1), daily and weekly
+  locks are safe; a higher rate can push them past it. While purging is on, don't put rewards worth that
+  behind such locks.
 - It is the login account, not the computer or IP. Two accounts on one PC are separate.
 - A character that is still logging out counts right away, so swapping characters quickly doesn't slip
   past the lock.
