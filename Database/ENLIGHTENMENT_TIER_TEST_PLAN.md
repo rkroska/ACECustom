@@ -73,7 +73,10 @@ These still live in `Enlightenment.cs` and should behave as before:
 - Luminance augs total 65 for T > 10
 - Society master for T > 30
 - Society removal still governed by `enl_removes_society`
-- Post-enlighten: level 1, skills reset, spells dispelled, sigil/token consumption, etc.
+- Post-enlighten: spells dispelled, sigil/token consumption, etc.
+- Post-enlighten with `enl_resets_level_and_skills` FALSE (the default): level, experience, skills, specializations and available skill credits are unchanged; no "skill credits have been adjusted" line.
+- Post-enlighten with `enl_resets_level_and_skills` TRUE: level 1, skills reset and the skill credit pool rebuilt, as before (level and skills always reset together).
+- `/enlighten` confirmation: states what is kept for the current `enl_resets_level_and_skills` value, and names the society only while `enl_removes_society` is on.
 
 ## 6. Runtime reload
 

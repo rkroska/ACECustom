@@ -22,15 +22,17 @@ namespace ACE.Server.Entity
         // - Inventory space requirements.
         //
         // You lose:
-        // - Your level, which reverts to 1.
-        // - Skills, which revert to their base state.
-        // - Any items that are required for enlightenment, as per tier requirements. 
+        // - The luminance cost and any items that are required for enlightenment, as per tier requirements.
         // - Enchantments / spells (you are dispelled).
+        // - Only if enl_resets_level_and_skills is TRUE (off by default on ILT):
+        //   - Your level, which reverts to 1.
+        //   - Skills, which revert to their base state.
         //
         // You KEEP:
         // - All unspent experience.
         // - All stats and augmentations.
         // - Learned spells.
+        // - Unless enl_resets_level_and_skills is TRUE: your level, experience, skills, specializations and skill credits.
         //
         // You GAIN:
         // - +1 to enlightenment property (used for calculating dynamic bonuses).
@@ -73,14 +75,24 @@ namespace ACE.Server.Entity
                 RemoveTierConsumable(player, targetEnlightenment);
 
                 // Enlightenment can proceed.
+                var resetLevelAndSkills = ServerConfig.enl_resets_level_and_skills.Value;
+
                 DequipAllItems(player);
                 RemoveFromFellowships(player);
                 player.ThreadSafeTeleportOnDeath();
                 RemoveSociety(player);
-                RemoveSkills(player);
-                RemoveLevel(player);
+
+                // Level and skills reset together or not at all. RemoveSkills rebuilds the skill credit pool for a
+                // level 1 character (heritage + quest credits), so resetting skills alone would drop every credit
+                // earned from levels, and resetting level alone would let the character earn those credits again.
+                if (resetLevelAndSkills)
+                {
+                    RemoveSkills(player);
+                    RemoveLevel(player);
+                }
+
                 RemoveAllSpells(player);
-                AddPerks(player);
+                AddPerks(player, resetLevelAndSkills);
                 player.SaveBiotaToDatabase();
             });
 
@@ -406,7 +418,7 @@ namespace ACE.Server.Entity
             return 21 + (enlightenmentAmt - 50) / 10;
         }
 
-        private static void AddPerks(Player player)
+        private static void AddPerks(Player player, bool levelAndSkillsReset)
         {
             // +1 to all skills
             // this could be handled through InitLevel, since we are always using deltas when modifying that field
@@ -419,7 +431,8 @@ namespace ACE.Server.Entity
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Enlightenment, player.Enlightenment));
 
             player.SendMessage("You have become enlightened and view the world with new eyes.", ChatMessageType.Broadcast);
-            player.SendMessage("Your available skill credits have been adjusted.", ChatMessageType.Broadcast);
+            if (levelAndSkillsReset)
+                player.SendMessage("Your available skill credits have been adjusted.", ChatMessageType.Broadcast);
             player.SendMessage("You have risen to a higher tier of enlightenment!", ChatMessageType.Broadcast);
 
             var lvl = "";
