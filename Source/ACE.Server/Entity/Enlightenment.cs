@@ -24,7 +24,8 @@ namespace ACE.Server.Entity
         // You lose:
         // - The luminance cost and any items that are required for enlightenment, as per tier requirements.
         // - Enchantments / spells (you are dispelled).
-        // - Only if enl_resets_level_and_skills is TRUE (off by default on ILT):
+        // - Only below Enlightenment enl_keeps_level_and_skills_from (50 by default), or always while
+        //   enl_resets_level_and_skills is TRUE (see ResetsLevelAndSkills):
         //   - Your level, which reverts to 1.
         //   - Skills, which revert to their base state.
         //
@@ -32,7 +33,8 @@ namespace ACE.Server.Entity
         // - All unspent experience.
         // - All stats and augmentations.
         // - Learned spells.
-        // - Unless enl_resets_level_and_skills is TRUE: your level, experience, skills, specializations and skill credits.
+        // - From Enlightenment enl_keeps_level_and_skills_from on (unless enl_resets_level_and_skills is TRUE): your level,
+        //   experience, skills, specializations and skill credits.
         //
         // You GAIN:
         // - +1 to enlightenment property (used for calculating dynamic bonuses).
@@ -74,8 +76,8 @@ namespace ACE.Server.Entity
                 var targetEnlightenment = player.Enlightenment + 1;
                 RemoveTierConsumable(player, targetEnlightenment);
 
-                // Enlightenment can proceed.
-                var resetLevelAndSkills = ServerConfig.enl_resets_level_and_skills.Value;
+                // Enlightenment can proceed. Decided on the Enlightenment the character has now, before AddPerks raises it.
+                var resetLevelAndSkills = ResetsLevelAndSkills(player.Enlightenment);
 
                 DequipAllItems(player);
                 RemoveFromFellowships(player);
@@ -399,6 +401,33 @@ namespace ACE.Server.Entity
         }
 
 
+        /// <summary>
+        /// Whether enlightening now resets level and skills: always while enl_resets_level_and_skills is TRUE, otherwise
+        /// only for characters below enl_keeps_level_and_skills_from (50 by default). From that Enlightenment on, the
+        /// character keeps its level, experience, skills, specializations and skill credits.
+        /// </summary>
+        /// <param name="currentEnlightenment">The character's Enlightenment before this ritual.</param>
+        public static bool ResetsLevelAndSkills(int currentEnlightenment)
+        {
+            return ResetsLevelAndSkills(currentEnlightenment, ServerConfig.enl_resets_level_and_skills.Value, ServerConfig.enl_keeps_level_and_skills_from.Value);
+        }
+
+        /// <summary>The rule behind <see cref="ResetsLevelAndSkills(int)"/>, with both settings passed in.</summary>
+        public static bool ResetsLevelAndSkills(int currentEnlightenment, bool alwaysReset, long keepFrom)
+        {
+            return alwaysReset || currentEnlightenment < keepFrom;
+        }
+
+        /// <summary>
+        /// True for the one enlightenment that brings a character to keepFrom: every enlightenment after it keeps level
+        /// and skills, so this is when the character is told.
+        /// </summary>
+        /// <param name="newEnlightenment">The character's Enlightenment after this ritual.</param>
+        public static bool UnlocksKeepingLevelAndSkills(int newEnlightenment, bool alwaysReset, long keepFrom)
+        {
+            return !alwaysReset && newEnlightenment == keepFrom;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetEnlightenmentRatingBonus(int enlightenmentAmt)
         {
@@ -434,6 +463,8 @@ namespace ACE.Server.Entity
             if (levelAndSkillsReset)
                 player.SendMessage("Your available skill credits have been adjusted.", ChatMessageType.Broadcast);
             player.SendMessage("You have risen to a higher tier of enlightenment!", ChatMessageType.Broadcast);
+            if (UnlocksKeepingLevelAndSkills(player.Enlightenment, ServerConfig.enl_resets_level_and_skills.Value, ServerConfig.enl_keeps_level_and_skills_from.Value))
+                player.SendMessage("From now on, enlightening will keep your level and skills.", ChatMessageType.Broadcast);
 
             var lvl = "";
 

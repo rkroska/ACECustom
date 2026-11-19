@@ -1319,8 +1319,12 @@ namespace ACE.Server.Command.Handlers
             // Enlightenment spends only its luminance cost and keeps unspent experience, so neither is promised away here.
             // The rest follows Enlightenment.HandleEnlightenment: dequip, leave the fellowship (and the society while
             // enl_removes_society is on), return to the lifestone, dispel.
-            var keeps = ServerConfig.enl_resets_level_and_skills.Value
-                ? "Your level will return to 1 and your skills to their base state. You will keep your attributes and unspent experience."
+            // Level and skills: kept from Enlightenment enl_keeps_level_and_skills_from on (Enlightenment.ResetsLevelAndSkills).
+            var unlockNote = ServerConfig.enl_resets_level_and_skills.Value
+                ? ""
+                : $" (from Enlightenment {ServerConfig.enl_keeps_level_and_skills_from.Value} on, enlightening keeps them)";
+            var keeps = Enlightenment.ResetsLevelAndSkills(session.Player.Enlightenment)
+                ? $"Your level will return to 1 and your skills to their base state{unlockNote}. You will keep your attributes and unspent experience."
                 : "You will keep your level, skills, attributes and unspent experience.";
             var leaves = ServerConfig.enl_removes_society.Value ? "your fellowship and your society" : "your fellowship";
             var message = $"Are you certain that you'd like to Enlighten? {keeps} Your equipment will be unequipped and your enchantments dispelled, you will leave {leaves}, and you will return to your lifestone.";

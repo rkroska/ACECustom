@@ -74,9 +74,12 @@ These still live in `Enlightenment.cs` and should behave as before:
 - Society master for T > 30
 - Society removal still governed by `enl_removes_society`
 - Post-enlighten: spells dispelled, sigil/token consumption, etc.
-- Post-enlighten with `enl_resets_level_and_skills` FALSE (the default): level, experience, skills, specializations and available skill credits are unchanged; no "skill credits have been adjusted" line.
-- Post-enlighten with `enl_resets_level_and_skills` TRUE: level 1, skills reset and the skill credit pool rebuilt, as before (level and skills always reset together).
-- `/enlighten` confirmation: states what is kept for the current `enl_resets_level_and_skills` value, and names the society only while `enl_removes_society` is on.
+- Post-enlighten below Enlightenment `enl_keeps_level_and_skills_from` (50 by default; 49 -> 50 is the last that resets): level 1, skills reset and the skill credit pool rebuilt, as before (level and skills always reset together).
+- Post-enlighten at or above it (50 -> 51 onward): level, experience, skills, specializations and available skill credits are unchanged; no "skill credits have been adjusted" line.
+- The enlightenment that reaches the threshold (49 -> 50) still resets and adds "From now on, enlightening will keep your level and skills."
+- `enl_resets_level_and_skills` TRUE: every enlightenment resets, whatever the Enlightenment, and the unlock line never shows.
+- `enl_keeps_level_and_skills_from` 0: everyone keeps level and skills.
+- `/enlighten` confirmation: below the threshold it says level and skills reset and from which Enlightenment they are kept; at or above it, that they are kept. It names the society only while `enl_removes_society` is on.
 
 ## 6. Runtime reload
 
