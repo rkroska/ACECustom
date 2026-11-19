@@ -203,6 +203,15 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.AvailableSkillCredits); else SetProperty(PropertyInt.AvailableSkillCredits, value.Value); }
         }
 
+        /// <summary>
+        /// The highest level whose level-up skill credits the character already has (set when enlightening lowers the level)
+        /// </summary>
+        public int? SkillCreditsGivenThroughLevel
+        {
+            get => GetProperty(PropertyInt.SkillCreditsGivenThroughLevel);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.SkillCreditsGivenThroughLevel); else SetProperty(PropertyInt.SkillCreditsGivenThroughLevel, value.Value); }
+        }
+
         public int? TotalSkillCredits
         {
             get => GetProperty(PropertyInt.TotalSkillCredits);

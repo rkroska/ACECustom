@@ -75,11 +75,13 @@ These still live in `Enlightenment.cs` and should behave as before:
 - Society removal still governed by `enl_removes_society`
 - Post-enlighten: spells dispelled, sigil/token consumption, etc.
 - Post-enlighten below Enlightenment `enl_keeps_level_and_skills_from` (50 by default; 49 -> 50 is the last that resets): level 1, skills reset and the skill credit pool rebuilt, as before (level and skills always reset together).
-- Post-enlighten at or above it (50 -> 51 onward): level, experience, skills, specializations and available skill credits are unchanged; no "skill credits have been adjusted" line.
-- The enlightenment that reaches the threshold (49 -> 50) still resets and adds "From now on, enlightening will keep your level and skills."
+- Post-enlighten at or above it (50 -> 51 onward) at level 700 or below: level, experience, skills, specializations and available skill credits are unchanged; no "skill credits have been adjusted" line.
+- Same at level 701 or higher: level drops to 700 (`enl_keeps_level_up_to`) and total experience to level 700's; skills, specializations, available skill credits and unspent experience unchanged; "Your level has been lowered to 700. You keep your skills and skill credits." Leveling back up gives no skill credits through the old level (a level-up below it names the first credit level past it), then one every 5th level as before.
+- `enl_keeps_level_up_to` 0: any level is kept.
+- The enlightenment that reaches the threshold (49 -> 50) still resets and adds "From now on, enlightening will keep your skills and your level up to 700." (with `enl_keeps_level_up_to` 0: "...keep your level and skills.")
 - `enl_resets_level_and_skills` TRUE: every enlightenment resets, whatever the Enlightenment, and the unlock line never shows.
 - `enl_keeps_level_and_skills_from` 0: everyone keeps level and skills.
-- `/enlighten` confirmation: below the threshold it says level and skills reset and from which Enlightenment they are kept; at or above it, that they are kept. It names the society only while `enl_removes_society` is on.
+- `/enlighten` confirmation: below the threshold it says level and skills reset and from which Enlightenment skills and the level up to 700 are kept; at or above it, that they are kept, or above level 700 that the level will drop to 700. It names the society only while `enl_removes_society` is on.
 
 ## 6. Runtime reload
 

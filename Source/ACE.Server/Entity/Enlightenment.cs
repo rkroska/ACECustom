@@ -87,11 +87,15 @@ namespace ACE.Server.Entity
                 // Level and skills reset together or not at all. RemoveSkills rebuilds the skill credit pool for a
                 // level 1 character (heritage + quest credits), so resetting skills alone would drop every credit
                 // earned from levels, and resetting level alone would let the character earn those credits again.
+                // Without the reset, the level is kept up to enl_keeps_level_up_to (LowerKeptLevel marks the credits
+                // of the levels given up as given, so they are not earned again).
                 if (resetLevelAndSkills)
                 {
                     RemoveSkills(player);
                     RemoveLevel(player);
                 }
+                else
+                    LowerKeptLevel(player);
 
                 RemoveAllSpells(player);
                 AddPerks(player, resetLevelAndSkills);
@@ -378,6 +382,51 @@ namespace ACE.Server.Entity
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Level, player.Level ?? 0));
         }
 
+        /// <summary>
+        /// Enlightening without the reset keeps the character's level up to enl_keeps_level_up_to (0 = any level). Above it the
+        /// level drops to it and total experience to that level's. Skills, skill credits and unspent experience stay, and the
+        /// credits of the levels given up are marked as given, so leveling back up does not give them again.
+        /// </summary>
+        private static void LowerKeptLevel(Player player)
+        {
+            var level = player.Level ?? 1;
+            var keptLevel = KeptLevel(level, ServerConfig.enl_keeps_level_up_to.Value);
+
+            if (keptLevel >= level)
+                return;
+
+            player.SkillCreditsGivenThroughLevel = Math.Max(player.SkillCreditsGivenThroughLevel ?? 0, level);
+
+            var totalXp = TotalExperienceForLevel(keptLevel);
+            player.TotalExperience = (long)Math.Min(totalXp, long.MaxValue);
+            player.TotalExperienceDouble = totalXp;
+            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.TotalExperience, player.TotalExperience ?? 0));
+
+            player.Level = keptLevel;
+            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Level, keptLevel));
+
+            player.SendMessage($"Your level has been lowered to {keptLevel}. You keep your skills and skill credits.", ChatMessageType.Broadcast);
+        }
+
+        /// <summary>
+        /// The level a character keeps when it enlightens without the reset: its own level, at most keepUpTo (0 or less = no limit)
+        /// </summary>
+        public static int KeptLevel(int level, long keepUpTo)
+        {
+            return keepUpTo > 0 && level > keepUpTo ? (int)keepUpTo : level;
+        }
+
+        /// <summary>
+        /// The total experience a character has on reaching this level: the DAT table through 275, the dynamic curve past it
+        /// </summary>
+        private static double TotalExperienceForLevel(int level)
+        {
+            if (level > 275)
+                return Player.GenerateDynamicLevelPostMax(level);
+
+            return DatManager.PortalDat.XpTable.CharacterLevelXPList[Math.Clamp(level, 1, 275)];
+        }
+
         private static void RemoveSkills(Player player)
         {
             foreach (Skill skill in Enum.GetValues<Skill>())
@@ -396,6 +445,9 @@ namespace ACE.Server.Entity
             availableSkillCredits += player.QuestManager.GetCurrentSolves("LumAugSkillQuest");   // additional quest skill credits
 
             player.AvailableSkillCredits = availableSkillCredits;
+
+            // the pool no longer holds any level credits: leveling up gives them all again
+            player.SkillCreditsGivenThroughLevel = null;
 
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));
         }
@@ -464,7 +516,9 @@ namespace ACE.Server.Entity
                 player.SendMessage("Your available skill credits have been adjusted.", ChatMessageType.Broadcast);
             player.SendMessage("You have risen to a higher tier of enlightenment!", ChatMessageType.Broadcast);
             if (UnlocksKeepingLevelAndSkills(player.Enlightenment, ServerConfig.enl_resets_level_and_skills.Value, ServerConfig.enl_keeps_level_and_skills_from.Value))
-                player.SendMessage("From now on, enlightening will keep your level and skills.", ChatMessageType.Broadcast);
+                player.SendMessage(ServerConfig.enl_keeps_level_up_to.Value > 0
+                    ? $"From now on, enlightening will keep your skills and your level up to {ServerConfig.enl_keeps_level_up_to.Value}."
+                    : "From now on, enlightening will keep your level and skills.", ChatMessageType.Broadcast);
 
             var lvl = "";
 

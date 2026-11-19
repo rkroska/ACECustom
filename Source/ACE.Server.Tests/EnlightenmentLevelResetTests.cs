@@ -1,5 +1,6 @@
 using ACE.Server.Entity;
 using ACE.Server.Managers;
+using ACE.Server.WorldObjects;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -7,8 +8,9 @@ namespace ACE.Server.Tests
 {
     /// <summary>
     /// Enlightenment keeps level and skills from Enlightenment enl_keeps_level_and_skills_from (50 by default) on, unless
-    /// enl_resets_level_and_skills forces the old reset for everyone. Pins the pure rules
-    /// (Enlightenment.ResetsLevelAndSkills, Enlightenment.UnlocksKeepingLevelAndSkills) and the two settings' code defaults.
+    /// enl_resets_level_and_skills forces the old reset for everyone; the kept level stops at enl_keeps_level_up_to (700).
+    /// Pins the pure rules (Enlightenment.ResetsLevelAndSkills, UnlocksKeepingLevelAndSkills, KeptLevel,
+    /// Player.LevelSkillCreditAlreadyGiven) and the settings' code defaults.
     /// No DB, no world.
     /// </summary>
     [TestClass]
@@ -86,6 +88,45 @@ namespace ACE.Server.Tests
         {
             Assert.AreEqual(50L, ServerConfig.enl_keeps_level_and_skills_from.Default);
             Assert.IsFalse(ServerConfig.enl_resets_level_and_skills.Default);
+        }
+
+        [TestMethod]
+        public void KeptLevel_UpToTheCapIsKept()
+        {
+            Assert.AreEqual(325, Enlightenment.KeptLevel(325, 700));
+            Assert.AreEqual(700, Enlightenment.KeptLevel(700, 700));
+        }
+
+        [TestMethod]
+        public void KeptLevel_AboveTheCapDropsToIt()
+        {
+            Assert.AreEqual(700, Enlightenment.KeptLevel(701, 700));
+            Assert.AreEqual(700, Enlightenment.KeptLevel(1500, 700));
+        }
+
+        [TestMethod]
+        public void KeptLevel_CapZeroKeepsAnyLevel()
+        {
+            Assert.AreEqual(1500, Enlightenment.KeptLevel(1500, 0));
+            Assert.AreEqual(1500, Enlightenment.KeptLevel(1500, -1));
+        }
+
+        [TestMethod]
+        public void LevelCreditsAlreadyGiven_AreNotGivenAgain()
+        {
+            // a character that enlightened at 1,000 and dropped to 700 earns no credits on the way back up to 1,000
+            Assert.IsTrue(Player.LevelSkillCreditAlreadyGiven(705, 1000));
+            Assert.IsTrue(Player.LevelSkillCreditAlreadyGiven(1000, 1000));
+            Assert.IsFalse(Player.LevelSkillCreditAlreadyGiven(1005, 1000));
+
+            // never lowered, or fully reset since: every level's credit is earned
+            Assert.IsFalse(Player.LevelSkillCreditAlreadyGiven(705, null));
+        }
+
+        [TestMethod]
+        public void Default_KeepsLevelUpTo700()
+        {
+            Assert.AreEqual(700L, ServerConfig.enl_keeps_level_up_to.Default);
         }
     }
 }
