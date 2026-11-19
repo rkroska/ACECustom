@@ -163,8 +163,9 @@ objects already in the world keep the emotes they spawned with.
 - Purging does. If the server purges deleted characters (`PurgeDeletedCharacters` in the server config,
   after `PurgeDeletedCharactersDays`, 30 by default), a purged character's stamps go with it. A player
   could claim, hand the reward to another character, delete the one that claimed it and claim again
-  after the purge. That reopens a once-ever lock (`max_Solves`), and a timed lock whose `min_Delta` is
-  longer than the purge delay (at the 30-day default, daily and weekly locks are safe). While purging is
+  after the purge. That reopens a once-ever lock (`max_Solves`), and a timed lock whose cooldown
+  (`min_Delta` x `quest_mindelta_rate`) is longer than the purge delay. At the defaults (purge after 30
+  days, rate 1), daily and weekly locks are safe; a higher rate can push them past it. While purging is
   on, don't put rewards worth that behind such locks.
 - It is the login account, not the computer or IP. Two accounts on one PC are separate.
 - A character that is still logging out counts right away, so swapping characters quickly doesn't slip
@@ -180,7 +181,10 @@ objects already in the world keep the emotes they spawned with.
   the rest act on the character using the content. The account check only reads them. To clear an
   account's lock for support, erase the quest on every character of the account that has it (`@qst list`
   and `@qst erase <quest>`, with each character selected), then try the gate again: a stamp left on any
-  character still counts.
+  character still counts. A deleted character can't be selected for `@qst`, so its stamp counts until the
+  character is purged (section 7). To clear it sooner, an admin deletes that character's row for the quest
+  from the shard's `character_properties_quest_registry` table (the character is offline, so the change
+  counts at once).
 - **Keep the gate and the stamp together.** Give the `InqAccountQuest` step, the reward and the
   `StampQuest` no delay, as the Chests of Chance do: steps without a delay run together in one call. With
   a delay, the stamp lands later, and in that gap the same character could pass the gate again on another
