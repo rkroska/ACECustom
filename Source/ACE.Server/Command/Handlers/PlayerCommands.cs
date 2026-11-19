@@ -1321,22 +1321,22 @@ namespace ACE.Server.Command.Handlers
             // enl_removes_society is on), return to the lifestone, dispel.
             // Level and skills: kept from Enlightenment enl_keeps_level_and_skills_from on (Enlightenment.ResetsLevelAndSkills).
             // Kept levels stop at enl_keeps_level_up_to (Enlightenment.KeptLevel; 0 = no limit).
+            // The ritual gets the outcome promised here and stops, before spending anything, if it no longer holds.
+            var outcome = Enlightenment.PlannedOutcome(session.Player);
             var keepUpTo = ServerConfig.enl_keeps_level_up_to.Value;
-            var level = session.Player.Level ?? 1;
-            var keptLevel = Enlightenment.KeptLevel(level, keepUpTo);
             var unlockNote = ServerConfig.enl_resets_level_and_skills.Value
                 ? ""
                 : keepUpTo > 0
                     ? $" (from Enlightenment {ServerConfig.enl_keeps_level_and_skills_from.Value} on, enlightening keeps your skills and your level up to {keepUpTo})"
                     : $" (from Enlightenment {ServerConfig.enl_keeps_level_and_skills_from.Value} on, enlightening keeps them)";
-            var keeps = Enlightenment.ResetsLevelAndSkills(session.Player.Enlightenment)
+            var keeps = outcome.ResetsLevelAndSkills
                 ? $"Your level will return to 1 and your skills to their base state{unlockNote}. You will keep your attributes and unspent experience."
-                : keptLevel < level
-                    ? $"Your level will drop to {keptLevel}. You will keep your skills, skill credits, attributes and unspent experience."
+                : outcome.LevelDropsTo.HasValue
+                    ? $"Your level will drop to {outcome.LevelDropsTo.Value}. You will keep your skills, skill credits, attributes and unspent experience."
                     : "You will keep your level, skills, attributes and unspent experience.";
             var leaves = ServerConfig.enl_removes_society.Value ? "your fellowship and your society" : "your fellowship";
             var message = $"Are you certain that you'd like to Enlighten? {keeps} Your equipment will be unequipped and your enchantments dispelled, you will leave {leaves}, and you will return to your lifestone.";
-            void onResponse(bool response, bool _) { if (response) { Enlightenment.HandleEnlightenment(session.Player); } }
+            void onResponse(bool response, bool _) { if (response) { Enlightenment.HandleEnlightenment(session.Player, outcome); } }
             var confirm = session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, onResponse), message);
 
         }

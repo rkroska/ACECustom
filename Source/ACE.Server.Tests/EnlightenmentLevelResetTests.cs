@@ -9,7 +9,7 @@ namespace ACE.Server.Tests
     /// <summary>
     /// Enlightenment keeps level and skills from Enlightenment enl_keeps_level_and_skills_from (50 by default) on, unless
     /// enl_resets_level_and_skills forces the old reset for everyone; the kept level stops at enl_keeps_level_up_to (700).
-    /// Pins the pure rules (Enlightenment.ResetsLevelAndSkills, UnlocksKeepingLevelAndSkills, KeptLevel,
+    /// Pins the pure rules (Enlightenment.ResetsLevelAndSkills, UnlocksKeepingLevelAndSkills, KeptLevel, PlannedOutcome,
     /// Player.LevelSkillCreditAlreadyGiven) and the settings' code defaults.
     /// No DB, no world.
     /// </summary>
@@ -127,6 +127,33 @@ namespace ACE.Server.Tests
         public void Default_KeepsLevelUpTo700()
         {
             Assert.AreEqual(700L, ServerConfig.enl_keeps_level_up_to.Default);
+        }
+
+        private static Enlightenment.Outcome Planned(int enlightenment, int level, bool alwaysReset = false, long keepFrom = 50, long keepUpTo = 700) =>
+            Enlightenment.PlannedOutcome(enlightenment, level, alwaysReset, keepFrom, keepUpTo);
+
+        [TestMethod]
+        public void Outcome_BelowTheThresholdOrForced_IsTheReset()
+        {
+            Assert.AreEqual(new Enlightenment.Outcome(true, null), Planned(49, 1200));
+            Assert.AreEqual(new Enlightenment.Outcome(true, null), Planned(60, 1200, alwaysReset: true));
+        }
+
+        [TestMethod]
+        public void Outcome_KeepsTheLevelOrDropsItTo700()
+        {
+            Assert.AreEqual(new Enlightenment.Outcome(false, null), Planned(60, 700));
+            Assert.AreEqual(new Enlightenment.Outcome(false, 700), Planned(60, 701));
+            Assert.AreEqual(new Enlightenment.Outcome(false, null), Planned(60, 1500, keepUpTo: 0));
+        }
+
+        [TestMethod]
+        public void Outcome_ComparesThePromiseNotTheLevel()
+        {
+            // the confirmation can stay open while the character levels: only a different promise stops the ritual
+            Assert.AreEqual(Planned(60, 690), Planned(60, 699));      // still "you keep your level"
+            Assert.AreEqual(Planned(60, 900), Planned(60, 905));      // still "your level will drop to 700"
+            Assert.AreNotEqual(Planned(60, 699), Planned(60, 701));   // "keep" became "drop to 700"
         }
     }
 }

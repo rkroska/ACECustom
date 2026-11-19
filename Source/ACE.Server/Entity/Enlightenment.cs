@@ -41,9 +41,15 @@ namespace ACE.Server.Entity
         // - +2 Vitality (via enlightenment property calculation).
         // - +1 to all skills (via enlightenment property calculation).
 
-        public static void HandleEnlightenment(Player player)
+        /// <param name="confirmed">
+        /// What the /enlighten prompt told the player would happen to their level and skills (null from callers with no
+        /// prompt). If it no longer holds, the ritual stops before it spends anything.
+        /// </param>
+        public static void HandleEnlightenment(Player player, Outcome? confirmed = null)
         {
             if (!VerifyRequirements(player)) return;
+
+            if (!ConfirmedOutcomeHolds(player, confirmed)) return;
 
             player.SendMotionAsCommands(MotionCommand.MarketplaceRecall, MotionStance.NonCombat);
 
@@ -67,6 +73,9 @@ namespace ACE.Server.Entity
 
                 // Re-validate since 14 seconds have passed.
                 if (!VerifyRequirements(player, isRevalidation: true)) return;
+
+                // and what the player was told still holds (the level can pass enl_keeps_level_up_to while the prompt is open)
+                if (!ConfirmedOutcomeHolds(player, confirmed)) return;
 
                 if (!SpendLuminance(player))
                 {
@@ -414,6 +423,44 @@ namespace ACE.Server.Entity
         public static int KeptLevel(int level, long keepUpTo)
         {
             return keepUpTo > 0 && level > keepUpTo ? (int)keepUpTo : level;
+        }
+
+        /// <summary>
+        /// What enlightening will do to a character's level and skills: the full reset, or no reset with the level kept
+        /// (LevelDropsTo null) or lowered to enl_keeps_level_up_to (LevelDropsTo). The /enlighten prompt promises one, and the
+        /// ritual checks it still holds before spending anything.
+        /// </summary>
+        public readonly record struct Outcome(bool ResetsLevelAndSkills, int? LevelDropsTo);
+
+        /// <summary>The outcome with the settings passed in.</summary>
+        public static Outcome PlannedOutcome(int currentEnlightenment, int level, bool alwaysReset, long keepFrom, long keepUpTo)
+        {
+            if (ResetsLevelAndSkills(currentEnlightenment, alwaysReset, keepFrom))
+                return new Outcome(true, null);
+
+            var keptLevel = KeptLevel(level, keepUpTo);
+
+            return new Outcome(false, keptLevel < level ? (int?)keptLevel : null);
+        }
+
+        /// <summary>The outcome for this character now, with the live settings.</summary>
+        public static Outcome PlannedOutcome(Player player)
+        {
+            return PlannedOutcome(player.Enlightenment, player.Level ?? 1, ServerConfig.enl_resets_level_and_skills.Value,
+                ServerConfig.enl_keeps_level_and_skills_from.Value, ServerConfig.enl_keeps_level_up_to.Value);
+        }
+
+        /// <summary>
+        /// False, with a message, when what the player confirmed no longer holds: the character's level passed
+        /// enl_keeps_level_up_to, or an enlightenment setting changed. Called before anything is spent.
+        /// </summary>
+        private static bool ConfirmedOutcomeHolds(Player player, Outcome? confirmed)
+        {
+            if (!confirmed.HasValue || PlannedOutcome(player) == confirmed.Value)
+                return true;
+
+            player.SendMessage("What enlightening would do to your level and skills has changed since you confirmed. Nothing was spent. Use /enlighten again to see what it will do now.", ChatMessageType.Broadcast);
+            return false;
         }
 
         /// <summary>
