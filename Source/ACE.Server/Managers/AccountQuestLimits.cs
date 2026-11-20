@@ -54,7 +54,7 @@ namespace ACE.Server.Managers
         /// flight, branches included, however long they wait) the gate stays closed for the account. EmoteManager releases
         /// its claims when those emotes have all finished. There is no timer on a running chain. A chain that asks a yes/no
         /// question (InqYesNo) keeps its claims while the question is open, up to its timeout, and the answer's set carries
-        /// them on (AwaitAnswer, AnswerArrived).
+        /// them on (AwaitAnswer, TryTakeAnswer, AnswerNotTaken).
         ///
         /// The chain that took a claim must TryAct before each of its steps (only that chain: other emote sets on the object
         /// don't), so what a step queues (a Give, a CastSpell) comes after it acted. A chain whose object left the world
@@ -74,8 +74,16 @@ namespace ACE.Server.Managers
 
             internal (uint AccountId, string Quest) Key { get; }
 
-            /// <summary>Where the chain that took the claim stands now. Dropped (Closed) when the chain is abandoned.</summary>
+            /// <summary>Where the chain that took the claim stands now: the object running it, which a yes/no answer can move
+            /// to the object that runs the answer (FollowChain). Dropped (Closed) when the chain is abandoned.</summary>
             internal Func<ChainState> Chain { get; private set; }
+
+            /// <summary>Under claimLock: from now on the claim follows <paramref name="chain"/> (a closed claim stays closed).</summary>
+            internal void FollowChain(Func<ChainState> chain)
+            {
+                if (!Closed)
+                    Chain = chain;
+            }
 
             /// <summary>Set when a chain that acted is abandoned: the claim keeps the gate closed until a restart. Read and
             /// written under claimLock.</summary>
@@ -246,7 +254,7 @@ namespace ACE.Server.Managers
             if (string.IsNullOrWhiteSpace(questName) || !TryReadAccountStamps(player, questName, out var stamps) || !TryGetWorldQuest(questName, out var quest))
                 return null;
 
-            var nextSolveTime = NextSolveTime(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime());
+            var nextSolveTime = StatusNextSolveTime(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime());
             var hold = nextSolveTime == TimeSpan.MinValue && player.Account != null ? GetGateHold(player.Account.AccountId, questName) : GateHold.None;
 
             return new AccountStatus(nextSolveTime, Completions(stamps), hold);
@@ -353,15 +361,15 @@ namespace ACE.Server.Managers
         /// <summary>Under claimLock: drops a claim from the table unless another has taken its place.</summary>
         private static void RemoveIfCurrent(Claim claim)
         {
-            if (claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
+            if (IsCurrent(claim))
                 claims.Remove(claim.Key);
         }
 
         /// <summary>
         /// A chain holding these claims asked a yes/no question (InqYesNo): the claims hold until the answer comes
-        /// (AnswerArrived) or the question has been open for <paramref name="wait"/>, after which an answer is no longer
-        /// expected: claims whose emotes ended meanwhile are then over (see TryEnd), the rest end with their emotes, and
-        /// either way, fenced against an answer that still turns up (FenceIfUnanswered).
+        /// (TryTakeAnswer, AnswerNotTaken) or the question has been open for <paramref name="wait"/>, after which an answer
+        /// is no longer taken: claims whose emotes ended meanwhile are then over (see TryEnd), the rest end with their
+        /// emotes, and either way, fenced against an answer that still turns up (FenceIfUnanswered).
         /// </summary>
         internal static void AwaitAnswer(IReadOnlyCollection<Claim> chainClaims, TimeSpan wait)
         {
@@ -378,11 +386,47 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// The answer to the chain's question has come. Taken (its set runs as part of the chain): from here its emotes hold
-        /// the claims as usual. Not taken (the object is busy or gone, or has no set for that answer): the claims end as they
-        /// would have with no question, at once if the asking emotes are over, otherwise when those end.
+        /// The answer to the chain's question has come, for an object to run as part of the chain. True while the question is
+        /// still open (its deadline not passed) and the claims still hold the gate: from here they follow the emotes of the
+        /// object running the answer (<paramref name="chain"/>), whichever object that is. Otherwise false, and the answer
+        /// must not run: the question had closed or the gate was taken over, and the claims end as for AnswerNotTaken.
         /// </summary>
-        internal static void AnswerArrived(IReadOnlyCollection<Claim> chainClaims, bool taken)
+        internal static bool TryTakeAnswer(IReadOnlyCollection<Claim> chainClaims, Func<ChainState> chain)
+        {
+            ArgumentNullException.ThrowIfNull(chain);
+
+            if (chainClaims == null || chainClaims.Count == 0)
+                return true;
+
+            lock (claimLock)
+            {
+                var now = DateTime.UtcNow;
+
+                if (!chainClaims.All(c => !c.Closed && !c.Fenced && c.AwaitingAnswerUntil > now && IsCurrent(c)))
+                {
+                    foreach (var claim in chainClaims)
+                        EndUntaken(claim);
+
+                    return false;
+                }
+
+                foreach (var claim in chainClaims)
+                {
+                    claim.AwaitingAnswerUntil = DateTime.MinValue;
+                    claim.ParkedForAnswer = false;
+                    claim.FollowChain(chain);
+                }
+
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// The answer to the chain's question has come and won't run (the object is busy or gone, or has no set for that
+        /// answer, or the player is gone): the claims end as they would have with no question. If the asking emotes are
+        /// over, at once (fenced and released); otherwise they hold the claims until they end.
+        /// </summary>
+        internal static void AnswerNotTaken(IReadOnlyCollection<Claim> chainClaims)
         {
             if (chainClaims == null || chainClaims.Count == 0)
                 return;
@@ -390,17 +434,27 @@ namespace ACE.Server.Managers
             lock (claimLock)
             {
                 foreach (var claim in chainClaims)
-                {
-                    var parked = claim.ParkedForAnswer;
-
-                    claim.AwaitingAnswerUntil = DateTime.MinValue;
-                    claim.ParkedForAnswer = false;
-
-                    if (!taken && parked && !claim.Closed)
-                        RemoveIfCurrent(claim);
-                }
+                    EndUntaken(claim);
             }
         }
+
+        /// <summary>Under claimLock: a claim whose answer won't run. The question is over either way.</summary>
+        private static void EndUntaken(Claim claim)
+        {
+            var parked = claim.ParkedForAnswer;
+
+            claim.AwaitingAnswerUntil = DateTime.MinValue;
+            claim.ParkedForAnswer = false;
+
+            if (parked && !claim.Closed)
+            {
+                claim.Fenced = true;
+                RemoveIfCurrent(claim);
+            }
+        }
+
+        /// <summary>Under claimLock: whether the claim still holds its gate (none has taken its place).</summary>
+        private static bool IsCurrent(Claim claim) => claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim);
 
         /// <summary>
         /// For a chain that stops before it finishes because its target left the world to log out, after which a stamp
@@ -638,6 +692,19 @@ namespace ACE.Server.Managers
                 return TimeSpan.MinValue;
 
             return TimeSpan.FromSeconds((double)(nextSolveTime - currentTime));
+        }
+
+        /// <summary>
+        /// The time %aqt shows: NextSolveTime, except for a quest with no world row that no character on the account has.
+        /// That one is open (IsDone lets its first use through, as InqQuest does), so it reads as now, like a quest with a
+        /// row and no stamps, and a claim holding the gate meanwhile shows as such. Once a character has it, it is MaxValue.
+        /// </summary>
+        public static TimeSpan StatusNextSolveTime(IReadOnlyCollection<Stamp> stamps, WorldQuest quest, double minDeltaRate, uint currentTime)
+        {
+            if (quest == null && !stamps.Any(s => s.NumTimesCompleted >= 0))
+                return TimeSpan.MinValue;
+
+            return NextSolveTime(stamps, quest, minDeltaRate, currentTime);
         }
 
         /// <summary>The account's total completions of the quest (rows with a negative count are skipped).</summary>

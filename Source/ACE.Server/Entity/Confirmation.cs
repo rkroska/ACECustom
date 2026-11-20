@@ -162,7 +162,7 @@ namespace ACE.Server.Entity
             var player = Player;
             if (player == null)
             {
-                AccountQuestLimits.AnswerArrived(ChainClaims, taken: false);   // ILT: no answer can run
+                AccountQuestLimits.AnswerNotTaken(ChainClaims);   // ILT: no answer can run
                 return;
             }
 
@@ -178,7 +178,7 @@ namespace ACE.Server.Entity
             else if (source != null)
                 source.EmoteManager.ExecuteAnswerSet(category, Quest, player, ChainClaims);
             else
-                AccountQuestLimits.AnswerArrived(ChainClaims, taken: false);
+                AccountQuestLimits.AnswerNotTaken(ChainClaims);
         }
     }
 

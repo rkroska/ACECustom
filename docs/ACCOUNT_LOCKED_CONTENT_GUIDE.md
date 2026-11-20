@@ -204,14 +204,18 @@ objects already in the world keep the emotes they spawned with.
   There is no timer, however long the emotes wait. If the object leaves the world (a despawn), or the
   player's character leaves it to log out (a stamp would no longer be saved), before the emotes have done
   anything, they stop and another use can go ahead; if that happens after they started, or they stop on a
-  server error, the gate stays closed for that account until the server restarts, so it fails closed. A
-  yes/no question (`InqYesNo`) after the gate keeps it closed while the question is open (up to its
-  30-second timeout), and the answer's set carries the claim on to the reward and the stamp; if the answer
-  can't run (the object is busy then, or has no set for that answer), the gate opens again. An account has
-  one login at a time (a second login boots the first or is refused), so no other character on the account
-  can be playing meanwhile. When the emotes end on their own without a stamp (the full-pack check stops
-  them, say), the gate opens as soon as the object is idle, so the player can just retry; only emotes that
-  can't finish keep it closed.
+  server error, the gate stays closed for that account until the server restarts, so it fails closed. An
+  account has one login at a time (a second login boots the first or is refused), so no other character on
+  the account can be playing meanwhile. When the emotes end on their own without a stamp (the full-pack
+  check stops them, say), the gate opens as soon as the object is idle, so the player can just retry; only
+  emotes that can't finish keep it closed.
+- **A yes/no question after the gate.** An `InqYesNo` keeps the gate closed while the question is open,
+  and the answer's set (TestSuccess or TestFailure) carries the claim on to the reward and the stamp. The
+  question times out after 30 seconds, which counts as No: an object that is idle then and has a
+  TestFailure set runs it, still holding the gate. If the answer can't run (the object is busy then, or
+  has no set for that answer), the gate opens again. So put the reward and its `StampQuest` in the
+  answer's set, or stamp before asking: a reward given before the question, with the stamp only in the
+  TestSuccess set, can be had again after a No or a timeout, as with `InqQuest`.
 - **A treasure isn't counted by the full-pack check.** The check that stops a reward set on a full pack,
   so the player can free space and retry, counts `Give` steps but not `CreateTreasure`. A treasure can
   take the last free slot, and a later `Give` then stops the set before its `StampQuest`, so the player

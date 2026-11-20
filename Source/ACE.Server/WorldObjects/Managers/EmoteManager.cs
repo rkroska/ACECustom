@@ -109,6 +109,16 @@ namespace ACE.Server.WorldObjects.Managers
             return AccountQuestLimits.TryAct(chainClaims);
         }
 
+        /// <summary>
+        /// ILT: where this object's emotes stand, for a claim to follow (AccountQuestLimits.Claim.Chain), through a weak
+        /// reference, so a claim left behind doesn't keep a destroyed object alive.
+        /// </summary>
+        private Func<AccountQuestLimits.ChainState> NewClaimChain()
+        {
+            var self = new WeakReference<EmoteManager>(this);
+            return () => self.TryGetTarget(out var manager) ? manager.AccountClaimChain() : AccountQuestLimits.ChainState.Gone;
+        }
+
         /// <summary>ILT: where this object's emotes stand, for the InqAccountQuest claims it takes (AccountQuestLimits.Claim).</summary>
         private AccountQuestLimits.ChainState AccountClaimChain()
         {
@@ -1280,9 +1290,7 @@ namespace ACE.Server.WorldObjects.Managers
                         // leave alone when they clear IsBusy) and is still in the world (AccountClaimChain). It refers to
                         // this object weakly, so a claim left behind doesn't keep a destroyed object alive (one that is
                         // gone reads as Gone).
-                        var self = new WeakReference<EmoteManager>(this);
-                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message,
-                            () => self.TryGetTarget(out var manager) ? manager.AccountClaimChain() : AccountQuestLimits.ChainState.Gone, out var accountClaim);
+                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message, NewClaimChain(), out var accountClaim);
 
                         if (accountClaim != null)
                         {
@@ -4087,7 +4095,9 @@ namespace ACE.Server.WorldObjects.Managers
         /// ILT: runs the set for the answer to a yes/no question (Confirmation_YesNo) as part of the chain that asked, with that
         /// chain's InqAccountQuest claims, which stayed held while the question was open (InqYesNo). As for any answer, an
         /// object busy with other emotes, or with no set for it, doesn't take it; the claims then end as they would have with
-        /// no question (AccountQuestLimits.AnswerArrived).
+        /// no question (AccountQuestLimits.AnswerNotTaken). Nor does an answer that comes after the question has closed
+        /// (AccountQuestLimits.TryTakeAnswer). Once taken, the claims follow this object's emotes, even if another object
+        /// asked (a hook's item swapped meanwhile).
         /// </summary>
         public void ExecuteAnswerSet(EmoteCategory category, string quest, Player player, List<AccountQuestLimits.Claim> chainClaims)
         {
@@ -4095,13 +4105,22 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (emoteSet == null || IsBusy)
             {
-                AccountQuestLimits.AnswerArrived(chainClaims, taken: false);
+                AccountQuestLimits.AnswerNotTaken(chainClaims);
                 return;
             }
 
-            // claims still listed from emotes that are over go first, as at the start of any chain; then this chain's
+            // claims still listed from emotes that are over go first, as at the start of any chain
             if (Nested == 0)
                 ReleaseHeldAccountClaims();
+
+            // from here this object's emotes are in flight, so the claims hold from the moment the answer takes them on
+            Nested++;
+
+            if (!AccountQuestLimits.TryTakeAnswer(chainClaims, NewClaimChain()))
+            {
+                Nested--;
+                return;
+            }
 
             heldAccountClaims ??= new List<AccountQuestLimits.Claim>();
             foreach (var claim in chainClaims)
@@ -4110,9 +4129,6 @@ namespace ACE.Server.WorldObjects.Managers
                     heldAccountClaims.Add(claim);
             }
 
-            // from here the answer's emotes, in flight, hold the claims
-            Nested++;
-            AccountQuestLimits.AnswerArrived(chainClaims, taken: true);
             Enqueue(emoteSet, player, chainClaims: chainClaims);
         }
 
