@@ -202,6 +202,12 @@ objects already in the world keep the emotes they spawned with.
   closed. An account has one login at a time (a second login boots the first or is refused), so no other
   character on the account can be playing meanwhile. After a stop with no stamp, the gate opens again as
   soon as the object is idle, so the player can simply try again.
+- **A treasure isn't counted by the full-pack check.** The check that stops a reward set on a full pack,
+  so the player can free space and retry, counts `Give` steps but not `CreateTreasure`. A treasure can
+  take the last free slot, and a later `Give` then stops the set before its `StampQuest`, so the player
+  could repeat it for another treasure (an `InqQuest` gate has the same gap). With `CreateTreasure` in a
+  reward set, put it last, right after the `StampQuest`: a full pack then costs the player the treasure
+  instead of letting them repeat the set.
 - **It fails closed.** If the shard or world database can't be read, or the emote names no quest, the
   account is treated as having done it (QuestSuccess), so a problem never hands out extra rewards. Those errors are
   logged at most once a minute.
