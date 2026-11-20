@@ -110,6 +110,9 @@ namespace ACE.Server.Web.Controllers
                         Off = set?.Off ?? false,
                         Set = set?.Places ?? new Dictionary<string, int>(),
                         Weights = places.ToDictionary(p => p, p => ItemBounties.CanDropAt(e, p) ? ItemBounties.WeightAt(e, p, set) : (int?)null),
+                        // where its own weenie gives it a share (the server's rule, so the page never copies it): "Remove" elsewhere
+                        // just takes back what Zone Control added
+                        Natural = places.Where(p => ItemBounties.NaturalAt(e, p) && e.Weight > 0).ToList(),
                     };
                 })
                 .Concat(sets.Where(kv => table.All(e => e.Wcid != kv.Key)).Select(kv => new
@@ -125,6 +128,7 @@ namespace ACE.Server.Web.Controllers
                     kv.Value.Off,
                     Set = kv.Value.Places ?? new Dictionary<string, int>(),
                     Weights = places.ToDictionary(p => p, p => (int?)null),
+                    Natural = new List<string>(),
                 }))
                 .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
@@ -204,7 +208,8 @@ namespace ACE.Server.Web.Controllers
         {
             if (!HasPortalAccess(PortalPages.ZoneControl))
                 return Forbid();
-            return Run(() =>
+            // one hold of the manager lock for all 15 tiers, so they describe the same moment
+            return Run(() => ZoneControlManager.Locked<IActionResult>(() =>
             {
                 var stat = ACE.Server.Managers.ZoneScaling.ZoneStat.BountyOdds;
                 var tiers = Enumerable.Range(ItemBounties.MinTier, ItemBounties.MaxTier - ItemBounties.MinTier + 1).Select(v =>
@@ -227,11 +232,11 @@ namespace ACE.Server.Web.Controllers
                     };
                 }).ToList();
                 return Ok(new { Tiers = tiers });
-            }, "bounty odds");
+            }), "bounty odds");
         }
 
         private static readonly Lazy<object[]> CreatureTypeChoices = new(() => Enum.GetValues<ACE.Entity.Enum.CreatureType>()
-            .Where(c => (int)c > 0)
+            .Where(c => ItemBounties.IsHuntableSpecies((int)c))
             .Select(c => (object)new { Id = (int)c, Name = ACE.Server.Entity.GearEssences.SpeciesName(c) })
             .ToArray());
 
@@ -267,13 +272,17 @@ namespace ACE.Server.Web.Controllers
                 return StatusCode(403, new { Message = "Re-reading the bounty items needs Admin access." });
             return Run(() =>
             {
-                var done = ItemBounties.RefreshNow();
+                var outcome = ItemBounties.RefreshNow();
                 var body = HealthBody();
-                return Ok(new
+                var message = outcome switch
                 {
-                    Message = done ? "Bounty items re-read from the world database." : "The re-read is still running; the check shows the last finished read.",
-                    Health = body,
-                });
+                    ItemBounties.RefreshOutcome.Done => "Bounty items re-read from the world database.",
+                    ItemBounties.RefreshOutcome.Failed => "The re-read FAILED (see the server log). Drops keep using the last good read, which the check shows.",
+                    _ => "The re-read is still running; the check shows the last finished read.",
+                };
+                if (outcome == ItemBounties.RefreshOutcome.Failed)
+                    return StatusCode(500, new { Message = message, Health = body });
+                return Ok(new { Message = message, Health = body });
             }, "bounty refresh");
         }
 
@@ -349,7 +358,7 @@ namespace ACE.Server.Web.Controllers
                             if (zone.Variation < VariationManager.EndgameMinVariation)
                                 return BadRequest(new { Message = $"Bounty needs variation 11+ - '{zone.Name}' is on v{zone.Variation}, a retail layer. Nothing changed." });
                             where = $"'{zone.Name}' Bounty";
-                            after = ZoneControlManager.EditBounty(zone.Name, change, out refused);
+                            after = ZoneControlManager.EditBounty(zone.Name, change, out refused, VariationManager.EndgameMinVariation);
                             if (after == null)
                                 return NotFound(new { Message = $"No zone '{request.Name}'." });
                             break;
@@ -393,13 +402,22 @@ namespace ACE.Server.Web.Controllers
         public class RewardTableEditRequest
         {
             public string Name { get; set; }
-            /// <summary>add | set | remove | delete</summary>
+            /// <summary>create | add | set | remove | delete</summary>
             public string Op { get; set; }
             public int? Id { get; set; }
             public uint? Wcid { get; set; }
             public int? Amount { get; set; }
             public int? Weight { get; set; }
+            /// <summary>create only: every row of the new list, written in one go.</summary>
+            public List<RewardRowRequest> Rows { get; set; }
             public string Reason { get; set; }
+        }
+
+        public class RewardRowRequest
+        {
+            public uint Wcid { get; set; }
+            public int Amount { get; set; }
+            public int Weight { get; set; }
         }
 
         [HttpPost("bounties/table")]
@@ -427,7 +445,38 @@ namespace ACE.Server.Web.Controllers
                     var rows = (deleted?.Entries ?? new List<BountyRewardEntry>()).Select(e => $"#{e.Id} {BountyEdits.RewardRowText(e)}").ToList();
                     Log.Info($"[ZC] bountytable {name} deleted by {actor.Name} (portal): {(rows.Count == 0 ? "no rewards" : string.Join("; ", rows))}");
                     PlayerManager.BroadcastToAuditChannel(null, $"[portal] {actor.Name} bountytable {name} delete - it had {rows.Count} reward(s){reasonText}");
-                    return Ok(new { Message = $"Bounty reward table '{name}' deleted. A done mystery bounty naming it waits, unpaid, until a table by that name has a reward again." });
+                    var fallback = name.Contains('.') ? name.Substring(0, name.IndexOf('.')) : null;
+                    return Ok(new
+                    {
+                        Message = fallback != null
+                            ? $"Bounty reward table '{name}' deleted. Bounties there now pay from '{fallback}' if it has a reward; they wait, unpaid, only while no list for that place can pay."
+                            : $"Bounty reward table '{name}' deleted. Mystery bounties naming it pay from a one-place version ('{name}.t15' and the like) where one has a reward; elsewhere they wait, unpaid, until a list can pay.",
+                    });
+                }
+
+                if (op == "create")
+                {
+                    // a whole new list in ONE store write (copying a list): every row is checked first, and a list that exists already
+                    // is left alone, so payouts never come from half a copy (review 2026-11-19)
+                    var newRows = request.Rows ?? new List<RewardRowRequest>();
+                    if (newRows.Count == 0 || newRows.Count > BountyRewardTable.MaxEntries)
+                        return BadRequest(new { Message = $"A new list needs 1 to {BountyRewardTable.MaxEntries} rewards." });
+                    foreach (var r in newRows)
+                        if (BountyEdits.CheckRewardRow(r.Wcid, r.Amount, r.Weight) is { } bad)
+                            return BadRequest(new { Message = $"Bounty reward table '{name}': {bad} Nothing was created." });
+                    var made = ZoneControlManager.EditBountyRewardTable(name, t =>
+                    {
+                        if (t.Entries.Count > 0)
+                            return "it exists already. Nothing was created.";
+                        foreach (var r in newRows)
+                            t.Entries.Add(new BountyRewardEntry { Id = t.NextId++, Wcid = r.Wcid, Amount = r.Amount, Weight = r.Weight });
+                        return null;
+                    }, out var createRefused);
+                    if (createRefused != null)
+                        return Conflict(new { Message = $"Bounty reward table '{name}': {createRefused}" });
+                    var madeRows = (made?.Entries ?? new List<BountyRewardEntry>()).Select(e => $"#{e.Id} {BountyEdits.RewardRowText(e)}").ToList();
+                    PlayerManager.BroadcastToAuditChannel(null, $"[portal] {actor.Name} bountytable {name} create with {madeRows.Count} reward(s){reasonText}");
+                    return Ok(new { Message = $"Bounty reward table '{name}' created with {madeRows.Count} reward(s)." });
                 }
 
                 if (op is "add" or "set")
@@ -437,7 +486,7 @@ namespace ACE.Server.Web.Controllers
                         return BadRequest(new { Message = $"Bounty reward table '{name}': {problem}" });
                 }
                 else if (op != "remove")
-                    return BadRequest(new { Message = $"Unknown table action '{request.Op}': add, set, remove or delete." });
+                    return BadRequest(new { Message = $"Unknown table action '{request.Op}': create, add, set, remove or delete." });
 
                 var changedId = request.Id ?? 0;
                 BountyRewardEntry rowBefore = null;

@@ -147,7 +147,7 @@ namespace ACE.Server.Managers.ZoneControl
                     var trial = (JObject)root.DeepClone();
                     foreach (var u in unit.OrderByDescending(u => u.Id))
                     {
-                        if (ZoneControlManager.SectionCanonicalIn(trial, u.Section) != ZoneControlManager.Canonical(u.NewJson))
+                        if (!ZoneControlManager.SectionStillAsLeft(trial, u))
                             why = $"{u.Stat}{(u.Zone != null ? " '" + u.Zone + "'" : "")} changed again after this group, so the rename is left alone as a whole.";
                         else
                             why = ZoneControlManager.ApplySectionToRoot(trial, u);
@@ -171,7 +171,7 @@ namespace ACE.Server.Managers.ZoneControl
                 {
                     if (c.Section == ZoneControlManager.SectionLadder)
                         why = "Ladder versions cannot be reverted.";
-                    else if (ZoneControlManager.SectionCanonicalIn(root, c.Section) != ZoneControlManager.Canonical(c.NewJson))
+                    else if (!ZoneControlManager.SectionStillAsLeft(root, c))
                         why = moved;
                     else
                         why = ZoneControlManager.ApplySectionToRoot(root, c);
@@ -215,8 +215,10 @@ namespace ACE.Server.Managers.ZoneControl
                 o.Properties().FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Value;
         }
 
-        /// <summary>Whole-zone changes that must go back together: in each save (batch), the zones it CREATED and REMOVED, when there are
-        /// two or more of them (a rename is one of each). Keyed by every member's id.</summary>
+        /// <summary>Whole-zone changes that must go back together: a RENAME, i.e. one batch holding exactly one zone removed and one zone
+        /// created, under two different names. Keyed by both ids. A Revert all batch can also hold a zone created and the same zone
+        /// removed (two separate saves undone in one run): those share a name, are separate writes, and are left as two steps
+        /// (review 2026-11-19).</summary>
         internal static Dictionary<long, List<ZoneControlChange>> LinkedZoneChanges(IReadOnlyList<ZoneControlChange> group)
         {
             var map = new Dictionary<long, List<ZoneControlChange>>();
@@ -225,7 +227,10 @@ namespace ACE.Server.Managers.ZoneControl
                 .GroupBy(c => c.BatchId))
             {
                 var unit = batch.ToList();
-                if (unit.Count < 2)
+                var removed = unit.Where(c => c.NewJson == null).ToList();
+                var created = unit.Where(c => c.OldJson == null).ToList();
+                if (unit.Count != 2 || removed.Count != 1 || created.Count != 1
+                    || string.Equals(removed[0].Section, created[0].Section, StringComparison.OrdinalIgnoreCase))
                     continue;
                 foreach (var c in unit)
                     map[c.Id] = unit;
@@ -254,9 +259,12 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Plans on a copy, then carries the plan out under one hold of the manager lock. Each revert still makes its own live
         /// check: one that no longer matches is skipped (it is never forced) and the run goes on. Any other failure, or an exception,
         /// stops the run; the reverts before it stay done (each is logged) and the result says where it stopped.</summary>
-        public static ZoneControlGroupRevertResult RevertAll(IReadOnlyList<ZoneControlChange> group, ZoneStatActor actor, string reason)
+        /// <param name="approved">The change ids the operator confirmed (the preview's list to revert); null = no preview to hold to. A change
+        /// the live plan would revert but the preview left alone is skipped, never reverted unseen (review 2026-11-19).</param>
+        public static ZoneControlGroupRevertResult RevertAll(IReadOnlyList<ZoneControlChange> group, ZoneStatActor actor, string reason, IReadOnlyCollection<long> approved = null)
         {
             var batch = Guid.NewGuid().ToString("N");
+            var allowed = approved == null ? null : new HashSet<long>(approved);
             return ZoneControlManager.Locked(() =>
             {
                 var plan = Plan(group, ZoneControlManager.StoreSnapshot());
@@ -266,6 +274,12 @@ namespace ACE.Server.Managers.ZoneControl
 
                 foreach (var unit in plan.Units)
                 {
+                    if (allowed != null && unit.Any(u => !allowed.Contains(u.Id)))
+                    {
+                        foreach (var u in unit)
+                            result.Skipped.Add((u.Id, "Not in the preview you confirmed (it changed since). Left alone; preview again to include it."));
+                        continue;
+                    }
                     var change = unit[0];
                     ZoneStatEditStatus status;
                     string message;

@@ -183,6 +183,79 @@ namespace ACE.Server.Tests
             Assert.AreEqual("B", (string)((JArray)root["Areas"]).Single()["Name"], "nothing changed in the copy");
         }
 
+        // ---- zone order (it breaks landblock ties, so it is logged when it matters)
+
+        [TestMethod]
+        public void ZoneOrder_MattersOnlyForReorders_AndRemovalsBeforeTheEnd()
+        {
+            var abc = new List<string> { "A", "B", "C" };
+            Assert.IsFalse(ZoneControlManager.ZoneOrderMatters(abc, new List<string> { "A", "B", "C", "D" }), "a zone added at the end");
+            Assert.IsFalse(ZoneControlManager.ZoneOrderMatters(abc, new List<string> { "A", "B" }), "the last zone removed");
+            Assert.IsTrue(ZoneControlManager.ZoneOrderMatters(abc, new List<string> { "B", "C" }), "a zone removed from the front");
+            Assert.IsTrue(ZoneControlManager.ZoneOrderMatters(abc, new List<string> { "C", "B", "A" }), "an import in another order");
+        }
+
+        private static ZoneControlChange Order(long id, string[] from, string[] to, string batch) => new ZoneControlChange
+        {
+            Id = id,
+            ChangedAtUtc = T0,
+            Actor = "Alice",
+            Source = ZoneStatActor.SourceGame,
+            Rank = "-",
+            Stat = "Zone order",
+            Kind = ZoneControlChangeLog.KindSection,
+            Section = ZoneControlManager.SectionZoneOrder,
+            OldJson = from == null ? null : JsonConvert.SerializeObject(from),
+            NewJson = to == null ? null : JsonConvert.SerializeObject(to),
+            BatchId = batch,
+        };
+
+        // A deleted from the front of the list: Revert all brings it back AND puts it back in front, so it governs its landblocks again
+        [TestMethod]
+        public void Plan_RestoresADeletedZone_AtItsOldPlace()
+        {
+            var root = Store(Zone(true, 3, "B"));
+            var order = Order(1, new[] { "A", "B" }, new[] { "B" }, "del");
+            var gone = Part(2, Zone(true, 3, "A"), null, section: "zone:a");
+            gone.BatchId = "del";
+
+            var plan = ZoneControlRevert.Plan(NewestFirst(order, gone), root);
+
+            CollectionAssert.AreEqual(new long[] { 2, 1 }, Ids(plan.Revert), string.Join("; ", plan.Skipped.Select(s => s.Why)));
+            CollectionAssert.AreEqual(new[] { "A", "B" }, ((JArray)root["Areas"]).Select(a => (string)a["Name"]).ToArray());
+        }
+
+        [TestMethod]
+        public void Plan_PutsAnImportsZoneOrderBack()
+        {
+            var root = Store(Zone(true, 3, "B"), Zone(true, 3, "A"));
+            var plan = ZoneControlRevert.Plan(NewestFirst(Order(1, new[] { "A", "B" }, new[] { "B", "A" }, null)), root);
+
+            Assert.AreEqual(1, plan.Revert.Count);
+            CollectionAssert.AreEqual(new[] { "A", "B" }, ((JArray)root["Areas"]).Select(a => (string)a["Name"]).ToArray());
+        }
+
+        [TestMethod]
+        public void Plan_SkipsAZoneOrderChangedSince()
+        {
+            var root = Store(Zone(true, 3, "A"), Zone(true, 3, "B"));   // someone already put A first again
+            var plan = ZoneControlRevert.Plan(NewestFirst(Order(1, new[] { "A", "B" }, new[] { "B", "A" }, null)), root);
+
+            Assert.AreEqual(0, plan.Revert.Count);
+            Assert.AreEqual(1, plan.Skipped.Count);
+        }
+
+        // a Revert all that undid "create A" and "delete A" (two saves) gives both rows one batch; they are two steps, not a rename
+        [TestMethod]
+        public void LinkedZoneChanges_DoNotJoinTheSameZonesCreateAndDelete()
+        {
+            var made = Part(1, null, Zone(true, 3, "A"), section: "zone:a");
+            var gone = Part(2, Zone(true, 3, "A"), null, section: "zone:a");
+            made.BatchId = gone.BatchId = "revert-run";
+
+            Assert.AreEqual(0, ZoneControlRevert.LinkedZoneChanges(new List<ZoneControlChange> { made, gone }).Count);
+        }
+
         [TestMethod]
         public void Plan_RevertsEverything_NewestFirst_WhenNothingMovedOn()
         {

@@ -40,7 +40,31 @@ namespace ACE.Server.Tests
 
             Assert.AreEqual("full", z.Reach);
             Assert.AreEqual(4, z.MonsterKinds, "no rank, regular, leader, boss");
+            Assert.AreEqual(4, z.Changed.Count, "every kind is listed with its before and after");
             Assert.IsTrue(z.Changed.All(m => m.Before == 100 && m.After == 200));
+        }
+
+        // a tiny chance doubling is a change, even though both values round to 0 for display
+        [TestMethod]
+        public void TinyValues_AreComparedBeforeRounding()
+        {
+            var z = Compare(14, Defaults((14, Row((Stat, 0.0000002)))), Defaults((14, Row((Stat, 0.0000004)))));
+            Assert.AreEqual("full", z.Reach);
+        }
+
+        // armor_base_level is read from the tier Default alone, so a zone's own value never hides a Default edit
+        [TestMethod]
+        public void ArmorBaseLevel_ComparesTheTierDefaultOnly()
+        {
+            const string armor = "armor_base_level";
+            var zone = Row((armor, 5000));
+            var z = ZoneControlManager.CompareZone("Test", 14, true, armor,
+                Defaults((14, Row((armor, 1400)))), Defaults((14, Row((armor, 1500)))), zone, zone, Array.Empty<ZoneControlManager.ImpactBucket>());
+
+            Assert.AreEqual("full", z.Reach);
+            Assert.AreEqual(1, z.MonsterKinds);
+            Assert.AreEqual(1400, z.Changed.Single().Before);
+            Assert.AreEqual(1500, z.Changed.Single().After);
         }
 
         [TestMethod]
@@ -115,6 +139,7 @@ namespace ACE.Server.Tests
         {
             var z = Compare(14, Defaults((14, Row((Stat, 100)))), Defaults((14, Row())));
             Assert.AreEqual("full", z.Reach);
+            Assert.AreEqual(4, z.Changed.Count, "every kind is listed with its before and after");
             Assert.IsTrue(z.Changed.All(m => m.After == null));
         }
     }

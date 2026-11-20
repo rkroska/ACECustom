@@ -129,19 +129,34 @@ namespace ACE.Server.Managers.ZoneControl
         {
             var kinds = 0;
             var changed = new List<ZoneStatImpactMonster>();
-            void Compare(string label, ZcRank rank, ZoneVariantProfile bucketBefore, ZoneVariantProfile bucketAfter)
+            // compared unrounded (a chance going from 0.0000002 to 0.0000004 is a change), shown rounded (review 2026-11-19)
+            static double? Shown(double? v) => v.HasValue ? Math.Round(v.Value, 6) : null;
+            void Add(string label, double? before, double? after)
             {
                 kinds++;
-                var before = ValueAt(zone, variation, baseStat, ZoneVariantProfile.Merge(AnchoredDefault(variation, rank, defaultsBefore), minionBefore?.ForRank(rank), bucketBefore));
-                var after = ValueAt(zone, variation, baseStat, ZoneVariantProfile.Merge(AnchoredDefault(variation, rank, defaultsAfter), minionAfter?.ForRank(rank), bucketAfter));
                 if (before != after)
-                    changed.Add(new ZoneStatImpactMonster { Label = label, Before = before, After = after });
+                    changed.Add(new ZoneStatImpactMonster { Label = label, Before = Shown(before), After = Shown(after) });
             }
+            void Compare(string label, ZcRank rank, ZoneVariantProfile bucketBefore, ZoneVariantProfile bucketAfter) =>
+                Add(label,
+                    ValueAt(zone, variation, baseStat, ZoneVariantProfile.Merge(AnchoredDefault(variation, rank, defaultsBefore), minionBefore?.ForRank(rank), bucketBefore)),
+                    ValueAt(zone, variation, baseStat, ZoneVariantProfile.Merge(AnchoredDefault(variation, rank, defaultsAfter), minionAfter?.ForRank(rank), bucketAfter)));
 
-            foreach (var rank in ZoneRank.All)
-                Compare(rank == ZcRank.None ? "No rank" : ZoneRank.Label(rank), rank, null, null);
-            foreach (var b in buckets)
-                Compare($"wcid {b.Wcid} ({(b.Rank == ZcRank.None ? "no rank" : ZoneRank.Label(b.Rank))})", b.Rank, b.Before, b.After);
+            if (string.Equals(baseStat, ZoneStat.ArmorBaseLevel, StringComparison.OrdinalIgnoreCase))
+            {
+                // tier-only: armour reads the tier Default alone (ZoneStatResolver.BaseArmorLevel), never a zone, rank or monster row,
+                // so the preview compares exactly that value (review 2026-11-19)
+                Add("Every monster (tier Default)",
+                    ValueAt(zone, variation, baseStat, AnchoredDefault(variation, ZcRank.None, defaultsBefore)),
+                    ValueAt(zone, variation, baseStat, AnchoredDefault(variation, ZcRank.None, defaultsAfter)));
+            }
+            else
+            {
+                foreach (var rank in ZoneRank.All)
+                    Compare(rank == ZcRank.None ? "No rank" : ZoneRank.Label(rank), rank, null, null);
+                foreach (var b in buckets)
+                    Compare($"wcid {b.Wcid} ({(b.Rank == ZcRank.None ? "no rank" : ZoneRank.Label(b.Rank))})", b.Rank, b.Before, b.After);
+            }
 
             return new ZoneStatImpactZone
             {
@@ -158,7 +173,7 @@ namespace ACE.Server.Managers.ZoneControl
         private static double? ValueAt(string zone, int tier, string baseStat, ZoneVariantProfile merged)
         {
             var eval = EvaluateVariant(zone, merged);
-            return eval.Has(baseStat) ? Math.Round(eval.GetT(baseStat, 0, tier), 6) : null;
+            return eval.Has(baseStat) ? eval.GetT(baseStat, 0, tier) : null;
         }
     }
 }

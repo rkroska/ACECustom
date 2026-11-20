@@ -147,11 +147,12 @@ namespace ACE.Server.Managers.ZoneControl
         private static ZoneStatEditResult ApplyLocked(ZoneStatTarget target, string stat, StatCurve next, ZoneStatActor actor, ZoneStatExpectation expected, long? revertsId, string reason, string batchId)
         {
             ZoneStatEditResult result = null;
-            // the row the log names: a zone edit by the zone's real name ("my_zone" can find "My Zone"), so History, its whole-zone
-            // check and Revert all look for the name the store holds (review 2026-11-19)
-            var logged = target;
-            // this edit logs its own exact row below, so the store save it triggers leaves out exactly that stat change. Anything else
-            // that differs in the part (a change an earlier failed save left in memory) is still logged (review 2026-11-19).
+            ZoneControlChangeLog.StatSkip edit = null;
+            // The save this edit triggers logs it: the stat row first (old value from the last SAVED copy), then anything else that
+            // differs in the part, one batch (review 2026-11-19). The row names a zone by its real name ("my_zone" can find "My Zone"),
+            // so History, its whole-zone check and Revert all look for the name the store holds.
+            ZoneControlChangeLog.StatSkip Describe(string section, ZoneStatTarget logged) =>
+                new ZoneControlChangeLog.StatSkip(section, logged, stat, next) { Actor = actor, RevertsId = revertsId, Reason = reason, BatchId = batchId };
             using var skip = ZoneControlChangeLog.StatEditOn(null);
             if (target.IsDefault)
             {
@@ -159,7 +160,7 @@ namespace ACE.Server.Managers.ZoneControl
                 {
                     result = ApplyToRow(create => d.Profile.RankLayer(target.Rank, create), stat, next, expected);
                     if (result.Status == ZoneStatEditStatus.Applied)
-                        ZoneControlChangeLog.SetSkipSection(new ZoneControlChangeLog.StatSkip(ZoneControlManager.DefaultSectionKey(target.Variation), target, stat, next));
+                        ZoneControlChangeLog.SetSkipSection(edit = Describe(ZoneControlManager.DefaultSectionKey(target.Variation), target));
                     return result.Status == ZoneStatEditStatus.Applied;
                 });
             }
@@ -167,18 +168,17 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var found = ZoneControlManager.MutateAreaIf(target.Zone, a =>
                 {
-                    logged = ZoneStatTarget.ForZone(a.Name, target.Wcid, target.Rank);
                     result = ApplyToRow(create => RowFor(a.Profile, target.Wcid, target.Rank, create, out _), stat, next, expected);
                     if (result.Status == ZoneStatEditStatus.Applied)
-                        ZoneControlChangeLog.SetSkipSection(new ZoneControlChangeLog.StatSkip(ZoneControlManager.ZoneSectionKey(a.Name), logged, stat, next));
+                        ZoneControlChangeLog.SetSkipSection(edit = Describe(ZoneControlManager.ZoneSectionKey(a.Name), ZoneStatTarget.ForZone(a.Name, target.Wcid, target.Rank)));
                     return result.Status == ZoneStatEditStatus.Applied;
                 });
                 if (!found)
                     return new ZoneStatEditResult { Status = ZoneStatEditStatus.NoSuchZone, Stat = stat, Message = $"No zone '{target.Zone}'." };
             }
 
-            if (result.Status == ZoneStatEditStatus.Applied && !SameCurve(result.Old, result.New))
-                result.LogWrite = ZoneControlChangeLog.Record(logged, stat, result.Old, result.New, actor, revertsId, reason, batchId);
+            if (result.Status == ZoneStatEditStatus.Applied)
+                result.LogWrite = edit?.LogWrite;
             return result;
         }
 

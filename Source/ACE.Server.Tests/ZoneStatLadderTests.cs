@@ -182,6 +182,12 @@ namespace ACE.Server.Tests
                 Assert.AreEqual(game.Stats.ContainsKey(Stat), ladder.InEffect, where);
                 if (ladder.InEffect)
                     Assert.AreEqual(game.Stats[Stat].Base, Winner(ladder).Value, where);
+                // and the OFF state: set somewhere and turned off by the merged toggle must read as turned off, not as unset
+                var raw = ZoneVariantProfile.Merge(ZoneVariantProfile.Merge(anchor?.ForRank(rank), tier?.ForRank(rank)), zone?.ForRank(rank), bucket);
+                var off = raw.Stats.ContainsKey(Stat) && raw.StatToggles.TryGetValue(Stat, out var on) && !on;
+                Assert.AreEqual(off, ladder.TurnedOff, where + " turned off");
+                if (off)
+                    Assert.AreEqual(ZoneStatRungState.Off, Winner(ladder).State, where + " winner state");
                 var twinWins = ladder.Rungs.SingleOrDefault(r => r.AnchorState == ZoneStatRungState.Wins);
                 Assert.AreEqual(game.Stats.ContainsKey(Twin), twinWins != null, where);
                 if (twinWins != null)

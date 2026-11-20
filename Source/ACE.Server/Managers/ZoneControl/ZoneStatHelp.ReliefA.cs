@@ -133,7 +133,7 @@ namespace ACE.Server.Managers.ZoneControl
                 Summary = "Switches on the aug curves for this tier's monsters: the player's augs cut their normal hits by a capped curve.",
                 Details = "When on (a value of 0.5 or more), the game stops using its own aug math for hits from these monsters on players. "
                     + "Protection spells count at their base strength only, times one minus the life aug curve (aug_prot_*). "
-                    + "Armor, Impenetrability, Banes and Armor Self count without their aug parts, times one minus the item aug curve (aug_armor_*). "
+                    + "Armor, Impenetrability, Banes and Armor Self count without their aug parts; the armor multiplier that gives is then multiplied by one minus the item aug curve (aug_armor_*). "
                     + "Item augs and life augs both include Triune Weave. It covers melee, missile and spell hits. "
                     + "A shield's Impenetrability and Banes also drop their aug part against these monsters.",
                 Shape = "A switch. 0.5 or more is on, anything below is off.",

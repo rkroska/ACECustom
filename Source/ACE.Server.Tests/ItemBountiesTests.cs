@@ -618,6 +618,26 @@ namespace ACE.Server.Tests
                 Assert.IsTrue(Why(w).All(c => c < 128), "plain ASCII");
         }
 
+        /// <summary>A range above the most a bounty can ask shows the count players really get (RollKills holds it to the cap).</summary>
+        [TestMethod]
+        public void CatalogTask_HoldsTheRangeToTheKillCap()
+        {
+            var max = BountyManager.MaxKills;
+            var text = ItemBounties.CatalogTask(ItemBounties.KindSweep, null, 0, max + 1000, max + 5000, false, null, 15);
+            StringAssert.Contains(text, max.ToString("N0", System.Globalization.CultureInfo.InvariantCulture));
+            Assert.IsFalse(text.Contains((max + 1000).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)), text);
+        }
+
+        /// <summary>AttackAll and AttackNonSelf are targeting values no creature has: never a species a bounty can hunt.</summary>
+        [TestMethod]
+        public void HuntableSpecies_LeavesOutTheTargetingValues()
+        {
+            Assert.IsTrue(ItemBounties.IsHuntableSpecies((int)CreatureType.Banderling));
+            Assert.IsFalse(ItemBounties.IsHuntableSpecies((int)CreatureType.AttackAll));
+            Assert.IsFalse(ItemBounties.IsHuntableSpecies((int)CreatureType.AttackNonSelf));
+            Assert.IsFalse(ItemBounties.IsHuntableSpecies(0));
+        }
+
         /// <summary>The catalog's task sentence for a weenie: fixed count, rolled range, hidden count, species, region, fixed tier.</summary>
         [TestMethod]
         public void CatalogTask_Words()

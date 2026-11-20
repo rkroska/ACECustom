@@ -4,7 +4,9 @@
 -- reason = why, as typed by the editor; batch_id = rows saved together; section = which part (kind 'section' only).
 --
 -- The server also creates this table, and adds any missing column, the first time it needs it
--- (ZoneControlChangeLog.EnsureSchema), so running this file is optional. Safe to run with the server up; re-running is harmless.
+-- (ZoneControlChangeLog.EnsureSchema), so running this file is optional. If you do run it, run it while the server is STOPPED:
+-- the server may add the same column at the same moment and the ALTER then fails (MySQL error 1060). Re-running it later is
+-- harmless (each ALTER runs only when its column is missing).
 -- Run it against the SHARD database: the column checks use DATABASE(), so select the shard schema first (Workbench keeps
 -- whichever schema was selected last).
 

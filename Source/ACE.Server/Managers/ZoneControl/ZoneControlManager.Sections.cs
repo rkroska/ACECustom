@@ -44,6 +44,16 @@ namespace ACE.Server.Managers.ZoneControl
         private const string SectionZonePrefix = "zone:";
         private const string SectionDefaultPrefix = "default:";
 
+        /// <summary>
+        /// ZONE ORDER (review 2026-11-19): the order of the zones in the store breaks ties when two zones cover the same landblock, so it
+        /// is a part of its own: the zone names in store order. It is logged only when it MATTERS - zones still there changed order (an
+        /// import in another order), or a zone was removed from anywhere but the end (bringing it back by appending would hand its
+        /// landblocks to a later zone). Plain creations (added at the end) and removals of the last zone are not. Keyed so it sorts
+        /// before every "zone:" part: in a save's batch the zone rows come after it, so Revert all puts a removed zone back first and
+        /// then restores the order.
+        /// </summary>
+        public const string SectionZoneOrder = "order:zones";
+
         internal static string ZoneSectionKey(string zoneName) => SectionZonePrefix + zoneName.ToLowerInvariant();
         internal static string DefaultSectionKey(int variation) => SectionDefaultPrefix + variation;
 
@@ -69,8 +79,10 @@ namespace ACE.Server.Managers.ZoneControl
                 map[key] = new SectionState { Key = key, Label = label, Zone = zone, Variation = variation, Json = json, Canonical = Canonical(json) };
             }
 
-            foreach (var a in store.Areas.Where(a => a != null && !string.IsNullOrWhiteSpace(a.Name)))
+            var zones = store.Areas.Where(a => a != null && !string.IsNullOrWhiteSpace(a.Name)).ToList();
+            foreach (var a in zones)
                 Add(ZoneSectionKey(a.Name), "Zone settings", a.Name, null, a);
+            Add(SectionZoneOrder, "Zone order", null, null, zones.Select(a => a.Name).ToList());
             foreach (var kv in store.VariationDefaults.Where(kv => kv.Value != null))
                 Add(DefaultSectionKey(kv.Key), $"T{kv.Key} Default", null, kv.Key, kv.Value);
             var root = JObject.FromObject(store);
@@ -127,6 +139,8 @@ namespace ACE.Server.Managers.ZoneControl
                 after.TryGetValue(key, out var a);
                 if (b?.Canonical == a?.Canonical)
                     continue;
+                if (key == SectionZoneOrder && !ZoneOrderMatters(NamesOf(b?.Json), NamesOf(a?.Json)))
+                    continue;
                 var any = a ?? b;
                 changes.Add(new ZoneControlChangeLog.SectionChange
                 {
@@ -154,42 +168,104 @@ namespace ACE.Server.Managers.ZoneControl
                 return changes;
             before.TryGetValue(skip.Section, out var b);
             after.TryGetValue(skip.Section, out var a);
-            // a part the stat edit itself created has no earlier copy to carry anything over from
-            if (b == null || a == null)
+            if (a == null)
                 return changes;
-            var expected = WithStatApplied(b.Json, skip);
-            if (expected == null || Canonical(expected) == a.Canonical)
-                return changes;
+
+            // A Default the stat edit creates starts from nothing; a ZONE the saved store does not hold yet was made by an earlier save
+            // that failed (UpsertArea adds it first), so its creation is logged whole and History can undo it (review 2026-11-19)
+            string baseJson = b?.Json ?? (skip.Target.IsDefault ? "{}" : null);
+            var expected = baseJson == null ? null : WithStatApplied(baseJson, skip);
+            if (expected != null && Canonical(expected) == a.Canonical)
+                return changes;   // only the stat changed: its own row says it all
             changes.Add(new ZoneControlChangeLog.SectionChange
             {
                 Section = skip.Section,
                 Label = a.Label,
                 Zone = a.Zone,
                 Variation = a.Variation,
-                OldJson = expected,
+                // the part as it would be with the stat edit alone, so this row holds only the OTHER changes and comes after the stat
+                // row in the batch (Revert all undoes it first, then the stat); a part that was never saved is a creation
+                OldJson = b == null ? null : expected,
                 NewJson = a.Json,
             });
             return changes.OrderBy(c => c.Section, StringComparer.Ordinal).ToList();
         }
 
+        /// <summary>The zone names of a zone-order part, in order (empty for none).</summary>
+        internal static List<string> NamesOf(string json) =>
+            string.IsNullOrEmpty(json) ? new List<string>() : JArray.Parse(json).Select(t => (string)t).Where(n => n != null).ToList();
+
+        private static List<string> CommonOrder(IEnumerable<string> order, ICollection<string> keep)
+        {
+            var set = new HashSet<string>(keep, StringComparer.OrdinalIgnoreCase);
+            return order.Where(set.Contains).Select(n => n.ToLowerInvariant()).ToList();
+        }
+
+        /// <summary>Whether a change of zone order needs a log row: the zones in both lists are in another order, or a removed zone was not
+        /// at the end (see <see cref="SectionZoneOrder"/>).</summary>
+        internal static bool ZoneOrderMatters(List<string> before, List<string> after)
+        {
+            if (!CommonOrder(before, after).SequenceEqual(CommonOrder(after, before)))
+                return true;
+            var afterSet = new HashSet<string>(after, StringComparer.OrdinalIgnoreCase);
+            var lastKept = before.FindLastIndex(afterSet.Contains);
+            return before.Select((n, i) => (n, i)).Any(x => !afterSet.Contains(x.n) && x.i < lastKept);
+        }
+
+        /// <summary>A zone-order change still holds: the zones it left that are still there keep that order (zones added or put back since
+        /// don't count - a removed zone comes back before its order row is undone).</summary>
+        private static bool ZoneOrderStillAsLeft(JObject root, ZoneControlChange change)
+        {
+            var now = AreasIn(root).OfType<JObject>().Select(NameOf).Where(n => n != null).ToList();
+            var left = NamesOf(change.NewJson);
+            return CommonOrder(now, left).SequenceEqual(CommonOrder(left, now));
+        }
+
+        /// <summary>The part a change touched still holds exactly what the change left: the check before any revert (single, or one step of
+        /// Revert all).</summary>
+        internal static bool SectionStillAsLeft(JObject root, ZoneControlChange change) =>
+            change.Section == SectionZoneOrder
+                ? ZoneOrderStillAsLeft(root, change)
+                : SectionCanonicalIn(root, change.Section) == Canonical(change.NewJson);
+
+        /// <summary>The stat's curve in a stored part (one zone or one Default), or null when the part or the stat is missing.</summary>
+        internal static ZoneScaling.StatCurve CurveIn(string partJson, ZoneControlChangeLog.StatSkip skip)
+        {
+            if (partJson == null)
+                return null;
+            var root = RootWith(JObject.Parse(partJson), skip.Target);
+            var row = StatsIn(root, ChangeFor(skip), false, out var zoneMissing);
+            if (zoneMissing || row == null)
+                return null;
+            var p = row.Properties().FirstOrDefault(x => string.Equals(x.Name, skip.Stat, StringComparison.OrdinalIgnoreCase));
+            return p?.Value is JObject curve ? curve.ToObject<ZoneScaling.StatCurve>() : null;
+        }
+
+        private static JObject RootWith(JObject part, ZoneStatTarget target)
+        {
+            var root = new JObject();
+            if (target.IsDefault)
+                root[nameof(Store.VariationDefaults)] = new JObject { [target.Variation.ToString()] = part };
+            else
+                root[nameof(Store.Areas)] = new JArray(part);
+            return root;
+        }
+
+        private static ZoneControlChange ChangeFor(ZoneControlChangeLog.StatSkip skip) => new ZoneControlChange
+        {
+            Zone = skip.Target.IsDefault ? null : skip.Target.Zone,
+            Variation = skip.Target.IsDefault ? skip.Target.Variation : (int?)null,
+            Wcid = skip.Target.Wcid,
+            Rank = ZoneScaling.ZoneRank.Key(skip.Target.Rank),
+            Stat = skip.Stat,
+        };
+
         /// <summary>A stored part (one zone or one Default) with one stat change applied, as JSON; null if the row can't be found.</summary>
         internal static string WithStatApplied(string partJson, ZoneControlChangeLog.StatSkip skip)
         {
             var part = JObject.Parse(partJson);
-            var root = new JObject();
-            if (skip.Target.IsDefault)
-                root[nameof(Store.VariationDefaults)] = new JObject { [skip.Target.Variation.ToString()] = part };
-            else
-                root[nameof(Store.Areas)] = new JArray(part);
-            var change = new ZoneControlChange
-            {
-                Zone = skip.Target.IsDefault ? null : skip.Target.Zone,
-                Variation = skip.Target.IsDefault ? skip.Target.Variation : (int?)null,
-                Wcid = skip.Target.Wcid,
-                Rank = ZoneScaling.ZoneRank.Key(skip.Target.Rank),
-                Stat = skip.Stat,
-            };
-            var row = StatsIn(root, change, skip.Next != null, out var zoneMissing);
+            var root = RootWith(part, skip.Target);
+            var row = StatsIn(root, ChangeFor(skip), skip.Next != null, out var zoneMissing);
             if (zoneMissing)
                 return null;
             foreach (var p in row?.Properties().Where(p => string.Equals(p.Name, skip.Stat, StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<JProperty>())
@@ -207,7 +283,18 @@ namespace ACE.Server.Managers.ZoneControl
             try
             {
                 var now = SectionsOf(store);
-                var changes = DiffSections(_savedSections, now, ZoneControlChangeLog.SkipSection);
+                var skip = ZoneControlChangeLog.SkipSection;
+                var changes = DiffSections(_savedSections, now, skip);
+                if (skip != null)
+                {
+                    // a stat edit's save: the stat row first, its old value from the last SAVED copy (a failed save may have changed
+                    // memory since; reverting must go back to what the shard held), then the other changes
+                    _savedSections.TryGetValue(skip.Section, out var saved);
+                    var savedOld = CurveIn(saved?.Json, skip);
+                    _savedSections = now;
+                    skip.LogWrite = ZoneControlChangeLog.RecordStatSave(skip, savedOld, changes);
+                    return;
+                }
                 _savedSections = now;
                 ZoneControlChangeLog.RecordSections(changes, ZoneControlChangeLog.CurrentActor, revertsId, reason ?? ZoneControlChangeLog.CurrentReason);
             }
@@ -256,11 +343,11 @@ namespace ACE.Server.Managers.ZoneControl
             EnsureInitialized();
             lock (_lock)
             {
-                var current = SectionsOf(BuildStore());
+                var check = StoreSnapshot();
                 foreach (var change in changes)
                 {
-                    current.TryGetValue(change.Section, out var now);
-                    if (now?.Canonical != Canonical(change.NewJson))
+                    var now = SectionCanonicalIn(check, change.Section);
+                    if (!SectionStillAsLeft(check, change))
                         return new SectionRevertResult
                         {
                             Status = ZoneStatEditStatus.Conflict,
@@ -341,6 +428,8 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>One part of a store copy, canonical (null = the part does not exist). Matches <see cref="SectionsOf"/> on the live store.</summary>
         internal static string SectionCanonicalIn(JObject root, string key)
         {
+            if (key == SectionZoneOrder)
+                return Canonical(new JArray(AreasIn(root).OfType<JObject>().Select(NameOf).Where(n => n != null)).ToString(Formatting.None));
             if (key.StartsWith(SectionZonePrefix, StringComparison.Ordinal))
                 return AreaIn(root, key.Substring(SectionZonePrefix.Length)) is { } area ? Canonical(area.ToString(Formatting.None)) : null;
             if (key.StartsWith(SectionDefaultPrefix, StringComparison.Ordinal))
@@ -356,6 +445,21 @@ namespace ACE.Server.Managers.ZoneControl
         internal static string ApplySectionToRoot(JObject root, ZoneControlChange change)
         {
             var old = change.OldJson == null ? null : JToken.Parse(change.OldJson);
+            if (change.Section == SectionZoneOrder)
+            {
+                // the zones the old order names go back into that order; any zone it does not name keeps its place after them
+                var areas = AreasIn(root);
+                var all = areas.OfType<JObject>().ToList();
+                var wanted = NamesOf(change.OldJson);
+                var ordered = wanted
+                    .Select(n => all.FirstOrDefault(a => string.Equals(NameOf(a), n, StringComparison.OrdinalIgnoreCase)))
+                    .Where(a => a != null).Distinct().ToList();
+                ordered.AddRange(all.Where(a => !ordered.Contains(a)));
+                areas.Clear();
+                foreach (var a in ordered)
+                    areas.Add(a);
+                return null;
+            }
             if (change.Section.StartsWith(SectionZonePrefix, StringComparison.Ordinal))
             {
                 var areas = AreasIn(root);

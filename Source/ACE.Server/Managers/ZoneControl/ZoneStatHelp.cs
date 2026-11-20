@@ -208,8 +208,10 @@ namespace ACE.Server.Managers.ZoneControl
             Add("Careful", entry.Caution);
             Add("Takes effect", TakesEffect(entry.Timing));
             var key = stat.Trim().ToLowerInvariant();
+            // the same row the value was set on: repeat its --rank or --wcid, or the clear lands on the Default row and the override stays
             Add("Undo", "/zonecontrol clearstat <zone> " + key + " (or /zonecontrol default <variation> clearstat " + key
-                + ") removes it from that row, or set the old value again. On the portal, History > Revert puts back the exact old value.");
+                + ") removes it from that row - add the same --rank <rank> or --wcid <id> you set it with, or it clears the Default row"
+                + " instead. Or set the old value again. On the portal, History > Revert puts back the exact old value.");
             if (entry.Related.Length > 0)
                 Add("See also", string.Join(", ", entry.Related));
             return lines;

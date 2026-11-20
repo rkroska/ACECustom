@@ -2576,7 +2576,8 @@ namespace ACE.Server.Managers.ZoneControl
             EnsureInitialized();
             lock (_lock)
             {
-                if (!_variationDefaults.TryGetValue(variation, out var def) || def == null)
+                var created = !_variationDefaults.TryGetValue(variation, out var def) || def == null;
+                if (created)
                     _variationDefaults[variation] = def = new VariationDefault();
 
                 def.Profile ??= new ZoneVariantProfile();
@@ -2585,7 +2586,9 @@ namespace ACE.Server.Managers.ZoneControl
 
                 var changed = mutate(def);
 
-                if (def.IsEmpty && string.IsNullOrWhiteSpace(def.Notes))
+                // an empty Default goes after an edit that left it empty, or when this call made it; a refused edit leaves a stored
+                // (even empty) Default alone, as the shard still holds it (review 2026-11-19)
+                if ((changed || created) && def.IsEmpty && string.IsNullOrWhiteSpace(def.Notes))
                     _variationDefaults.Remove(variation);
 
                 if (changed)
@@ -2697,7 +2700,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// writes back an old copy over the other. <paramref name="edit"/> returns why it refused (nothing is saved then), or
         /// null. Returns the settings as they now are (null for no such zone), and the refusal.
         /// </summary>
-        public static BountyConfig EditBounty(string name, Func<BountyConfig, string> edit, out string refused)
+        public static BountyConfig EditBounty(string name, Func<BountyConfig, string> edit, out string refused, int minVariation = 0)
         {
             refused = null;
             EnsureInitialized();
@@ -2705,6 +2708,12 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var a = FindArea(name);
                 if (a == null) return null;
+                // checked here, under the lock that commits the edit: a variation change can't slip in between (review 2026-11-19)
+                if (a.Variation < minVariation)
+                {
+                    refused = $"Bounty needs variation {minVariation}+ - '{a.Name}' is on v{a.Variation}, a retail layer. Nothing changed.";
+                    return (a.Bounty ?? new BountyConfig()).Clone();
+                }
                 var cfg = (a.Bounty ?? new BountyConfig()).Clone();
                 refused = edit(cfg);
                 if (refused != null)

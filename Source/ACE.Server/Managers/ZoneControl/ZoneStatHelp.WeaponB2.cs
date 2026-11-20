@@ -21,6 +21,11 @@ namespace ACE.Server.Managers.ZoneControl
             + "The T25 twins of both set the same pair at T25, and tiers between sit on the line. "
             + "The number is stamped with its grade, so changing the band later also moves weapons that have already dropped, the next time they are equipped.";
 
+        // the Caution twin of the band note: these stats are re-worked from the grade, so the general "weapons keep their stamp" note
+        // would contradict the Details above (review 2026-11-19)
+        private const string WeaponB2RestampNote =
+            "A weapon keeps the grade it dropped with; its number is worked out again from the band the next time it is equipped, so a band change reaches weapons that have already dropped then. ";
+
         private static readonly string[] WeaponB2BiteRelated =
         {
             ZoneStat.WeaponBiteChance, ZoneStat.WeaponBiteMin, ZoneStat.WeaponBiteMax,
@@ -88,7 +93,7 @@ namespace ACE.Server.Managers.ZoneControl
                 Lower = lower,
                 Range = range,
                 Timing = ZoneStatTiming.Loot,
-                Caution = WeaponAStampNote + WeaponB2LockNote + extraCaution + " Needs the " + cardName + " card to drop at all (see its chance stat).",
+                Caution = WeaponB2RestampNote + WeaponB2LockNote + extraCaution + " Needs the " + cardName + " card to drop at all (see its chance stat).",
                 Related = related,
             };
         }
@@ -247,7 +252,7 @@ namespace ACE.Server.Managers.ZoneControl
                 Lower = "Rended weapons hit less hard, to as little as 2.5x at the floor of 1.5.",
                 Range = "1.5 to 5.0 (values outside are clamped).",
                 Timing = ZoneStatTiming.Loot,
-                Caution = WeaponAStampNote + "Needs the Rending card to drop at all: that is the Weapon imbue chance stat, not a chance of its own. "
+                Caution = WeaponB2RestampNote + "Needs the Rending card to drop at all: that is the Weapon imbue chance stat, not a chance of its own. "
                     + "The number is a direct bonus, so a small change here is a large change in damage; this is the one channel that skips the zone vulnerability cap. "
                     + "While the zone lock holds the weapon (and Zone Control is on), the rolled strength is off and the rend works at its normal skill-based strength; while the zonecontrol_enabled setting is off the rend does nothing. "
                     + "A rend only applies when it matches the element of the hit.",

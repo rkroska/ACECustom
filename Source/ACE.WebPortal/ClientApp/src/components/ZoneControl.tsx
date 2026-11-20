@@ -224,6 +224,41 @@ const partCreated = (c: Change) => c.kind === 'section' && c.details?.[0] === 'C
 const partRemoved = (c: Change) => c.kind === 'section' && c.details?.[0] === 'Removed.'
 const partName = (c: Change) => (c.section?.startsWith('zone:') ? `zone '${c.zone}'` : c.variation !== null ? `the T${c.variation} Default` : c.stat)
 
+/**
+ * Keyboard handling for a modal dialog (review 2026-11-19): focus moves inside when it opens (unless something inside already has
+ * it), Tab and Shift+Tab stay inside, Escape closes it, and focus goes back to whatever opened it. Put the ref on the dialog's outer
+ * element (with tabIndex -1).
+ */
+const useDialogFocus = (open: boolean, onClose: () => void) => {
+  const ref = useRef<HTMLDivElement>(null)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  useEffect(() => {
+    const el = ref.current
+    if (!open || !el) return
+    const opener = document.activeElement as HTMLElement | null
+    const focusables = () => Array.from(el.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+    if (!el.contains(document.activeElement)) (focusables()[0] ?? el).focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); closeRef.current(); return }
+      if (e.key !== 'Tab') return
+      const f = focusables()
+      if (f.length === 0) { e.preventDefault(); el.focus(); return }
+      const first = f[0], last = f[f.length - 1]
+      if (!el.contains(document.activeElement)) { e.preventDefault(); first.focus() }
+      else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      if (opener && document.contains(opener)) opener.focus()
+    }
+  }, [open])
+  return ref
+}
+
 const scopeParams = (scope: Scope, wcid: number | null, rank: Rank) => {
   const q = new URLSearchParams()
   if (scope.kind === 'zone') q.set('zone', scope.zone)
@@ -251,6 +286,7 @@ const ZoneControl = () => {
   const [groups, setGroups] = useState<ChangeGroup[]>([])
   // the History filter the groups were loaded for: another filter's groups (and Revert buttons) are never shown
   const [groupsKey, setGroupsKey] = useState<string | null>(null)
+  const [groupsError, setGroupsError] = useState<string | null>(null)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   // Single Revert asks in an in-page dialog: window.confirm is suppressed in some embedded browsers (it returns Cancel at once,
   // so the button silently did nothing - found 2026-11-11 in the desktop app's browser pane).
@@ -272,6 +308,7 @@ const ZoneControl = () => {
   const [reason, setReason] = useState('')
 
   const dismissToast = useCallback(() => setToast(null), [])
+  const revertDialog = useDialogFocus(confirmRevert !== null, () => setConfirmRevert(null))
   const canEdit = overview?.canEdit ?? false
 
   // STALE RESPONSES (review 2026-11-12): a slow answer for the zone you just left must never land under the one you opened.
@@ -300,6 +337,9 @@ const ZoneControl = () => {
   const loadRows = useCallback(async () => {
     if (!scope) return
     const key = `${scopeParams(scope, wcid, rank)}`
+    // a refresh for a selection no longer on screen (a save on A finishing after a move to B) does nothing: it must not take a
+    // sequence number and so invalidate B's own request still in flight (review 2026-11-19)
+    if (targetRef.current !== key) return
     const seq = ++rowsSeq.current
     const fresh = () => rowsSeq.current === seq && targetRef.current === key
     try {
@@ -329,6 +369,7 @@ const ZoneControl = () => {
     // the identity of THIS request, from what it asks for (not from whatever is selected when it is called): a callback kept from
     // zone A that runs after a move to B asks for A, and its answer is then dropped as not B's
     const key = `${scopeParams(scope, wcid, rank)}|${historyAll}`
+    if (historyRef.current !== key) return   // as in loadRows: never invalidate the current filter's request
     const seq = ++changesSeq.current
     const fresh = () => changesSeq.current === seq && historyRef.current === key
     try {
@@ -336,11 +377,13 @@ const ZoneControl = () => {
       if (!fresh()) return
       setGroups(data ?? [])
       setGroupsKey(key)
+      setGroupsError(null)
     } catch (err) {
       if (!fresh()) return
       setGroups([])
       setGroupsKey(key)
-      setToast({ message: err instanceof Error ? err.message : 'Failed to load history.', variant: 'error' })
+      // kept on screen (with Retry) instead of a toast that fades into "No logged changes yet"
+      setGroupsError(err instanceof Error ? err.message : 'Failed to load history.')
     }
   }, [scope, wcid, rank, historyAll])
 
@@ -546,6 +589,8 @@ const ZoneControl = () => {
     try {
       const result = await api.post<GroupRevertResult>('/api/zonecontrol/changes/revert-group', {
         ids: groupRevert.group.changes.map(c => c.id),
+        // exactly what the preview showed: the server reverts nothing outside it, even if the live plan has changed since
+        approved: groupRevert.plan.revert,
         reason: reason.trim() || undefined,
       })
       setGroupRevert(null)
@@ -802,7 +847,8 @@ const ZoneControl = () => {
                   {!loadError && rows.length > 0 && (
                     <div className="px-4 pt-3 pb-2"><StatsExample scope={scope} rank={rank} wcid={wcid} rows={rows} /></div>
                   )}
-                  {!loadError && grouped.length === 0 && (
+                  {!loadError && rowsKey !== targetKey && <p className="p-8 text-center text-sm text-neutral-500">Loading...</p>}
+                  {!loadError && rowsKey === targetKey && grouped.length === 0 && (
                     <p className="p-8 text-center text-sm text-neutral-500">
                       {onlySet && !search ? 'Nothing is set on this row. Turn off "Only set on this row" or search to add a stat.' : 'No stats match.'}
                     </p>
@@ -913,7 +959,13 @@ const ZoneControl = () => {
                   </label>
                   <div className="px-4 pb-2"><HistoryExample groups={shownGroups} /></div>
                   {groupsKey !== historyKey && <p className="p-8 text-center text-sm text-neutral-500">Loading history...</p>}
-                  {groupsKey === historyKey && shownGroups.length === 0 && <p className="p-8 text-center text-sm text-neutral-500">No logged changes yet.</p>}
+                  {groupsKey === historyKey && groupsError && (
+                    <p className="p-8 text-center text-sm text-red-400">
+                      History could not be read: {groupsError}{' '}
+                      <button type="button" className="underline text-red-300 hover:text-red-200" onClick={() => loadChanges()}>Retry</button>
+                    </p>
+                  )}
+                  {groupsKey === historyKey && !groupsError && shownGroups.length === 0 && <p className="p-8 text-center text-sm text-neutral-500">No logged changes yet.</p>}
                   {shownGroups.length > 0 && (
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 bg-neutral-900 text-left text-[10px] uppercase tracking-widest text-neutral-500">
@@ -1017,8 +1069,7 @@ const ZoneControl = () => {
       )}
 
       {confirmRevert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Revert this change"
-          onKeyDown={e => { if (e.key === 'Escape') setConfirmRevert(null) }}>
+        <div ref={revertDialog} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Revert this change">
           <div className="w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-900 p-4 space-y-3 text-sm text-neutral-300">
             <h2 className="text-base font-bold text-white">Revert this change?</h2>
             <p className={confirmRevert.danger ? 'rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-amber-200' : ''}>{confirmRevert.question}</p>
@@ -1059,6 +1110,7 @@ const GroupRevertDialog = ({ group, plan, reason, onReason, busy, onCancel, onCo
   onCancel: () => void
   onConfirm: () => void
 }) => {
+  const dialog = useDialogFocus(true, onCancel)
   const added = plan.added ?? []
   const byId = new Map([...group.changes, ...added].map(c => [c.id, c]))
   const describe = (c: Change | undefined, willRevert = true) => {
@@ -1071,8 +1123,7 @@ const GroupRevertDialog = ({ group, plan, reason, onReason, busy, onCancel, onCo
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Revert all"
-      onKeyDown={e => { if (e.key === 'Escape') onCancel() }}>
+    <div ref={dialog} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Revert all">
       <div className="w-full max-w-lg max-h-[90vh] overflow-auto custom-scrollbar rounded-xl border border-neutral-800 bg-neutral-900 p-4 space-y-3 text-sm text-neutral-300">
         <div>
           <h2 className="text-base font-bold text-white">Revert {group.actor}'s {group.changes.length + added.length} changes</h2>
@@ -1227,6 +1278,7 @@ const PreviewDialog = ({ pending, rowName, reason, onReason, busy, onCancel, onC
   onCancel: () => void
   onConfirm: () => void
 }) => {
+  const dialog = useDialogFocus(true, onCancel)
   const { preview, mode, row } = pending
   const refused = preview.status !== 'Applied'
   const live = preview.zones.filter(z => z.enabled)
@@ -1238,8 +1290,7 @@ const PreviewDialog = ({ pending, rowName, reason, onReason, busy, onCancel, onC
   const value = (v: number | null) => (v === null ? 'not set' : fmt(v))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label={`Change ${row.label}`}
-      onKeyDown={e => { if (e.key === 'Escape') onCancel() }}>
+    <div ref={dialog} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label={`Change ${row.label}`}>
       <div className="w-full max-w-lg max-h-[90vh] overflow-auto custom-scrollbar rounded-xl border border-neutral-800 bg-neutral-900 p-4 space-y-3 text-sm text-neutral-300">
         <div>
           <h2 className="text-base font-bold text-white">{mode === 'clear' ? 'Clear' : 'Change'} {row.label}</h2>

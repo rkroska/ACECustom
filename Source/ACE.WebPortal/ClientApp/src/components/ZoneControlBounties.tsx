@@ -75,6 +75,8 @@ interface DropRow {
   set: Record<string, number>
   // null = it can never drop at that place; 0 = it could, but has no share there
   weights: Record<string, number | null>
+  // places where its own weenie gives it a share (worked out by the server); elsewhere a share exists only if Zone Control added it
+  natural: string[]
 }
 
 interface Limits {
@@ -169,7 +171,6 @@ export type BountyMode = 'kill' | 'items'
 type Notify = (message: string, variant: AdminToastVariant) => void
 /** okText, when given, is the success message shown instead of the server's (or instead of a bare "Saved."). */
 type Send = (url: string, body: object, okText?: string) => Promise<boolean>
-type SendMany = (calls: { url: string; body: object }[]) => Promise<void>
 type ItemsTab = 'setup' | 'catalog' | 'chance' | 'mix' | 'mystery'
 
 const KILLS_PER_HOUR = 300   // the balance target (kills-per-hour plan); only for the "about one every X hours" estimates
@@ -251,33 +252,16 @@ const BountiesPanel = ({ mode, onClose, notify, onOpenStat, onOpenHistory }: {
     inFlight.current = true
     setBusy(true)
     try {
-      const result = await api.post<{ message: string }>(url, { ...body, reason: reason.trim() || undefined })
-      notify(okText ?? result?.message ?? 'Saved.', 'success')
+      const result = await api.post<{ message: string; logged?: boolean }>(url, { ...body, reason: reason.trim() || undefined })
+      // saved, but History missed it: say so (the server's message explains), never a plain success
+      if (result?.logged === false)
+        notify(result.message ?? 'Saved, but the change log could not record it.', 'warning')
+      else
+        notify(okText ?? result?.message ?? 'Saved.', 'success')
       return true
     } catch (err) {
       notify(err instanceof Error ? err.message : 'The change failed.', 'error')
       return false
-    } finally {
-      await load()
-      inFlight.current = false
-      setBusy(false)
-    }
-  }, [reason, notify, load])
-
-  /** Several changes in order (copying a list); stops at the first failure and says how far it got. */
-  const sendMany = useCallback<SendMany>(async calls => {
-    if (inFlight.current) return
-    inFlight.current = true
-    setBusy(true)
-    let done = 0
-    try {
-      for (const c of calls) {
-        await api.post(c.url, { ...c.body, reason: reason.trim() || undefined })
-        done++
-      }
-      notify(`Saved ${done} change${done === 1 ? '' : 's'}.`, 'success')
-    } catch (err) {
-      notify(`${err instanceof Error ? err.message : 'A change failed.'} (${done} of ${calls.length} saved)`, 'error')
     } finally {
       await load()
       inFlight.current = false
@@ -329,7 +313,7 @@ const BountiesPanel = ({ mode, onClose, notify, onOpenStat, onOpenHistory }: {
         </div>
       )}
       {data && mode === 'items' && (
-        <BountyItems data={data} canEdit={canEdit} busy={busy} send={send} sendMany={sendMany} onOpenStat={onOpenStat} notify={notify} onReload={load} />
+        <BountyItems data={data} canEdit={canEdit} busy={busy} send={send} onOpenStat={onOpenStat} notify={notify} onReload={load} />
       )}
     </div>
   )
@@ -639,8 +623,7 @@ const placeStatus = (p: PlaceState): { status: Status; text: string } => {
   return { status: 'off', text: 'not set up' }
 }
 
-const BountyItems = ({ data, canEdit, busy, send, sendMany, onOpenStat, notify, onReload }: SectionProps & {
-  sendMany: SendMany
+const BountyItems = ({ data, canEdit, busy, send, onOpenStat, notify, onReload }: SectionProps & {
   onOpenStat: (variation: number) => void
   notify: Notify
   onReload: () => Promise<void>
@@ -686,7 +669,10 @@ const BountyItems = ({ data, canEdit, busy, send, sendMany, onOpenStat, notify, 
 
   // Each tier Default's bounty_odds, read the same way the stats page reads it (its Default row, inherited values included), in one
   // request (GET bounties/odds). A failed read leaves the tiers UNKNOWN, never "no drop chance" (review 2026-11-19).
+  const oddsSeq = useRef(0)
   const loadOdds = useCallback(async () => {
+    // only the newest read may set the odds or the error: an older one failing late must not wipe a newer answer (review 2026-11-19)
+    const seq = ++oddsSeq.current
     setOddsError(null)
     try {
       const d = await api.get<{ tiers: { variation: number; value: number | null; revision: string | null; curved: boolean; effective: number | null; source: string | null; toggledOff: boolean }[] }>('/api/zonecontrol/bounties/odds')
@@ -701,8 +687,10 @@ const BountyItems = ({ data, canEdit, busy, send, sendMany, onOpenStat, notify, 
           toggledOff: row.toggledOff,
         }] as const
       })
+      if (seq !== oddsSeq.current) return
       setTierOdds(Object.fromEntries(results))
     } catch (err) {
+      if (seq !== oddsSeq.current) return
       setTierOdds({})
       setOddsError(err instanceof Error ? err.message : 'Could not read the tiers\' drop chance.')
     }
@@ -757,7 +745,7 @@ const BountyItems = ({ data, canEdit, busy, send, sendMany, onOpenStat, notify, 
           <DropMix data={data} canEdit={canEdit} busy={busy} send={send} place={mixPlace} onPlace={setMixPlace} regionKeys={regionKeys} health={health}
             states={states} onChance={() => setTab('chance')} />
         )}
-        {tab === 'mystery' && <MysteryRewards data={data} canEdit={canEdit} busy={busy} send={send} sendMany={sendMany} health={health} />}
+        {tab === 'mystery' && <MysteryRewards data={data} canEdit={canEdit} busy={busy} send={send} health={health} />}
       </div>
     </div>
   )
@@ -912,6 +900,9 @@ const Setup = ({ data, states, oddsError, health, healthError, canEdit, rereadin
       ? { status: 'problem' as Status, text: 'Nothing drops or counts right now: the server switch item_bounty_enabled is off.' }
     : dropping.length > 0
       ? { status: 'ok' as Status, text: `Bounty items are dropping in ${dropping.map(s => s.place.label).join(', ')}.${problems ? ` ${problems} thing${problems === 1 ? '' : 's'} to look at below.` : ''}` }
+    // never a definite "nothing drops" while some drop chances are unknown (review 2026-11-19)
+    : unknown.length > 0
+      ? { status: 'warning' as Status, text: `Whether bounty items drop is unknown: the drop chance of ${placeRange(data, unknown.map(s => s.place.key))} could not be read.` }
       : { status: 'problem' as Status, text: `Bounty items cannot drop anywhere right now: ${health && weenies.length === 0 ? 'the world database has no bounty items' : droppable.length === 0 ? 'no bounty item can drop from monsters' : withChance.length === 0 ? 'no tier or region has a drop chance' : 'no place with a drop chance has anything to drop'}.` }
 
   const used = states.filter(st => (st.odds && st.odds > 0) || st.place.total > 0)
@@ -997,7 +988,11 @@ const Setup = ({ data, states, oddsError, health, healthError, canEdit, rereadin
       {!empty && <div id="bounty-emergency" className="rounded-xl border border-red-900/50 bg-red-950/10 px-3 py-2 text-xs text-neutral-300 space-y-1.5">
         <p className="font-bold text-red-300">Stopping things</p>
         <p><span className="text-neutral-100">One bounty item, everywhere:</span> Drop mix tab, then "Stop dropping" on its row. Players keep the ones they have.</p>
-        <p><span className="text-neutral-100">All drops in one tier or region:</span> Drop chance tab, set it to 0 (or clear the tier's bounty_odds).</p>
+        <p>
+          <span className="text-neutral-100">All drops in one tier or region:</span> Drop chance tab, save 0 on its row. Not Clear: Clear only removes the
+          tier's own number, so a number it inherits (from T11) still applies, and a stored 0 cleared starts drops again. Zones, Leader and Boss rows
+          with their own bounty_odds (stats page) keep theirs.
+        </p>
         <p>
           <span className="text-neutral-100">Everything at once:</span> in game, <CopyText text="@modifybool item_bounty_enabled false" />. No drops, no starting, no
           counting and no payouts until it is set back to true. Players' progress is kept.
@@ -1109,6 +1104,9 @@ const Catalog = ({ data, states, health, healthError, canEdit, busy, send, onTab
       const live = at.filter(s => !!s.odds && s.odds > 0).map(s => s.place.key)
       if (live.length === 0)
         return { status: 'off', text: `in the mix, but ${placeRange(data, w.places)} ${w.places.length === 1 ? 'has' : 'have'} no drop chance, so none drop`, fix: { label: 'Set a drop chance', go: () => onTab('chance') } }
+      // the server switch off stops every drop, whatever the odds and shares say (review 2026-11-19)
+      if (health && !health.enabled)
+        return { status: 'off', text: `set to drop in ${placeRange(data, live)}, but nothing drops while item_bounty_enabled is off` }
       return { status: 'ok', text: live.length === at.length ? 'dropping' : `dropping in ${placeRange(data, live)} (no drop chance in the rest)` }
     }
     return { status: 'note', text: 'no drop share: only from quests, NPCs or admins' }
@@ -1264,7 +1262,8 @@ const useWcidLookup = (text: string) => {
     }, 400)
     return () => { live = false; clearTimeout(t) }
   }, [wcid])
-  return info
+  // an answer about another WCID (the field changed since) is not this field's answer: still looking (review 2026-11-19)
+  return wcid && info && info.wcid !== wcid ? null : info
 }
 
 interface BountyRequest {
@@ -1345,8 +1344,10 @@ const buildRequest = (r: BountyRequest, ctx: {
   const list = r.list.trim().toLowerCase()
   if (r.reward === 'item') {
     if (!(rewardWcid > 0)) problems.push('Give the reward item\'s WCID.')
-    else if (ctx.reward && !ctx.reward.exists) problems.push(`No item has WCID ${rewardWcid}.`)
-    else if (ctx.reward && !ctx.reward.givable) problems.push(`${ctx.reward.name ?? rewardWcid} can't be paid as a reward (it isn't a carryable item).`)
+    // the SQL is only offered once THIS WCID is checked and payable; the plain request can still be copied meanwhile
+    else if (!ctx.reward) problems.push(`Checking reward WCID ${rewardWcid}...`)
+    else if (!ctx.reward.exists) problems.push(`No item has WCID ${rewardWcid}.`)
+    else if (!ctx.reward.givable) problems.push(`${ctx.reward.name ?? rewardWcid} can't be paid as a reward (it isn't a carryable item).`)
     if (!(amount >= 1 && amount <= ctx.limits.maxAmount)) problems.push(`Reward amount must be 1 to ${n0(ctx.limits.maxAmount)}.`)
   } else if (!LIST_NAME.test(list)) problems.push('A mystery list name is 1-32 of a-z, 0-9, _ or - (no dot: "name.t15" versions are found by themselves).')
   else if (!ctx.tables.includes(list)) notes.push(`There is no list '${list}' yet. Create it on the Mystery rewards tab before the item goes live, or players can't start it.`)
@@ -1402,11 +1403,13 @@ const buildRequest = (r: BountyRequest, ctx: {
   // the repo's style, "(id, type, value), -- what it is": one line each, so a comment can't swallow the next row
   const rows = <T,>(list: T[], fmt: (x: T) => [string, string]) =>
     list.map((x, i) => { const [v, c] = fmt(x); return `${v}${i < list.length - 1 ? ',' : ';'} -- ${c.replace(/[\r\n]/g, ' ')}` }).join('\n')
+  // header comments stay on one line: a name from the world DB with a line break would otherwise spill out of the comment
+  const oneLine = (s: string) => s.replace(/[\r\n]+/g, ' ').replace(/[^\x20-\x7e]/g, '?')
   const sql = [
-    `-- Bounty terms for ${name.replace(/[^\x20-\x7e]/g, '?') || '(no name)'}, from the Zone Control portal request builder. Review before committing.`,
+    `-- Bounty terms for ${oneLine(name) || '(no name)'}, from the Zone Control portal request builder. Review before committing.`,
     '-- Sets only the bounty properties: the item weenie itself (name, icon, item type, value, burden) must already exist.',
-    `-- Task: ${task}`,
-    `-- Reward: ${rewardLine}`,
+    `-- Task: ${oneLine(task)}`,
+    `-- Reward: ${oneLine(rewardLine)}`,
     ...(wcid > 0 ? [] : ['SET @wcid = 0; -- the item\'s WCID']),
     `DELETE FROM \`weenie_properties_int\` WHERE \`object_Id\` = ${id} AND \`type\` BETWEEN 57700 AND 57711;`,
     `DELETE FROM \`weenie_properties_string\` WHERE \`object_Id\` = ${id} AND \`type\` IN (57701, 57703, 57704);`,
@@ -1443,9 +1446,10 @@ const RequestBuilder = ({ data, health, dev }: { data: BountyData; health: Bount
     ledgerWcid: health?.ledgerWcid ?? 0,
   })
   const label = 'text-[11px] text-neutral-500 block mb-0.5'
+  // each choice's radios share a group name, so the browser groups them (arrow keys, one tab stop)
   const radio = (k: keyof BountyRequest, value: string, text: string) => (
     <label className="inline-flex items-center gap-1 mr-3 text-neutral-300">
-      <input type="radio" checked={r[k] === value} onChange={() => set(k, value as never)} />{text}
+      <input type="radio" name={`bounty-request-${k}`} value={value} checked={r[k] === value} onChange={() => set(k, value as never)} />{text}
     </label>
   )
   const lookupText = (info: WcidInfo | null | undefined) =>
@@ -1461,11 +1465,11 @@ const RequestBuilder = ({ data, health, dev }: { data: BountyData; health: Bount
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <span className={label}>Name players see</span>
-          <input className={`${inputClass} w-full`} value={r.name} maxLength={64} placeholder="Banderling Bounty" onChange={e => set('name', e.target.value)} />
+          <input className={`${inputClass} w-full`} value={r.name} aria-label="Name players see" maxLength={64} placeholder="Banderling Bounty" onChange={e => set('name', e.target.value)} />
         </div>
         <div>
           <span className={label}>Item WCID (optional) <span className="text-neutral-400">{lookupText(item)}</span></span>
-          <input className={`${inputClass} w-full`} value={r.wcid} inputMode="numeric" placeholder="the developer picks one" onChange={e => set('wcid', e.target.value)} />
+          <input className={`${inputClass} w-full`} value={r.wcid} aria-label="Item WCID" inputMode="numeric" placeholder="the developer picks one" onChange={e => set('wcid', e.target.value)} />
         </div>
       </div>
 
@@ -1475,10 +1479,10 @@ const RequestBuilder = ({ data, health, dev }: { data: BountyData; health: Bount
         {radio('where', 'tier', 'One tier')}
         {data.regions.length > 0 && radio('where', 'region', 'A region')}
         <div className="mt-1 flex flex-wrap items-center gap-2 text-neutral-400">
-          {r.where === 'drop' && (<>Drops in T<input className={`${inputClass} w-14`} value={r.tierMin} onChange={e => set('tierMin', e.target.value)} /> to T<input className={`${inputClass} w-14`} value={r.tierMax} onChange={e => set('tierMax', e.target.value)} /></>)}
-          {r.where === 'tier' && (<>T<input className={`${inputClass} w-14`} value={r.tier} onChange={e => set('tier', e.target.value)} /> only (it drops only there too)</>)}
+          {r.where === 'drop' && (<>Drops in T<input className={`${inputClass} w-14`} value={r.tierMin} aria-label="Lowest tier it drops in" onChange={e => set('tierMin', e.target.value)} /> to T<input className={`${inputClass} w-14`} value={r.tierMax} aria-label="Highest tier it drops in" onChange={e => set('tierMax', e.target.value)} /></>)}
+          {r.where === 'tier' && (<>T<input className={`${inputClass} w-14`} value={r.tier} aria-label="The one tier it counts in" onChange={e => set('tier', e.target.value)} /> only (it drops only there too)</>)}
           {r.where === 'region' && (
-            <select className={inputClass} value={r.region} onChange={e => set('region', e.target.value)}>
+            <select className={inputClass} aria-label="Region it counts in" value={r.region} onChange={e => set('region', e.target.value)}>
               {data.regions.map(x => <option key={x.key} value={x.key}>{x.name}</option>)}
             </select>
           )}
@@ -1491,11 +1495,11 @@ const RequestBuilder = ({ data, health, dev }: { data: BountyData; health: Bount
         {radio('kind', 'species', 'One creature type')}
         {r.kind === 'species' && (
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            <select className={inputClass} value={r.target} onChange={e => set('target', e.target.value)}>
+            <select className={inputClass} aria-label="Creature type to kill" value={r.target} onChange={e => set('target', e.target.value)}>
               <option value="">Pick a creature type...</option>
               {creatures.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <input className={`${inputClass} w-48`} value={r.targetName} maxLength={48} placeholder="plural name (optional)" onChange={e => set('targetName', e.target.value)} />
+            <input className={`${inputClass} w-48`} value={r.targetName} aria-label="Plural name players see for the creature type" maxLength={48} placeholder="plural name (optional)" onChange={e => set('targetName', e.target.value)} />
           </div>
         )}
       </div>
@@ -1507,8 +1511,8 @@ const RequestBuilder = ({ data, health, dev }: { data: BountyData; health: Bount
         <label className="inline-flex items-center gap-1 text-neutral-300"><input type="checkbox" checked={r.hidden} onChange={e => set('hidden', e.target.checked)} />Hidden until started</label>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-neutral-400">
           {r.count === 'fixed'
-            ? <input className={`${inputClass} w-28`} value={r.kills} inputMode="numeric" placeholder="1000" onChange={e => set('kills', e.target.value)} />
-            : (<><input className={`${inputClass} w-28`} value={r.killsMin} inputMode="numeric" placeholder="500" onChange={e => set('killsMin', e.target.value)} /> to <input className={`${inputClass} w-28`} value={r.killsMax} inputMode="numeric" placeholder="1500" onChange={e => set('killsMax', e.target.value)} /></>)}
+            ? <input className={`${inputClass} w-28`} value={r.kills} aria-label="Kill count" inputMode="numeric" placeholder="1000" onChange={e => set('kills', e.target.value)} />
+            : (<><input className={`${inputClass} w-28`} value={r.killsMin} aria-label="Fewest kills" inputMode="numeric" placeholder="500" onChange={e => set('killsMin', e.target.value)} /> to <input className={`${inputClass} w-28`} value={r.killsMax} aria-label="Most kills" inputMode="numeric" placeholder="1500" onChange={e => set('killsMax', e.target.value)} /></>)}
           kills
         </div>
       </div>
@@ -1519,9 +1523,9 @@ const RequestBuilder = ({ data, health, dev }: { data: BountyData; health: Bount
         {radio('reward', 'mystery', 'A mystery (from a reward list)')}
         <div className="mt-1 flex flex-wrap items-center gap-2 text-neutral-400">
           {r.reward === 'item'
-            ? (<><input className={`${inputClass} w-20`} value={r.amount} inputMode="numeric" onChange={e => set('amount', e.target.value)} /> x WCID <input className={`${inputClass} w-28`} value={r.rewardWcid} inputMode="numeric" onChange={e => set('rewardWcid', e.target.value)} /><span className="text-neutral-300">{lookupText(reward)}{reward && reward.exists && !reward.givable ? ' - not payable' : ''}</span></>)
+            ? (<><input className={`${inputClass} w-20`} value={r.amount} aria-label="Reward amount" inputMode="numeric" onChange={e => set('amount', e.target.value)} /> x WCID <input className={`${inputClass} w-28`} value={r.rewardWcid} aria-label="Reward item WCID" inputMode="numeric" onChange={e => set('rewardWcid', e.target.value)} /><span className="text-neutral-300">{lookupText(reward)}{reward && reward.exists && !reward.givable ? ' - not payable' : ''}</span></>)
             : (<>
-                <input className={`${inputClass} w-40`} value={r.list} list="bounty-lists" placeholder="mystery" onChange={e => set('list', e.target.value)} />
+                <input className={`${inputClass} w-40`} value={r.list} aria-label="Mystery reward list" list="bounty-lists" placeholder="mystery" onChange={e => set('list', e.target.value)} />
                 <datalist id="bounty-lists">{tables.map(t => <option key={t} value={t} />)}</datalist>
                 <span>{tables.length ? `lists now: ${tables.join(', ')}` : 'no lists yet'}</span>
               </>)}
@@ -1531,11 +1535,11 @@ const RequestBuilder = ({ data, health, dev }: { data: BountyData; health: Bount
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <span className={label}>Built-in share points (0 = never drops from monsters)</span>
-          <input className={`${inputClass} w-28`} value={r.weight} inputMode="numeric" onChange={e => set('weight', e.target.value)} />
+          <input className={`${inputClass} w-28`} value={r.weight} aria-label="Built-in share points" inputMode="numeric" onChange={e => set('weight', e.target.value)} />
         </div>
         <div>
           <span className={label}>Notes for the developer</span>
-          <input className={`${inputClass} w-full`} value={r.notes} maxLength={300} placeholder="icon like a scroll, sold by..." onChange={e => set('notes', e.target.value)} />
+          <input className={`${inputClass} w-full`} value={r.notes} aria-label="Notes for the developer" maxLength={300} placeholder="icon like a scroll, sold by..." onChange={e => set('notes', e.target.value)} />
         </div>
       </div>
 
@@ -1635,9 +1639,10 @@ const DropChance = ({ data, states, canEdit, busy, send, oddsError, onOpenStat, 
  * typed yet (tiers, where Clear is the way back to unset). confirmSave: Save asks first (a tier curve it would replace), and Enter
  * then does not save.
  */
-const OddsInput = ({ place, initial, limits, busy, blankIsZero, isUnchanged, confirmSave, onSave, extra, hint }: {
+const OddsInput = ({ place, initial, placeholder = 'not set', limits, busy, blankIsZero, isUnchanged, confirmSave, onSave, extra, hint }: {
   place: string
   initial: string
+  placeholder?: string
   limits: Limits
   busy: boolean
   blankIsZero: boolean
@@ -1656,7 +1661,7 @@ const OddsInput = ({ place, initial, limits, busy, blankIsZero, isUnchanged, con
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <span>1 in</span>
-      <input value={text} onChange={e => setText(e.target.value)} inputMode="numeric" placeholder="not set" aria-label={`${place} drop chance`} className={`${inputClass} w-24`}
+      <input value={text} onChange={e => setText(e.target.value)} inputMode="numeric" placeholder={placeholder} aria-label={`${place} drop chance`} className={`${inputClass} w-32`}
         onKeyDown={e => { if (e.key === 'Enter' && !confirmSave) save() }} />
       {confirmSave
         ? <ConfirmButton label="Save" confirm={confirmSave} icon={false} disabled={busy || !valid || unchanged} onConfirm={save} />
@@ -1694,14 +1699,22 @@ const TierOddsEditor = ({ state, limits, canEdit, busy, send, onSaved, onOpenSta
   const body = (extra: object) => ({ variation: tier, stat: 'bounty_odds', expected: row.stored, expectedRevision: row.revision ?? undefined, ...extra })
   const save = async (value: number) => {
     const ok = value > 0 ? `T${tier} drop chance: 1 in ${value.toLocaleString()}.` : `T${tier}: no bounty items drop (saved as 0).`
-    if (await send('/api/zonecontrol/stat/set', body({ value: String(value) }), ok)) onSaved()
+    // read the odds again whatever happened: after a refusal (someone changed it) the row must show the new value and revision
+    // before a retry, or the next save is refused for the same reason (review 2026-11-19)
+    await send('/api/zonecontrol/stat/set', body({ value: String(value) }), ok)
+    onSaved()
   }
-  const clear = async () => { if (await send('/api/zonecontrol/stat/clear', body({}), `T${tier} drop chance cleared.`)) onSaved() }
+  const clear = async () => {
+    await send('/api/zonecontrol/stat/clear', body({}), `T${tier} drop chance cleared.`)
+    onSaved()
+  }
 
   return (
-    <OddsInput place={`T${tier}`} initial={row.odds ? String(row.odds) : ''} limits={limits} busy={busy} blankIsZero={false}
-      // the same number again is no change, except 0 typed over an inherited number (that pins "off" on this tier)
-      isUnchanged={v => v === (row.odds ?? 0) && (v !== 0 || row.stored !== null || row.odds === null)}
+    // the box holds this tier's OWN number; one it inherits shows greyed as the placeholder, so typing that same number pins it here
+    // (a later T11 change then no longer moves this tier) - review 2026-11-19
+    <OddsInput place={`T${tier}`} initial={row.stored !== null ? String(row.stored) : ''} limits={limits} busy={busy} blankIsZero={false}
+      placeholder={row.stored === null && row.odds ? `${row.odds.toLocaleString()} (inherited)` : 'not set'}
+      isUnchanged={v => row.stored !== null && v === row.stored}
       confirmSave={row.curved ? 'Replace its tier curve?' : undefined}
       onSave={save} hint={hint}
       extra={row.stored !== null && <ConfirmButton label="Clear" confirm={`Clear T${tier}?`} icon={false} disabled={busy} onConfirm={clear} />} />
@@ -1864,8 +1877,10 @@ const OnePlace = ({ data, place, canEdit, busy, weightSend, isRegion, unshared, 
                   {canEdit && (
                     <span className="inline-flex gap-1">
                       <button type="button" className={buttonClass} disabled={busy || editing !== null} onClick={() => setEditing(d.wcid)}>Edit</button>
-                      {/* share 0 here; where it has no built-in share the server simply drops the entry, so nothing stray is left */}
-                      <button type="button" className={buttonClass} disabled={busy} onClick={() => weightSend(d.wcid, '0', [key])} title={`Share 0 at ${place.label}`}>Remove from {place.label}</button>
+                      {/* share 0 where it has a built-in share; where Zone Control only added it, take the addition back (no stray 0) */}
+                      <button type="button" className={buttonClass} disabled={busy}
+                        onClick={() => weightSend(d.wcid, changed && !(d.natural ?? []).includes(key) ? 'clear' : '0', [key])}
+                        title={changed && !(d.natural ?? []).includes(key) ? `Undo adding it to ${place.label}` : `Share 0 at ${place.label}`}>Remove from {place.label}</button>
                       {changed && <button type="button" className={buttonClass} disabled={busy} onClick={() => weightSend(d.wcid, 'clear', [key])}>Back to built-in</button>}
                       <ConfirmButton label="Stop dropping" confirm="Stop everywhere?" icon={false} disabled={busy} onConfirm={() => weightSend(d.wcid, 'off')} />
                     </span>
@@ -2032,7 +2047,7 @@ const MixGrid = ({ data, canEdit, busy, weightSend, onPick }: {
 
 const placeSuffixLabel = (data: BountyData, suffix: string) => data.places.find(p => p.key === suffix)?.label ?? suffix
 
-const MysteryRewards = ({ data, canEdit, busy, send, sendMany, health }: SectionProps & { sendMany: SendMany; health: BountyHealth | null }) => {
+const MysteryRewards = ({ data, canEdit, busy, send, health }: SectionProps & { health: BountyHealth | null }) => {
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState<string | null>(null)
   const names = new Set(data.tables.map(t => t.name))
@@ -2040,7 +2055,8 @@ const MysteryRewards = ({ data, canEdit, busy, send, sendMany, health }: Section
   const usedBy = new Map<string, WeenieHealth[]>()
   for (const w of health?.weenies ?? [])
     if (w.mysteryReward && w.rewardList) usedBy.set(w.rewardList, [...(usedBy.get(w.rewardList) ?? []), w])
-  const missing = [...usedBy.keys()].filter(n => !names.has(n)).sort()
+  // a missing list is only a problem where an item can't be paid: a T15-only item can pay from 'mystery.t15' with no 'mystery'
+  const missing = [...usedBy.keys()].filter(n => !names.has(n) && (usedBy.get(n) ?? []).some(w => w.unpaidPlaces.length > 0)).sort()
   const tables = creating && !names.has(creating)
     ? [...data.tables, { name: creating, totalWeight: 0, entries: [] }]
     : data.tables
@@ -2049,8 +2065,9 @@ const MysteryRewards = ({ data, canEdit, busy, send, sendMany, health }: Section
 
   const makePlaceVersion = async (base: RewardTable, place: string, copy: boolean) => {
     const name = `${base.name}.${place}`
+    // a copy is created whole in one server step: payouts can never come from half a copy (review 2026-11-19)
     if (copy && base.entries.length > 0)
-      await sendMany(base.entries.map(e => ({ url: '/api/zonecontrol/bounties/table', body: { name, op: 'add', wcid: e.wcid, amount: e.amount, weight: e.weight } })))
+      await send('/api/zonecontrol/bounties/table', { name, op: 'create', rows: base.entries.map(e => ({ wcid: e.wcid, amount: e.amount, weight: e.weight })) })
     else
       setCreating(name)
   }
@@ -2165,7 +2182,8 @@ const RewardTableCard = ({ table, data, canEdit, busy, startAdding, existing, us
                 Make a one-place version
               </button>
             )}
-            {table.entries.length > 0 && (
+            {/* every stored list, even one with no rewards left (only a list still being created, not saved yet, has none) */}
+            {existing.has(table.name) && (
               <ConfirmButton label="Delete list" confirm="Delete it?" disabled={busy} onConfirm={() => send({ op: 'delete' })} />
             )}
           </div>
@@ -2330,7 +2348,7 @@ const ChanceExample = ({ states }: { states: PlaceState[] }) => {
       ) : (
         <p>1 in 2,000 means one kill in 2,000 drops a bounty item on average: about one every 6.7 hours at 300 kills an hour. 4,000 halves the drops; 1,000 doubles them.</p>
       )}
-      <p>To start drops in T15: press "Change on the T15 Default", type a number for bounty_odds, and save. Then check the Drop mix for T15 is not empty.</p>
+      <p>To start drops in T15: type a number in the T15 row's box (2000 = one in 2,000 kills) and press Save. Then check that T15 has items in its Drop mix.</p>
     </Example>
   )
 }

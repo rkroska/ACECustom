@@ -301,6 +301,11 @@ namespace ACE.Server.Managers
             return s.Kind == KindSweep;
         }
 
+        /// <summary>A creature type a one-species bounty can name: a real type, not AttackAll (998) or AttackNonSelf (999), which are
+        /// friend-or-foe targeting values no creature carries, so a bounty on them could never be finished (review 2026-11-19).</summary>
+        internal static bool IsHuntableSpecies(int target) =>
+            target > 0 && target != (int)CreatureType.AttackAll && target != (int)CreatureType.AttackNonSelf;
+
         /// <summary>A bounty's terms read off its item, or null if the item isn't a complete, valid bounty.</summary>
         internal static Slot TermsOf(WorldObject item)
         {
@@ -340,7 +345,7 @@ namespace ACE.Server.Managers
             else if (reward <= 0) return null;
 
             if (kind != KindSweep && kind != KindSpecies) return null;
-            if (kind == KindSpecies && target <= 0) return null;
+            if (kind == KindSpecies && !IsHuntableSpecies(target)) return null;
 
             // the weenie's own words ("Banderlings"), else the species as the salvage bags print it ("Gear Knight")
             var targetName = kind == KindSpecies
@@ -1663,6 +1668,8 @@ namespace ACE.Server.Managers
             var kind = Int(PropertyInt.ItemBountyKind, KindSweep);
             if (kind != KindSweep && kind != KindSpecies) { problem = $"unknown kind {kind} (ItemBountyKind: 1 = any kill, 2 = one species)"; return null; }
             if (kind == KindSpecies && Int(PropertyInt.ItemBountyTarget, 0) <= 0) { problem = "a one-species bounty with no creature type (ItemBountyTarget)"; return null; }
+            if (kind == KindSpecies && !IsHuntableSpecies(Int(PropertyInt.ItemBountyTarget, 0)))
+            { problem = $"a one-species bounty on creature type {Int(PropertyInt.ItemBountyTarget, 0)}, a targeting value no creature has (ItemBountyTarget)"; return null; }
 
             string name = null;
             w.PropertiesString?.TryGetValue(PropertyString.Name, out name);
@@ -1687,12 +1694,18 @@ namespace ACE.Server.Managers
             return new DropEntry(w.WeenieClassId, weight, min, max, fixedTier, name);
         }
 
-        private static volatile List<DropEntry> _dropTable = new();
+        /// <summary>The drop table as last read and when that read FINISHED, published together so a reader never pairs one read's
+        /// rows with another's time (review 2026-11-19).</summary>
+        private sealed class DropTableSnapshot
+        {
+            public List<DropEntry> Table { get; init; } = new();
+            /// <summary>Unix seconds; NegativeInfinity = never read yet.</summary>
+            public double ReadAt { get; init; } = double.NegativeInfinity;
+        }
+        private static volatile DropTableSnapshot _dropSnapshot = new();
         private static double _dropTableBuiltAt = double.NegativeInfinity;
         private static int _dropTableBuilding;
         private const double DropTableRefreshSeconds = 300;
-        /// <summary>When the last read of the drop table FINISHED (unix seconds; NegativeInfinity = never yet).</summary>
-        private static double _dropTableReadAt = double.NegativeInfinity;
 
         /// <summary>
         /// Rebuilds the drop table on the next roll (in the background) - after a Zone Control weight change, so a bounty
@@ -1700,9 +1713,15 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void InvalidateDropTable() => _dropTableBuiltAt = double.NegativeInfinity;
 
+        /// <summary>One background read: its number and its task (true = read and published; false = it failed, the last good table
+        /// stays). Published as one object, so "Re-read now" never sees a new number with the old task (review 2026-11-19).</summary>
+        private sealed class DropTableRead
+        {
+            public long Id { get; init; }
+            public System.Threading.Tasks.Task<bool> Task { get; init; } = System.Threading.Tasks.Task.FromResult(true);
+        }
         /// <summary>The background read in flight or last finished (/bounty droptable waits for it).</summary>
-        private static volatile System.Threading.Tasks.Task _dropTableBuild = System.Threading.Tasks.Task.CompletedTask;
-        /// <summary>A count of drop table reads started, so "Re-read now" can tell a read it started from one already running.</summary>
+        private static volatile DropTableRead _dropTableBuild = new();
         private static long _dropTableBuildsStarted;
 
         /// <summary>
@@ -1716,10 +1735,9 @@ namespace ACE.Server.Managers
             if (now - _dropTableBuiltAt > DropTableRefreshSeconds && Interlocked.Exchange(ref _dropTableBuilding, 1) == 0)
             {
                 _dropTableBuiltAt = now;
-                Interlocked.Increment(ref _dropTableBuildsStarted);
-                _dropTableBuild = System.Threading.Tasks.Task.Run(BuildDropTable);
+                _dropTableBuild = new DropTableRead { Id = Interlocked.Increment(ref _dropTableBuildsStarted), Task = System.Threading.Tasks.Task.Run(BuildDropTable) };
             }
-            return _dropTable;
+            return _dropSnapshot.Table;
         }
 
         /// <summary>
@@ -1733,7 +1751,7 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>One read of the droppable bounties (a background task): the DB's weighted weenies plus Zone Control's.</summary>
-        private static void BuildDropTable()
+        private static bool BuildDropTable()
         {
             try
             {
@@ -1750,12 +1768,13 @@ namespace ACE.Server.Managers
                     if (entry.HasValue) list.Add(entry.Value);
                     else log.Warn($"[ItemBounty] drop table: weenie {id} has a drop weight but can't drop ({problem}) - skipped");
                 }
-                _dropTable = list;
-                _dropTableReadAt = Time.GetUnixTime();
+                _dropSnapshot = new DropTableSnapshot { Table = list, ReadAt = Time.GetUnixTime() };
+                return true;
             }
             catch (Exception ex)
             {
                 log.Error($"[ItemBounty] drop table: {ex}");
+                return false;
             }
             finally
             {
@@ -1858,7 +1877,7 @@ namespace ACE.Server.Managers
             if (viewer == null) return;
             InvalidateDropTable();
             DropTable();
-            var build = _dropTableBuild;
+            var build = _dropTableBuild.Task;
             System.Threading.Tasks.Task.Run(async () =>
             {
                 try { await build.WaitAsync(TimeSpan.FromSeconds(30)); }
@@ -1897,7 +1916,7 @@ namespace ACE.Server.Managers
             }
         }
 
-        // ── Health (the portal's Bounty Items > Setup check) ──
+        // -- Health (the portal's Bounty Items > Setup check) --
 
         /// <summary>One bounty weenie in the world database, as the portal's health check reads it.</summary>
         public sealed class WeenieHealth
@@ -1976,6 +1995,12 @@ namespace ACE.Server.Managers
 
             int lo = killsMin > 0 ? killsMin : killsMax, hi = killsMax > 0 ? killsMax : killsMin;
             if (lo > hi) (lo, hi) = (hi, lo);
+            // held to the cap exactly as RollKills holds a new item's roll, so the catalog never shows a count no player gets
+            if (lo > 0)
+            {
+                lo = Math.Clamp(lo, 1, BountyManager.MaxKills);
+                hi = Math.Clamp(hi, lo, BountyManager.MaxKills);
+            }
             var range = lo > 0 ? (lo == hi ? N(lo) : $"{N(lo)}-{N(hi)}") : null;
 
             if (hiddenKills)
@@ -1992,7 +2017,10 @@ namespace ACE.Server.Managers
         /// </summary>
         public static HealthReport Health()
         {
-            var table = DropTable();
+            DropTable();   // starts a read when the table is due one
+            var snapshot = _dropSnapshot;   // rows, count and age all from this one read
+            var table = snapshot.Table;
+            var byWcid = table.GroupBy(e => e.Wcid).ToDictionary(g => g.Key, g => g.First());
             var sets = ZoneControlManager.BountyPlaceWeightSnapshot();
             var ids = BountyWeenieIdsFromDb().Union(sets.Keys).Distinct().OrderBy(x => x);
             var list = new List<WeenieHealth>();
@@ -2004,8 +2032,7 @@ namespace ACE.Server.Managers
                 int Int(PropertyInt p) => w?.PropertiesInt != null && w.PropertiesInt.TryGetValue(p, out var v) ? v : 0;
                 string Str(PropertyString p) => w?.PropertiesString != null && w.PropertiesString.TryGetValue(p, out var v) ? v : null;
 
-                var inTable = table.FirstOrDefault(e => e.Wcid == id);
-                var dropPlaces = inTable.Wcid == id ? AllPlaces.Where(pl => WeightAt(inTable, pl, set) > 0).ToList() : new List<string>();
+                var dropPlaces = byWcid.TryGetValue(id, out var inTable) ? AllPlaces.Where(pl => WeightAt(inTable, pl, set) > 0).ToList() : new List<string>();
                 var places = dropPlaces.Count > 0 ? dropPlaces
                     : entry.HasValue ? AllPlaces.Where(pl => NaturalAt(entry.Value, pl)).ToList() : new List<string>();
 
@@ -2055,7 +2082,7 @@ namespace ACE.Server.Managers
                         Int(PropertyInt.ItemBountyKillsMax), hiddenKills, region, fixedTier),
                 });
             }
-            var readAt = _dropTableReadAt;
+            var readAt = snapshot.ReadAt;
             return new HealthReport
             {
                 Weenies = list,
@@ -2065,11 +2092,22 @@ namespace ACE.Server.Managers
             };
         }
 
+        /// <summary>How "Re-read now" went.</summary>
+        public enum RefreshOutcome
+        {
+            /// <summary>A fresh read finished and the table is the new one.</summary>
+            Done,
+            /// <summary>The read failed (see the server log); the last good table stays in use.</summary>
+            Failed,
+            /// <summary>Still running after 30 s; the last finished read is in use until it ends.</summary>
+            Running,
+        }
+
         /// <summary>
         /// "Re-read now": drops the cached copy of every bounty weenie (so a weenie edited in the DB is read fresh) and reads the
-        /// drop table again, waiting up to 30 seconds for each read. True when the new read finished in time.
+        /// drop table again, waiting up to 30 seconds for each read.
         /// </summary>
-        public static bool RefreshNow()
+        public static RefreshOutcome RefreshNow()
         {
             var wait = TimeSpan.FromSeconds(30);
             foreach (var id in BountyWeenieIdsFromDb().Union(ZoneControlManager.BountyPlaceWeightSnapshot().Keys))
@@ -2081,14 +2119,25 @@ namespace ACE.Server.Managers
             // A read already running may have taken its weenies before the clear above: let it finish, then start a NEW read, which
             // can only see fresh copies. Success means that new read finished (review 2026-11-19: waiting on the running read alone
             // reported "re-read" while the table still held the old terms).
-            var startedBefore = Interlocked.Read(ref _dropTableBuildsStarted);
-            try { _dropTableBuild.Wait(wait); } catch (Exception) { /* a failed read was logged; read again below */ }
+            var earlier = _dropTableBuild;
+            try { earlier.Task.Wait(wait); } catch (Exception) { /* a failed read was logged; read again below */ }
             InvalidateDropTable();
             DropTable();
-            if (Interlocked.Read(ref _dropTableBuildsStarted) == startedBefore)
-                return false;   // the earlier read is still running (it did not finish in 30 s), so no fresh read could start
-            try { return _dropTableBuild.Wait(wait); }
-            catch (Exception ex) { log.Warn($"[ItemBounty] refresh: the read failed ({ex.Message})"); return false; }
+            // the read and its task are published together, so a newer id here is a read that started after the clear
+            var fresh = _dropTableBuild;
+            if (fresh.Id == earlier.Id)
+                return RefreshOutcome.Running;   // the earlier read is still running (not done in 30 s), so no fresh read could start
+            try
+            {
+                if (!fresh.Task.Wait(wait))
+                    return RefreshOutcome.Running;
+                return fresh.Task.Result ? RefreshOutcome.Done : RefreshOutcome.Failed;
+            }
+            catch (Exception ex)
+            {
+                log.Warn($"[ItemBounty] refresh: the read failed ({ex.Message})");
+                return RefreshOutcome.Failed;
+            }
         }
 
         // ── /zonecontrol bountyweight and bountypool (ZoneControlCommands) ─────
@@ -2304,17 +2353,9 @@ namespace ACE.Server.Managers
                     case "on": set.Off = false; break;
                     case "reset": set.Off = false; set.Places.Clear(); break;
                     case "clear": foreach (var x in places) set.Places.Remove(x); break;
-                    default:
-                        foreach (var x in places)
-                        {
-                            // 0 where its own weenie gives it no share anyway is the same as no Zone Control weight: store nothing, so
-                            // "remove from here" on a place it was only added to leaves no stray 0 behind (review 2026-11-19)
-                            if (value.Value == 0 && WeightAt(entry.Value, x, null) == 0)
-                                set.Places.Remove(x);
-                            else
-                                set.Places[x] = value.Value;
-                        }
-                        break;
+                    // an explicit 0 is kept even where the item has no built-in share today: if a world update later puts that place in
+                    // its band, the stored 0 still keeps it out (CodeRabbit 2026-11-19). "clear" is the way back to the built-in weight.
+                    default: foreach (var x in places) set.Places[x] = value.Value; break;
                 }
                 return null;
             }, out var before, out _);

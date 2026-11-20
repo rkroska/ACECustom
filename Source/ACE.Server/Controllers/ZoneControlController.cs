@@ -43,16 +43,36 @@ namespace ACE.Server.Web.Controllers
                 using (ZoneControlChangeLog.TrackWrites())
                 {
                     var answer = action();
-                    ZoneControlChangeLog.WaitTracked();
-                    return answer;
+                    return ZoneControlChangeLog.WaitTracked() ? answer : NotLogged(answer);
                 }
             }
             catch (Exception ex)
             {
+                // the details stay in the server log: a database or config error must not reach every account that can read the page
+                // (review 2026-11-19); refusals and conflicts are answered by the actions themselves, never here
                 var correlationId = Guid.NewGuid().ToString();
                 Log.Error($"[Correlation ID: {correlationId}] Zone Control {what} failed", ex);
-                return StatusCode(500, new { Message = $"Zone Control {what} failed: {ex.GetBaseException().Message}", CorrelationId = correlationId });
+                return StatusCode(500, new { Message = $"Zone Control {what} failed on the server. The server log has the details (id {correlationId}).", CorrelationId = correlationId });
             }
+        }
+
+        private static readonly System.Text.Json.JsonSerializerOptions WebJson = new(System.Text.Json.JsonSerializerDefaults.Web);
+
+        /// <summary>
+        /// A change that saved, but whose change log rows could not be written: the answer gets "logged": false and its message says so,
+        /// so the page warns instead of showing a plain success (review 2026-11-19: bounty edits reported success while History missed
+        /// them). Error answers pass through unchanged.
+        /// </summary>
+        private static IActionResult NotLogged(IActionResult answer)
+        {
+            if (answer is not ObjectResult result || result.Value == null || (result.StatusCode is int code && (code < 200 || code >= 300)))
+                return answer;
+            if (System.Text.Json.JsonSerializer.SerializeToNode(result.Value, result.Value.GetType(), WebJson) is not System.Text.Json.Nodes.JsonObject body)
+                return answer;
+            body["logged"] = false;
+            const string note = "Saved, but the change log could not record it, so History can't revert it. Check the server log.";
+            body["message"] = body["message"] is System.Text.Json.Nodes.JsonValue m && m.TryGetValue<string>(out var text) ? $"{text} ({note})" : note;
+            return new OkObjectResult(body);
         }
 
         [HttpGet("overview")]
@@ -129,7 +149,9 @@ namespace ACE.Server.Web.Controllers
             if (!TryTarget(zone, variation, wcid, rank, out var target, out var problem))
                 return BadRequest(new { Message = problem });
 
-            return Run(() =>
+            // the whole read under one hold of the manager lock (it is re-entrant): the stored row, its revision, the value in effect
+            // and where it comes from all describe the same moment, never a game edit landing halfway (review 2026-11-19)
+            return Run(() => ZoneControlManager.Locked<IActionResult>(() =>
             {
                 var authored = ReadRow(target, out var tier);
                 if (authored == null)
@@ -172,7 +194,7 @@ namespace ACE.Server.Web.Controllers
                 }).ToList();
 
                 return Ok(new { Tier = tier, Rows = rows });
-            }, "stats read");
+            }), "stats read");
         }
 
         /// <summary>True when the stat (or, for a _t25 key, the anchor itself) is set somewhere in the stack but turned off.</summary>
@@ -381,9 +403,32 @@ namespace ACE.Server.Web.Controllers
         {
             public List<long> Ids { get; set; }
             public string Reason { get; set; }
+            /// <summary>Revert all only: the ids the preview said it would revert, as confirmed. Anything else is left alone.</summary>
+            public List<long> Approved { get; set; }
         }
 
         private const int GroupRevertMax = 500;
+
+        /// <summary>
+        /// Whether a logged change touches bounty settings, which need Admin to change (review 2026-11-19: History's Revert let a
+        /// Developer undo a bounty change the bounty pages would refuse them). The global bounty parts, and a zone part whose Bounty
+        /// block differs between its two sides.
+        /// </summary>
+        internal static bool TouchesBounties(ZoneControlChange c)
+        {
+            if (c.Kind != ZoneControlChangeLog.KindSection || c.Section == null)
+                return false;
+            if (c.Section.StartsWith("bounty:", StringComparison.Ordinal))
+                return true;
+            if (!c.Section.StartsWith("zone:", StringComparison.Ordinal))
+                return false;
+            static string BountyOf(string json) => json == null ? null
+                : ZoneControlManager.Prop(Newtonsoft.Json.Linq.JToken.Parse(json), nameof(ControlledArea.Bounty)) is { } b && b.Type != Newtonsoft.Json.Linq.JTokenType.Null
+                    ? ZoneControlManager.Canonical(b.ToString(Newtonsoft.Json.Formatting.None)) : null;
+            return BountyOf(c.OldJson) != BountyOf(c.NewJson);
+        }
+
+        private const string BountyRevertRefused = "That change includes bounty settings, which need Admin access to change. Nothing was changed.";
 
         /// <summary>The rows sent plus every other row saved together with them (same batch id). History lists one zone's rows only and
         /// is cut at a row limit, so a group can hold half of one save: a rename's "created New" without its "removed Old". Reverting
@@ -432,7 +477,10 @@ namespace ACE.Server.Web.Controllers
             return Run(() =>
             {
                 var actor = PortalActor();
-                var result = ZoneControlRevert.RevertAll(WithWholeSaves(request.Ids.Distinct().ToList()).All, actor, request.Reason);
+                var all = WithWholeSaves(request.Ids.Distinct().ToList()).All;
+                if (all.Any(TouchesBounties) && !CanEditBountiesNow())
+                    return StatusCode(403, new { Message = BountyRevertRefused });
+                var result = ZoneControlRevert.RevertAll(all, actor, request.Reason, request.Approved);
                 if (result.Reverted.Count > 0)
                     PlayerManager.BroadcastToAuditChannel(null, $"[portal] {actor.Name} zonecontrol reverted {result.Reverted.Count} changes together"
                         + (result.Skipped.Count > 0 ? $", skipped {result.Skipped.Count}" : "")
@@ -462,6 +510,8 @@ namespace ACE.Server.Web.Controllers
                 var change = ZoneControlChangeLog.Get(id);
                 if (change == null)
                     return NotFound(new { Message = "No such change." });
+                if (TouchesBounties(change) && !CanEditBountiesNow())
+                    return StatusCode(403, new { Message = BountyRevertRefused });
                 if (change.Kind == ZoneControlChangeLog.KindSection)
                 {
                     // a zone created or removed in the same save as other changes is half of a rename (or a clone): reverting it alone

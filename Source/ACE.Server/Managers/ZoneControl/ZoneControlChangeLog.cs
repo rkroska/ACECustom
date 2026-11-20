@@ -89,8 +89,12 @@ namespace ACE.Server.Managers.ZoneControl
             return new Restore(() => _reason.Value = previous);
         }
 
-        /// <summary>The one stat change a stat edit logs as its own row: the save it triggers leaves exactly that change out of the part
-        /// (<see cref="Section"/>) and logs whatever else differs there.</summary>
+        /// <summary>
+        /// The one stat change a stat edit logs as its own row. The save it triggers writes that row FIRST, taking the old curve from the
+        /// last SAVED copy of the part (not memory, which a failed save may have changed), then any other change in the part (left in
+        /// memory by an earlier failed save) as a whole-part row after it, all in one batch and transaction (review 2026-11-19). The
+        /// row's write lands in <see cref="LogWrite"/>.
+        /// </summary>
         internal sealed class StatSkip
         {
             public string Section { get; }
@@ -98,6 +102,12 @@ namespace ACE.Server.Managers.ZoneControl
             public string Stat { get; }
             /// <summary>The curve the stat now holds; null = cleared.</summary>
             public StatCurve Next { get; }
+            public ZoneStatActor Actor { get; init; }
+            public long? RevertsId { get; init; }
+            public string Reason { get; init; }
+            public string BatchId { get; init; }
+            /// <summary>Set by the save: the change log write for this edit's rows (null = nothing was logged).</summary>
+            public Task<bool> LogWrite { get; set; }
 
             public StatSkip(string section, ZoneStatTarget target, string stat, StatCurve next)
             {
@@ -106,6 +116,22 @@ namespace ACE.Server.Managers.ZoneControl
                 Stat = stat;
                 Next = next;
             }
+        }
+
+        /// <summary>One stat edit's save: its stat row (null = the stat did not change) first, then the other parts the save changed, as one
+        /// batch in one transaction.</summary>
+        internal static Task<bool> RecordStatSave(StatSkip skip, StatCurve savedOld, IReadOnlyList<SectionChange> changes)
+        {
+            var rows = new List<ZoneControlChange>();
+            if (!ZoneStatEditor.SameCurve(savedOld, skip.Next))
+                rows.Add(StatRow(skip.Target, skip.Stat, savedOld, skip.Next, skip.Actor, skip.RevertsId, skip.Reason, null));
+            rows.AddRange(SectionRows(changes ?? new List<SectionChange>(), skip.Actor, skip.RevertsId, skip.Reason));
+            if (rows.Count == 0)
+                return null;
+            var batch = Trimmed(skip.BatchId) ?? (rows.Count > 1 ? Guid.NewGuid().ToString("N") : null);
+            foreach (var r in rows)
+                r.BatchId = batch;
+            return Write(rows);
         }
 
         // A stat edit logs its own exact row (old and new curve), so the save it triggers must not ALSO log that change inside the whole
@@ -151,8 +177,15 @@ namespace ACE.Server.Managers.ZoneControl
         {
             if (changes == null || changes.Count == 0)
                 return Task.FromResult(true);
-            var batch = batchId ?? (changes.Count > 1 ? Guid.NewGuid().ToString("N") : null);
-            var rows = changes.Select(c => new ZoneControlChange
+            var batch = Trimmed(batchId) ?? (changes.Count > 1 ? Guid.NewGuid().ToString("N") : null);
+            var rows = SectionRows(changes, actor, revertsId, reason);
+            foreach (var r in rows)
+                r.BatchId = batch;
+            return Write(rows);
+        }
+
+        private static List<ZoneControlChange> SectionRows(IReadOnlyList<SectionChange> changes, ZoneStatActor actor, long? revertsId, string reason) =>
+            changes.Select(c => new ZoneControlChange
             {
                 Actor = actor?.Name ?? "unknown",
                 Source = actor?.Source ?? ZoneStatActor.SourceConsole,
@@ -166,10 +199,14 @@ namespace ACE.Server.Managers.ZoneControl
                 NewJson = c.NewJson,
                 RevertsId = revertsId,
                 Reason = CleanReason(reason),
-                BatchId = batch,
             }).ToList();
 
-            return Write(rows);
+        private static string Trimmed(string batchId)
+        {
+            if (string.IsNullOrWhiteSpace(batchId))
+                return null;
+            var b = batchId.Trim();
+            return b.Length > BatchIdMaxLength ? b.Substring(0, BatchIdMaxLength) : b;
         }
 
         // ORDERED WRITER (review 2026-11-12): every save's rows go through ONE queue drained by ONE thread, so rows reach the table - and
@@ -190,6 +227,11 @@ namespace ACE.Server.Managers.ZoneControl
         private static Task<bool> Write(IReadOnlyList<ZoneControlChange> rows)
         {
             EnsureWriter();
+            // the time of the EDIT, taken now (under the manager lock), not when the writer gets to it: a backlog must not squeeze edits
+            // made minutes apart into one History group (review 2026-11-19). Id order still gives the replay order.
+            var now = DateTime.UtcNow;
+            foreach (var r in rows)
+                r.ChangedAtUtc = now;
             var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _queue.Add((rows.ToList(), done));
             var tracked = _tracked.Value;
@@ -273,11 +315,10 @@ namespace ACE.Server.Managers.ZoneControl
             return text.Length == 0 ? null : text;
         }
 
-        /// <summary>Queues one stat change. Never waits (callers hold the manager lock); the task says whether it was written.</summary>
-        internal static Task<bool> Record(ZoneStatTarget target, string stat, StatCurve oldCurve, StatCurve newCurve, ZoneStatActor actor, long? revertsId,
-            string reason = null, string batchId = null)
+        private static ZoneControlChange StatRow(ZoneStatTarget target, string stat, StatCurve oldCurve, StatCurve newCurve, ZoneStatActor actor, long? revertsId,
+            string reason, string batchId)
         {
-            var change = new ZoneControlChange
+            return new ZoneControlChange
             {
                 Actor = actor?.Name ?? "unknown",
                 Source = actor?.Source ?? ZoneStatActor.SourceConsole,
@@ -291,12 +332,8 @@ namespace ACE.Server.Managers.ZoneControl
                 RevertsId = revertsId,
                 Kind = KindStat,
                 Reason = CleanReason(reason),
-                BatchId = string.IsNullOrWhiteSpace(batchId) ? null : batchId.Trim(),
+                BatchId = Trimmed(batchId),
             };
-            if (change.BatchId != null && change.BatchId.Length > BatchIdMaxLength)
-                change.BatchId = change.BatchId.Substring(0, BatchIdMaxLength);
-
-            return Write(new[] { change });
         }
 
         internal static string WriteCurve(StatCurve curve) => curve == null ? null : JsonConvert.SerializeObject(curve);
@@ -334,7 +371,8 @@ namespace ACE.Server.Managers.ZoneControl
                 cmd.Transaction = tx;
                 cmd.CommandText = @"
 INSERT INTO zone_control_change_log (changed_at, actor, source, zone_name, variation, wcid, rank_key, stat, old_curve, new_curve, reverts_id, kind, reason, batch_id, section, old_json, new_json)
-VALUES (UTC_TIMESTAMP(), @actor, @source, @zone, @variation, @wcid, @rank, @stat, @old, @new, @reverts, @kind, @reason, @batch, @section, @oldjson, @newjson)";
+VALUES (@at, @actor, @source, @zone, @variation, @wcid, @rank, @stat, @old, @new, @reverts, @kind, @reason, @batch, @section, @oldjson, @newjson)";
+                AddParam(cmd, "@at", c.ChangedAtUtc == default ? DateTime.UtcNow : c.ChangedAtUtc);
                 AddParam(cmd, "@actor", c.Actor);
                 AddParam(cmd, "@source", c.Source);
                 AddParam(cmd, "@zone", c.Zone);

@@ -153,13 +153,23 @@ namespace ACE.Server.Tests
         [TestMethod]
         public async Task ActingAs_DoesNotLeakIntoOtherWork()
         {
-            string seen = null;
+            // an independent flow, started BEFORE Alice's scope (so it does not inherit it), reads the actor WHILE that scope is open
+            var aliceIsActing = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var other = Task.Run(async () =>
+            {
+                await aliceIsActing.Task;
+                return ZoneControlChangeLog.CurrentActor.Name;
+            });
+
+            string inScope;
             using (ZoneControlChangeLog.ActingAs(new ZoneStatActor { Name = "Alice", Source = ZoneStatActor.SourceGame }))
             {
-                await Task.Factory.StartNew(() => { }, TaskCreationOptions.LongRunning);
+                inScope = ZoneControlChangeLog.CurrentActor.Name;
+                aliceIsActing.SetResult(true);
+                Assert.AreEqual("server", await other, "the other flow never sees Alice");
             }
-            await Task.Run(() => seen = ZoneControlChangeLog.CurrentActor.Name);
-            Assert.AreEqual("server", seen);
+
+            Assert.AreEqual("Alice", inScope, "the flow that opened the scope does");
         }
 
         [TestMethod]
@@ -176,6 +186,29 @@ namespace ACE.Server.Tests
         private static ZoneControlChangeLog.StatSkip HealthTo(double value) => new ZoneControlChangeLog.StatSkip(
             "zone:a", ZoneStatTarget.ForZone("A", null, ACE.Server.Managers.ZoneScaling.ZcRank.None), "max_health",
             new ACE.Server.Managers.ZoneScaling.StatCurve { Base = value, Growth = 1.0, Additive = false });
+
+        // A zone an earlier failed save left in memory (never stored) is logged as CREATED when a stat edit first stores it, so History
+        // can undo the zone, not just the stat.
+        [TestMethod]
+        public void Diff_StatSkip_LogsTheCreationOfAZoneNeverSaved()
+        {
+            var before = Parts();
+            var after = Parts(Part("zone:a", "{\"Name\":\"A\",\"Enabled\":true,\"Profile\":{\"Minion\":{\"Stats\":{\"max_health\":{\"Base\":110.0,\"Growth\":1.0,\"Additive\":false}}}}}", "A"));
+
+            var change = ZoneControlManager.DiffSections(before, after, HealthTo(110)).Single();
+
+            Assert.AreEqual("zone:a", change.Section);
+            Assert.IsNull(change.OldJson, "a creation");
+        }
+
+        // The stat's old value comes from the SAVED copy, so a revert goes back to what the shard held, not to an unsaved value.
+        [TestMethod]
+        public void CurveIn_ReadsTheStatFromASavedPart()
+        {
+            var saved = "{\"Name\":\"A\",\"Profile\":{\"Minion\":{\"Stats\":{\"max_health\":{\"Base\":100.0,\"Growth\":1.0,\"Additive\":false}}}}}";
+            Assert.AreEqual(100.0, ZoneControlManager.CurveIn(saved, HealthTo(120)).Base);
+            Assert.IsNull(ZoneControlManager.CurveIn(null, HealthTo(120)), "a part never saved had no value");
+        }
 
         // A stat edit's own change is left out of the part: one stat row, no whole-zone row.
         [TestMethod]
