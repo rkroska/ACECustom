@@ -152,6 +152,8 @@ objects already in the world keep the emotes they spawned with.
 - Like `%tqt`, they work in emote sets that have a quest (the QuestSuccess and QuestFailure sets), and
   `%aqt` is meant for the QuestSuccess text. In a QuestFailure set it reads "negative time", and once
   `max_Solves` is reached it shows a very long time, so write once-ever text without it.
+- While another use on the account is still being rewarded (its claim holds the gate and its stamp hasn't
+  landed yet), `%aqt` reads "a moment", so "Come back in %aqt." still makes sense.
 - The account is only read when the text contains `%aqt` or `%aqc`.
 
 ---
@@ -195,13 +197,15 @@ objects already in the world keep the emotes they spawned with.
   `AwardSkillXP` wait too). So when the gate lets a character through, the account claims the quest's
   gate: it stays closed for the whole account until the object has finished its emotes (branches inside
   the outcome, such as a nested `InqQuest` or a `Goto`, included), the reward and the stamp, or a stop
-  such as a full pack, and the object stays busy (refusing new uses) until then. There is no timer,
-  however long the emotes wait. If the object leaves the world (a despawn) before its emotes have done
-  anything, another use can go ahead and those emotes never run; if it leaves after they started, or they
-  stop on a server error, the gate stays closed for that account until the server restarts, so it fails
-  closed. An account has one login at a time (a second login boots the first or is refused), so no other
-  character on the account can be playing meanwhile. After a stop with no stamp, the gate opens again as
-  soon as the object is idle, so the player can simply try again.
+  such as a full pack. The object normally stays busy (refusing new uses) until then; `OnPortal` and
+  `OnDeath` can clear that early, but the claim still keeps the gate closed for that account and quest.
+  There is no timer, however long the emotes wait. If the object leaves the world (a despawn), or the
+  player's character leaves it to log out (a stamp would no longer be saved), before the emotes have done
+  anything, they stop and another use can go ahead; if that happens after they started, or they stop on a
+  server error, the gate stays closed for that account until the server restarts, so it fails closed. An
+  account has one login at a time (a second login boots the first or is refused), so no other character on
+  the account can be playing meanwhile. After a stop with no stamp, the gate opens again as soon as the
+  object is idle, so the player can simply try again.
 - **A treasure isn't counted by the full-pack check.** The check that stops a reward set on a full pack,
   so the player can free space and retry, counts `Give` steps but not `CreateTreasure`. A treasure can
   take the last free slot, and a later `Give` then stops the set before its `StampQuest`, so the player

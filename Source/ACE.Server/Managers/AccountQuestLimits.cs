@@ -54,12 +54,13 @@ namespace ACE.Server.Managers
         /// flight, branches included, however long they wait) the gate stays closed for the account. EmoteManager releases
         /// its claims when those emotes have all finished. There is no timer.
         ///
-        /// A chain must TryAct before each of its steps, so what a step queues (a Give, a CastSpell) comes after it acted. A
-        /// chain whose object left the world (Gone) before it acted can be taken over: its claim is fenced, so it never acts,
-        /// and replaced. A chain that has acted is never taken over: if it stops before it finishes (its object left the
-        /// world, or a server error), the gate stays closed for the account until the server restarts (claims are memory
-        /// only), failing closed as for a database error. Both checks run under one lock, so a chain either acts first and
-        /// keeps the gate, or is fenced first and never acts.
+        /// The chain that took a claim must TryAct before each of its steps (only that chain: other emote sets on the object
+        /// don't), so what a step queues (a Give, a CastSpell) comes after it acted. A chain whose object left the world
+        /// (Gone) before it acted can be taken over: its claim is fenced, so it never acts, and replaced. A chain that has
+        /// acted is never taken over: if it stops before it finishes (its object left the world, its target left the world
+        /// to log out, or a server error), the gate stays closed for the account until the server restarts (claims are
+        /// memory only), failing closed as for a database error. Both checks run under one lock, so a chain either acts
+        /// first and keeps the gate, or is fenced first and never acts.
         /// </summary>
         public sealed class Claim
         {
@@ -71,8 +72,19 @@ namespace ACE.Server.Managers
 
             internal (uint AccountId, string Quest) Key { get; }
 
-            /// <summary>Where the chain that took the claim stands now.</summary>
-            internal Func<ChainState> Chain { get; }
+            /// <summary>Where the chain that took the claim stands now. Dropped (Closed) when the chain is abandoned.</summary>
+            internal Func<ChainState> Chain { get; private set; }
+
+            /// <summary>Set when a chain that acted is abandoned: the claim keeps the gate closed until a restart. Read and
+            /// written under claimLock.</summary>
+            internal bool Closed { get; private set; }
+
+            /// <summary>Under claimLock: keeps the gate closed for good and lets go of the chain's object.</summary>
+            internal void Close()
+            {
+                Closed = true;
+                Chain = ClosedChain;
+            }
 
             /// <summary>Set once the chain has acted (TryAct). Read and written under claimLock.</summary>
             internal bool Acted { get; set; }
@@ -98,15 +110,18 @@ namespace ACE.Server.Managers
         private static readonly Dictionary<(uint AccountId, string Quest), Claim> claims = new();
         private static readonly object claimLock = new();
 
+        private static readonly Func<ChainState> ClosedChain = () => ChainState.Gone;
+
         /// <summary>One character's registry row for a quest.</summary>
         public readonly record struct Stamp(uint LastTimeCompleted, int NumTimesCompleted);
 
         /// <summary>
         /// What the %aqt and %aqc emote text show for an account: the time until the account can solve the quest again
-        /// (TimeSpan.MinValue = now, TimeSpan.MaxValue = never, as QuestManager.GetNextSolveTime returns them) and the
-        /// account's total completions.
+        /// (TimeSpan.MinValue = now, TimeSpan.MaxValue = never, as QuestManager.GetNextSolveTime returns them), the
+        /// account's total completions, and whether another use is still being rewarded (its claim holds the gate before
+        /// its stamp has landed; %aqt then reads "a moment").
         /// </summary>
-        public readonly record struct AccountStatus(TimeSpan NextSolveTime, long Completions);
+        public readonly record struct AccountStatus(TimeSpan NextSolveTime, long Completions, bool RewardInProgress = false);
 
         /// <summary>
         /// The account-wide InqQuest test (HasQuest &amp;&amp; !CanSolve): true when a character on the player's account has the
@@ -125,7 +140,7 @@ namespace ACE.Server.Managers
                 return true;
 
             var questName = GetQuestName(questFormat);
-            if (questName.Length == 0)
+            if (string.IsNullOrWhiteSpace(questName))
             {
                 LogRateLimited(false, $"[InqAccountQuest] An emote used by {player.Name} names no quest; treating it as done.");
                 return true;
@@ -200,10 +215,13 @@ namespace ACE.Server.Managers
                 return null;
 
             var questName = GetQuestName(questFormat);
-            if (questName.Length == 0 || !TryReadAccountStamps(player, questName, out var stamps) || !TryGetWorldQuest(questName, out var quest))
+            if (string.IsNullOrWhiteSpace(questName) || !TryReadAccountStamps(player, questName, out var stamps) || !TryGetWorldQuest(questName, out var quest))
                 return null;
 
-            return new AccountStatus(NextSolveTime(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime()), Completions(stamps));
+            var nextSolveTime = NextSolveTime(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime());
+            var inProgress = nextSolveTime == TimeSpan.MinValue && player.Account != null && IsGateHeld(player.Account.AccountId, questName);
+
+            return new AccountStatus(nextSolveTime, Completions(stamps), inProgress);
         }
 
         /// <summary>
@@ -243,6 +261,9 @@ namespace ACE.Server.Managers
         /// </summary>
         private static bool TryEnd(Claim held)
         {
+            if (held.Closed)
+                return false;
+
             switch (held.Chain())
             {
                 case ChainState.Finished:
@@ -257,7 +278,7 @@ namespace ACE.Server.Managers
             }
         }
 
-        /// <summary>Ends a claim: its chain is over, or its use didn't go ahead. One replaced since is left alone.</summary>
+        /// <summary>Ends a claim: its chain is over, or its use didn't go ahead. One replaced since, or closed, is left alone.</summary>
         internal static void Release(Claim claim)
         {
             if (claim == null)
@@ -265,8 +286,52 @@ namespace ACE.Server.Managers
 
             lock (claimLock)
             {
-                if (claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
+                if (!claim.Closed && claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
                     claims.Remove(claim.Key);
+            }
+        }
+
+        /// <summary>
+        /// For a chain that stops before it finishes because its target left the world to log out, after which a stamp
+        /// would no longer be saved: claims it never acted on are released, so the account can try again; claims it acted
+        /// on are closed, so the gate stays closed for the account until a restart rather than let a reward through twice.
+        /// Safe to call again for the same chain.
+        /// </summary>
+        internal static void Abandon(IReadOnlyCollection<Claim> chainClaims)
+        {
+            if (chainClaims == null || chainClaims.Count == 0)
+                return;
+
+            lock (claimLock)
+            {
+                foreach (var claim in chainClaims)
+                {
+                    if (claim.Acted)
+                        claim.Close();
+                    else if (claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
+                        claims.Remove(claim.Key);
+                }
+            }
+        }
+
+        /// <summary>
+        /// True while a claim keeps the account's gate on this quest closed for a reason other than a stamp: a chain still
+        /// running (its reward on the way), or one that acted and can't finish.
+        /// </summary>
+        internal static bool IsGateHeld(uint accountId, string questName)
+        {
+            var key = (accountId, questName.ToLowerInvariant());
+
+            lock (claimLock)
+            {
+                if (!claims.TryGetValue(key, out var held))
+                    return false;
+
+                if (held.Closed)
+                    return true;
+
+                var state = held.Chain();
+                return state == ChainState.Running || (state == ChainState.Gone && held.Acted);
             }
         }
 
@@ -291,6 +356,13 @@ namespace ACE.Server.Managers
 
                 return true;
             }
+        }
+
+        /// <summary>Drops the claim on a gate whatever its state, a closed one included. For tests, which share the table.</summary>
+        internal static void Forget(uint accountId, string questName)
+        {
+            lock (claimLock)
+                claims.Remove((accountId, questName.ToLowerInvariant()));
         }
 
         /// <summary>True once the claim was taken over: its chain may not act any more.</summary>
