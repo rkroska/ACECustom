@@ -16,7 +16,7 @@ namespace ACE.Server.Tests
     /// (QuestManager.HasQuest and CanSolve applied to all of an account's stamps; true = QuestSuccess, done / timer running;
     /// false = QuestFailure, go ahead), NextSolveTime and Completions (what %aqt and %aqc show), and AccountStamps (a
     /// character in memory is read from memory, never from its possibly stale saved row), and TryClaim / Release (the
-    /// account's claim on a gate, from the gate to the end of the object's emotes, at most ClaimTimeout). No DB, no world.
+    /// account's claim on a gate, from the gate to the end of the object's emotes). No DB, no world.
     /// </summary>
     [TestClass]
     public class AccountQuestLimitsTests
@@ -227,48 +227,57 @@ namespace ACE.Server.Tests
         }
 
         // ---- the account's claim on the gate, from the gate to the end of the object's emotes (TryClaim, Release) ----
-        // Each test uses its own account ids: the claims are shared state.
+        // Each test uses its own account ids: the claims are shared state. isHeld stands in for "the object running the
+        // reward is still busy with it and in the world".
 
-        private static readonly DateTime T0 = new DateTime(2026, 11, 20, 12, 0, 0, DateTimeKind.Utc);
+        private static readonly Func<bool> Busy = () => true;
 
         [TestMethod]
         public void Claim_HeldUntilReleased()
         {
             // the QuestFailure set (reward, StampQuest) runs a tick or more after the gate: a second check meanwhile is closed
-            var first = AccountQuestLimits.TryClaim(9_000_001, "TestAccountQuest", T0);
+            var first = AccountQuestLimits.TryClaim(9_000_001, "TestAccountQuest", Busy);
             Assert.IsNotNull(first);
-            Assert.IsNull(AccountQuestLimits.TryClaim(9_000_001, "TestAccountQuest", T0.AddMilliseconds(50)));
-            Assert.IsNull(AccountQuestLimits.TryClaim(9_000_001, "testaccountquest", T0.AddMinutes(4)));   // any case, long waits
+            Assert.IsNull(AccountQuestLimits.TryClaim(9_000_001, "TestAccountQuest", Busy));
+            Assert.IsNull(AccountQuestLimits.TryClaim(9_000_001, "testaccountquest", Busy));   // any case
 
             AccountQuestLimits.Release(first);   // the object went idle: reward and stamp done, or stopped
-            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_001, "TestAccountQuest", T0.AddMinutes(4)));
+            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_001, "TestAccountQuest", Busy));
         }
 
         [TestMethod]
-        public void Claim_EndsAfterClaimTimeout()
+        public void Claim_ALongRunningChain_HoldsWithNoTimeLimit()
         {
-            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_002, "TestAccountQuest", T0));
-            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_002, "TestAccountQuest", T0 + AccountQuestLimits.ClaimTimeout));
-            Assert.AreEqual(TimeSpan.FromMinutes(5), AccountQuestLimits.ClaimTimeout);
+            // a chain whose StampQuest waits a long time (a delayed step, a stall) keeps the gate closed until it ends:
+            // there is no timer to run out
+            var running = true;
+            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_002, "TestAccountQuest", () => running));
+
+            for (var i = 0; i < 3; i++)
+                Assert.IsNull(AccountQuestLimits.TryClaim(9_000_002, "TestAccountQuest", Busy));
+
+            running = false;   // the chain ended (its object went idle without a release, or left the world)
+            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_002, "TestAccountQuest", Busy));
         }
 
         [TestMethod]
-        public void Claim_ReleasingOneThatTimedOut_KeepsTheNewOne()
+        public void Claim_ReleasingOneThatStoppedCounting_KeepsTheNewOne()
         {
-            var old = AccountQuestLimits.TryClaim(9_000_005, "TestAccountQuest", T0);
-            var current = AccountQuestLimits.TryClaim(9_000_005, "TestAccountQuest", T0 + AccountQuestLimits.ClaimTimeout);
-            Assert.IsNotNull(current);
+            var oldHeld = true;
+            var old = AccountQuestLimits.TryClaim(9_000_005, "TestAccountQuest", () => oldHeld);
+            oldHeld = false;   // its object left the world
+            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_005, "TestAccountQuest", Busy));
 
-            AccountQuestLimits.Release(old);   // the stuck object finally goes idle
-            Assert.IsNull(AccountQuestLimits.TryClaim(9_000_005, "TestAccountQuest", T0 + AccountQuestLimits.ClaimTimeout + TimeSpan.FromSeconds(1)));
+            AccountQuestLimits.Release(old);
+            Assert.IsNull(AccountQuestLimits.TryClaim(9_000_005, "TestAccountQuest", Busy));   // the new claim still holds
         }
 
         [TestMethod]
         public void Claim_IsPerAccountAndQuest()
         {
-            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_003, "TestAccountQuest", T0));
-            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_004, "TestAccountQuest", T0));   // another account
-            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_003, "OtherAccountQuest", T0));   // another quest
+            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_003, "TestAccountQuest", Busy));
+            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_004, "TestAccountQuest", Busy));   // another account
+            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_003, "OtherAccountQuest", Busy));   // another quest
             AccountQuestLimits.Release(null);   // no claim: nothing to do
         }
     }

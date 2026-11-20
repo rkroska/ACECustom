@@ -1230,7 +1230,8 @@ namespace ACE.Server.WorldObjects.Managers
                     // the gate, held until this object goes idle (IsBusy), so it covers the reward and the stamp.
                     if (player != null)
                     {
-                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message, out var accountClaim);
+                        // the claim counts while this object is busy with the chain and still in the world
+                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message, () => IsBusy && !WorldObject.IsDestroyed, out var accountClaim);
 
                         if (accountClaim != null)
                             (heldAccountClaims ??= new List<AccountQuestLimits.Claim>()).Add(accountClaim);

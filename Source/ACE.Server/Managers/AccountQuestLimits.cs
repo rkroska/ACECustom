@@ -33,7 +33,7 @@ namespace ACE.Server.Managers
     ///     (its quest rows cascade away with it), so deleting a character doesn't reset the timer.
     ///
     /// After the gate lets a character through, the account holds a Claim on the quest's gate until the object running
-    /// the reward has finished its emotes (or ClaimTimeout), so a second check can't pass before the stamp lands.
+    /// the reward has finished its emotes (or leaves the world), so a second check can't pass before the stamp lands.
     /// </summary>
     public static class AccountQuestLimits
     {
@@ -49,25 +49,25 @@ namespace ACE.Server.Managers
         /// An account's hold on one quest's gate. The QuestSuccess or QuestFailure set runs on the next server tick (as for
         /// InqQuest) and some of its steps wait on their own (an NPC turning to give, Motion, CastSpell), so the stamp lands
         /// a while after the gate, and until it does the account's stamps don't show the claim. So when the gate lets a
-        /// character through, the account takes a Claim, and the gate stays closed for the account until the object running
-        /// the reward has finished its emotes: the reward and the stamp, or a stop such as a full pack (EmoteManager releases
-        /// its claims when it goes idle). ClaimTimeout ends a claim whose object never goes idle.
+        /// character through, the account takes a Claim, and the gate stays closed for the account for as long as the claim
+        /// is held: until the object running the reward has finished its emotes, the reward and the stamp or a stop such as a
+        /// full pack (EmoteManager releases its claims when it goes idle). There is no timer: a claim also stops counting
+        /// once its object is no longer busy or has left the world (isHeld), and claims are memory only, so a restart
+        /// clears them.
         /// </summary>
         public sealed class Claim
         {
-            internal Claim((uint AccountId, string Quest) key, DateTime expires)
+            internal Claim((uint AccountId, string Quest) key, Func<bool> isHeld)
             {
                 Key = key;
-                Expires = expires;
+                IsHeld = isHeld;
             }
 
             internal (uint AccountId, string Quest) Key { get; }
 
-            internal DateTime Expires { get; }
+            /// <summary>True while the chain that took the claim can still pay out: its object is busy and in the world.</summary>
+            internal Func<bool> IsHeld { get; }
         }
-
-        /// <summary>A claim ends at the latest this long after it was taken, released or not.</summary>
-        public static readonly TimeSpan ClaimTimeout = TimeSpan.FromMinutes(5);
 
         private static readonly Dictionary<(uint AccountId, string Quest), Claim> claims = new();
         private static readonly object claimLock = new();
@@ -88,9 +88,11 @@ namespace ACE.Server.Managers
         /// Fails closed (true) when the database can't be read or the emote names no quest, so neither a database problem nor
         /// a misconfigured emote hands out extra rewards.
         /// </summary>
+        /// <param name="claimHeld">For the claim taken when this lets the character through: true while the object running
+        /// the reward is still busy with it and in the world.</param>
         /// <param name="claim">When this lets the character through (false), the account's claim on the gate, for the object
         /// running the reward to release when it goes idle; otherwise null.</param>
-        public static bool HasQuestAndCannotSolve(Player player, string questFormat, out Claim claim)
+        public static bool HasQuestAndCannotSolve(Player player, string questFormat, Func<bool> claimHeld, out Claim claim)
         {
             claim = null;
 
@@ -121,7 +123,7 @@ namespace ACE.Server.Managers
             if (player.Account == null)
                 return false;
 
-            claim = TryClaim(player.Account.AccountId, questName, DateTime.UtcNow);
+            claim = TryClaim(player.Account.AccountId, questName, claimHeld);
             return claim == null;
         }
 
@@ -142,33 +144,37 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Takes the account's claim on a quest's gate, or returns null while another one is held (not released, not past
-        /// ClaimTimeout). Quest names match without regard to case, as in the registry.
+        /// Takes the account's claim on a quest's gate, or returns null while another one is held (not released, and its
+        /// object still busy and in the world). Quest names match without regard to case, as in the registry.
         /// </summary>
-        internal static Claim TryClaim(uint accountId, string questName, DateTime now)
+        /// <param name="isHeld">True while the chain taking the claim can still pay out (see Claim.IsHeld).</param>
+        internal static Claim TryClaim(uint accountId, string questName, Func<bool> isHeld)
         {
+            ArgumentNullException.ThrowIfNull(isHeld);
+
             var key = (accountId, questName.ToLowerInvariant());
 
             lock (claimLock)
             {
-                if (claims.TryGetValue(key, out var held) && held.Expires > now)
+                if (claims.TryGetValue(key, out var held) && held.IsHeld())
                     return null;
 
-                var claim = new Claim(key, now + ClaimTimeout);
+                var claim = new Claim(key, isHeld);
                 claims[key] = claim;
 
-                // claims past their timeout are dropped now and then, so the table stays small
+                // claims no longer held (their object went idle without a release, or left the world) are dropped now and
+                // then, so the table stays small
                 if (claims.Count > 1024)
                 {
-                    foreach (var expired in claims.Where(c => c.Value.Expires <= now).Select(c => c.Key).ToList())
-                        claims.Remove(expired);
+                    foreach (var stale in claims.Where(c => !c.Value.IsHeld()).Select(c => c.Key).ToList())
+                        claims.Remove(stale);
                 }
 
                 return claim;
             }
         }
 
-        /// <summary>Ends a claim. One that timed out and was taken again since is left alone.</summary>
+        /// <summary>Ends a claim. One that stopped counting and was taken again since is left alone.</summary>
         internal static void Release(Claim claim)
         {
             if (claim == null)
