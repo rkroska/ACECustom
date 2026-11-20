@@ -187,10 +187,15 @@ objects already in the world keep the emotes they spawned with.
   from the shard's `character_properties_quest_registry` table (the character is offline, so the change
   counts at once).
 - **Keep the gate and the stamp together.** Give the `InqAccountQuest` step, the reward and the
-  `StampQuest` no delay, as the Chests of Chance do: steps without a delay run together in one call. With
-  a delay, the stamp lands later, and in that gap the same character could pass the gate again on another
-  object that uses the same quest. The object itself refuses new uses while its emotes run, and only one
-  character per account can play at a time. `InqQuest` has the same gap.
+  `StampQuest` no delay, as the Chests of Chance do: steps without a delay run together in one call. Some
+  steps take time on their own, and the step after them waits even with no delay: an NPC turns to face the
+  player before a `Give` (unless it has `DontTurnOrMoveWhenGiving`, bool 82), and `Motion`, `Turn`,
+  `TurnToTarget`, `MoveHome`, `CastSpell` and `AwardSkillXP` wait too. Until the stamp lands, the same
+  character could pass the gate again on another object that uses the same quest. Nothing else can use
+  that gap: the object refuses new uses while its emotes run, and an account has one login at a time (a
+  second login boots the first or is refused), so no other character on the account can be playing.
+  `InqQuest` has the same gap. Keep any wait between the gate and the stamp short: a long delay could
+  outlast a relog onto another character.
 - **It fails closed.** If the shard database can't be read, or the emote names no quest, the account is
   treated as having done it (QuestSuccess), so a problem never hands out extra rewards. Those errors are
   logged at most once a minute.

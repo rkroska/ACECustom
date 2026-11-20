@@ -72,6 +72,9 @@ namespace ACE.Server.Managers
             if (!TryReadAccountStamps(player, questName, out var stamps))
                 return true;
 
+            // A quest with no world row is deliberately not failed closed: as with InqQuest (HasQuest && !CanSolve, where
+            // QuestManager.GetNextSolveTime can't solve a missing quest), it stays open until a character on the account
+            // has the stamp, then closes for good. Content keeps working when its InqQuest step becomes InqAccountQuest.
             var quest = DatabaseManager.World.GetCachedQuest(questName);
 
             return IsDone(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime());
