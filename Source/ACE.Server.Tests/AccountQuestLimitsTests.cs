@@ -15,7 +15,8 @@ namespace ACE.Server.Tests
     /// %tqc counted across every character on an account. Pins the pure rules behind them: AccountQuestLimits.IsDone
     /// (QuestManager.HasQuest and CanSolve applied to all of an account's stamps; true = QuestSuccess, done / timer running;
     /// false = QuestFailure, go ahead), NextSolveTime and Completions (what %aqt and %aqc show), and AccountStamps (a
-    /// character in memory is read from memory, never from its possibly stale saved row). No DB, no world.
+    /// character in memory is read from memory, never from its possibly stale saved row), and TryAdmit (the gate stays
+    /// closed for an account for AdmissionHold after it lets a character through). No DB, no world.
     /// </summary>
     [TestClass]
     public class AccountQuestLimitsTests
@@ -223,6 +224,36 @@ namespace ACE.Server.Tests
 
             Assert.AreEqual(2, stamps.Count);
             Assert.IsTrue(Done(stamps, Quest(TwentyHours)));   // the alt, an hour ago
+        }
+
+        // ---- the hold after the gate lets a character through (TryAdmit) ----
+        // Each test uses its own account ids: the holds are shared state.
+
+        private static readonly DateTime T0 = new DateTime(2026, 11, 20, 12, 0, 0, DateTimeKind.Utc);
+
+        [TestMethod]
+        public void Hold_SecondCheckBeforeTheStampLands_IsClosed()
+        {
+            // the QuestFailure set (reward, StampQuest) runs a tick later: a second check in between sees no stamp
+            Assert.IsTrue(AccountQuestLimits.TryAdmit(9_000_001, "TestAccountQuest", T0));
+            Assert.IsFalse(AccountQuestLimits.TryAdmit(9_000_001, "TestAccountQuest", T0.AddMilliseconds(50)));
+            Assert.IsFalse(AccountQuestLimits.TryAdmit(9_000_001, "testaccountquest", T0.AddSeconds(4)));   // any case
+        }
+
+        [TestMethod]
+        public void Hold_EndsAfterAdmissionHold()
+        {
+            Assert.IsTrue(AccountQuestLimits.TryAdmit(9_000_002, "TestAccountQuest", T0));
+            Assert.IsTrue(AccountQuestLimits.TryAdmit(9_000_002, "TestAccountQuest", T0 + AccountQuestLimits.AdmissionHold));
+            Assert.AreEqual(TimeSpan.FromSeconds(5), AccountQuestLimits.AdmissionHold);
+        }
+
+        [TestMethod]
+        public void Hold_IsPerAccountAndQuest()
+        {
+            Assert.IsTrue(AccountQuestLimits.TryAdmit(9_000_003, "TestAccountQuest", T0));
+            Assert.IsTrue(AccountQuestLimits.TryAdmit(9_000_004, "TestAccountQuest", T0));   // another account
+            Assert.IsTrue(AccountQuestLimits.TryAdmit(9_000_003, "OtherAccountQuest", T0));   // another quest
         }
     }
 }

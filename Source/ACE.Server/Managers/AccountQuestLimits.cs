@@ -31,6 +31,9 @@ namespace ACE.Server.Managers
     ///     another character of the same account enter the world before then, so its newest stamps may not be saved yet;
     ///   - every other character, from the shard database. Deleted characters still count until the character is purged
     ///     (its quest rows cascade away with it), so deleting a character doesn't reset the timer.
+    ///
+    /// After the gate lets a character through, it stays closed for that account for AdmissionHold (5 seconds), so a second
+    /// check can't pass before the stamp lands.
     /// </summary>
     public static class AccountQuestLimits
     {
@@ -41,6 +44,17 @@ namespace ACE.Server.Managers
         private const double LogEverySeconds = 60;
 
         private static double nextLogAt;
+
+        /// <summary>
+        /// How long the gate stays closed for an account after it lets one of its characters through. The QuestSuccess or
+        /// QuestFailure set runs on the next server tick (EmoteManager.ExecuteEmoteSet defers nested sets), and some of its
+        /// steps wait on their own (an NPC turning to give, Motion, CastSpell), so the stamp lands a moment after the gate.
+        /// Until it does, the account's stamps don't show the claim; the hold keeps a second check from passing on them.
+        /// </summary>
+        public static readonly TimeSpan AdmissionHold = TimeSpan.FromSeconds(5);
+
+        private static readonly Dictionary<(uint AccountId, string Quest), DateTime> heldUntil = new();
+        private static readonly object holdLock = new();
 
         /// <summary>One character's registry row for a quest.</summary>
         public readonly record struct Stamp(uint LastTimeCompleted, int NumTimesCompleted);
@@ -54,8 +68,9 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// The account-wide InqQuest test (HasQuest &amp;&amp; !CanSolve): true when a character on the player's account has the
-        /// quest and the account can't solve it right now. Fails closed (true) when the database can't be read or the emote
-        /// names no quest, so neither a database problem nor a misconfigured emote hands out extra rewards.
+        /// quest and the account can't solve it right now, or when the gate let a character of the account through less than
+        /// AdmissionHold ago. Fails closed (true) when the database can't be read or the emote names no quest, so neither a
+        /// database problem nor a misconfigured emote hands out extra rewards.
         /// </summary>
         public static bool HasQuestAndCannotSolve(Player player, string questFormat)
         {
@@ -75,14 +90,20 @@ namespace ACE.Server.Managers
             // A quest with no world row is deliberately not failed closed: as with InqQuest (HasQuest && !CanSolve, where
             // QuestManager.GetNextSolveTime can't solve a missing quest), it stays open until a character on the account
             // has the stamp, then closes for good. Content keeps working when its InqQuest step becomes InqAccountQuest.
-            var quest = DatabaseManager.World.GetCachedQuest(questName);
+            // A world database that can't be read does fail closed.
+            if (!TryGetWorldQuest(questName, out var quest))
+                return true;
 
-            return IsDone(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime());
+            if (IsDone(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime()))
+                return true;
+
+            // Going ahead: hold the gate closed for the account until the stamp has had time to land (AdmissionHold).
+            return player.Account != null && !TryAdmit(player.Account.AccountId, questName, DateTime.UtcNow);
         }
 
         /// <summary>
-        /// The account-wide values behind %aqt and %aqc, or null when the emote names no quest or the account's stamps
-        /// can't be read (the text then shows nothing in their place).
+        /// The account-wide values behind %aqt and %aqc, or null when the emote names no quest or the shard or world
+        /// database can't be read (the text then shows nothing in their place).
         /// </summary>
         public static AccountStatus? GetStatus(Player player, string questFormat)
         {
@@ -90,12 +111,52 @@ namespace ACE.Server.Managers
                 return null;
 
             var questName = GetQuestName(questFormat);
-            if (questName.Length == 0 || !TryReadAccountStamps(player, questName, out var stamps))
+            if (questName.Length == 0 || !TryReadAccountStamps(player, questName, out var stamps) || !TryGetWorldQuest(questName, out var quest))
                 return null;
 
-            var quest = DatabaseManager.World.GetCachedQuest(questName);
-
             return new AccountStatus(NextSolveTime(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime()), Completions(stamps));
+        }
+
+        /// <summary>
+        /// Lets an account's character through the gate unless another one went through for this quest less than
+        /// AdmissionHold ago, and starts the hold when it does. Quest names match without regard to case, as in the registry.
+        /// </summary>
+        internal static bool TryAdmit(uint accountId, string questName, DateTime now)
+        {
+            var key = (accountId, questName.ToLowerInvariant());
+
+            lock (holdLock)
+            {
+                if (heldUntil.TryGetValue(key, out var until) && until > now)
+                    return false;
+
+                heldUntil[key] = now + AdmissionHold;
+
+                // expired holds are dropped now and then, so the table stays small
+                if (heldUntil.Count > 1024)
+                {
+                    foreach (var expired in heldUntil.Where(h => h.Value <= now).Select(h => h.Key).ToList())
+                        heldUntil.Remove(expired);
+                }
+
+                return true;
+            }
+        }
+
+        /// <summary>The quest's world row (null when it has none), or false when the world database can't be read.</summary>
+        private static bool TryGetWorldQuest(string questName, out WorldQuest quest)
+        {
+            try
+            {
+                quest = DatabaseManager.World.GetCachedQuest(questName);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogRateLimited(true, $"[InqAccountQuest] Could not read world quest '{questName}'. {ex}");
+                quest = null;
+                return false;
+            }
         }
 
         /// <summary>The quest name without its optional @comment, or "" when there is none.</summary>
