@@ -205,6 +205,27 @@ namespace ACE.Server.Managers
         /// </summary>
         public static bool WriteUpdatesToDb()
         {
+            // one save at a time (PR #616): an admin command's save WAITS for the property worker's save in flight, so it
+            // reports what really reached the database, and a failed older row can only be queued again while no newer
+            // value for its key is pending (TryAdd) - it can never come back after a newer value was written
+            lock (FlushLock)
+                return WriteUpdatesToDbLocked();
+        }
+
+        /// <summary>The property worker's pass: save, then reload, as one step under the save lock.</summary>
+        public static void FlushAndReload()
+        {
+            lock (FlushLock)
+            {
+                WriteUpdatesToDbLocked();
+                LoadFromDb();
+            }
+        }
+
+        private static readonly object FlushLock = new();
+
+        private static bool WriteUpdatesToDbLocked()
+        {
             var ok = true;
             ok &= FlushPending(_modifiedBoolProps, (key, property) =>
             {
@@ -1108,8 +1129,8 @@ namespace ACE.Server.Managers
         // PERSONAL LIFESTONE (owner 2026-11-14): a carried item that raises an owner-only lifestone in front of the player for a
         // short time. See Player_PersonalLifestone.cs. All read live.
         public static ConfigProperty<bool> personal_lifestone_enabled { get; private set; } = new(true, "PERSONAL LIFESTONE: when FALSE the Personal Lifestone item refuses to work. Stones already standing still fade on their own.");
-        public static ConfigProperty<long> personal_lifestone_cooldown_seconds { get; private set; } = new(72000, "PERSONAL LIFESTONE: real-time cooldown in seconds after a stone is raised (72000 = 20 hours). Per character, keeps running while logged out. Spent only when a stone actually appears.");
-        public static ConfigProperty<long> personal_lifestone_lifetime_seconds { get; private set; } = new(120, "PERSONAL LIFESTONE: how long a raised stone stands before it deletes itself, in seconds. An attune or tie made on it stays after it fades.");
+        public static ConfigProperty<long> personal_lifestone_cooldown_seconds { get; private set; } = new(72000, "PERSONAL LIFESTONE: real-time cooldown in seconds after a stone is raised (72000 = 20 hours; used within 0 - 31536000, one year). Per character, keeps running while logged out. Spent only when a stone actually appears.");
+        public static ConfigProperty<long> personal_lifestone_lifetime_seconds { get; private set; } = new(120, "PERSONAL LIFESTONE: how long a raised stone stands before it deletes itself, in seconds (used within 1 - 86400, one day). An attune or tie made on it stays after it fades.");
         public static ConfigProperty<string> personal_lifestone_excluded_landblocks { get; private set; } = new("", "PERSONAL LIFESTONE: areas where the item cannot be used, on top of the built-in list (housing, apartments, Marketplace, jail, arenas). Comma-separated tokens, each [-]HEX[:base|all|<variation>] - the same grammar as nolog_landblocks. A '-' token removes a built-in entry. Variation omitted = base only; 'all' = base and every variation. The most specific token wins (a variation's or base's token beats an 'all' token; at one scope '-' beats '+'). Edit with /plstone rather than by hand.");
         public static ConfigProperty<bool> personal_lifestone_block_nolog_areas { get; private set; } = new(true, "PERSONAL LIFESTONE: when TRUE every no-log area (the /nolog list) also blocks the item.");
         public static ConfigProperty<bool> personal_lifestone_block_t10_vod { get; private set; } = new(false, "PERSONAL LIFESTONE: optional, OFF by default (owner 2026-11-19). When TRUE Thaelaryn Island (T10, LandblockCollections.ThaelarynIslandLandblocks) and the Valley of Death (ValleyOfDeathLandblocks) block the item in EVERY variation. FALSE = allowed there. A '-' token in personal_lifestone_excluded_landblocks still lifts one landblock. Toggle with /plstone t10vod on|off.");
@@ -1296,8 +1317,7 @@ namespace ACE.Server.Managers
         private static void DoWork()
         {
             var startTime = DateTime.UtcNow;
-            ServerConfig.WriteUpdatesToDb();
-            ServerConfig.LoadFromDb();
+            ServerConfig.FlushAndReload();
             log.Debug($"PropertyManager DoWork took {(DateTime.UtcNow - startTime).TotalMilliseconds:N0} ms");
         }
     }

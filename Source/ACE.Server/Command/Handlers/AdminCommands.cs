@@ -7857,7 +7857,10 @@ namespace ACE.Server.Command.Handlers
 
             if (sub == "list")
             {
-                Msg($"Personal Lifestone: {(ServerConfig.personal_lifestone_enabled.Value ? "ON" : "OFF")}, cooldown {Player.FormatPersonalLifestoneTime(ServerConfig.personal_lifestone_cooldown_seconds.Value)}, stone lasts {Player.FormatPersonalLifestoneTime(ServerConfig.personal_lifestone_lifetime_seconds.Value)}.");
+                Msg($"Personal Lifestone: {(ServerConfig.personal_lifestone_enabled.Value ? "ON" : "OFF")}, cooldown {Player.FormatPersonalLifestoneTime(Player.PersonalLifestoneCooldownSeconds)}, stone lasts {Player.FormatPersonalLifestoneTime(Player.PersonalLifestoneLifetimeSeconds)}.");
+                if (Player.PersonalLifestoneCooldownSeconds != ServerConfig.personal_lifestone_cooldown_seconds.Value
+                    || Player.PersonalLifestoneLifetimeSeconds != ServerConfig.personal_lifestone_lifetime_seconds.Value)
+                    Msg("  (a setting is outside its range and is used at the nearest limit: cooldown 0 - 1 year, lifetime 1 s - 1 day)");
                 Msg($"  no-log areas block: {(ServerConfig.personal_lifestone_block_nolog_areas.Value ? "yes" : "no")}   outdoors only: {(ServerConfig.personal_lifestone_block_dungeons.Value ? "yes" : "no")}");
                 Msg($"  T10 (Thaelaryn Island, {LandblockCollections.ThaelarynIslandLandblocks.Count} lb) + Valley of Death ({LandblockCollections.ValleyOfDeathLandblocks.Count} lb), every variation: {(ServerConfig.personal_lifestone_block_t10_vod.Value ? "BLOCKED" : "allowed")}   (/plstone t10vod on|off)");
                 Msg("  Always blocked: house interiors, Vaulted Dungeons.");
@@ -7873,10 +7876,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var player = session?.Player;
                 if (player?.Location == null) { Msg("Stand somewhere first - check uses your own spot."); return; }
-                var loc = player.Location;
-                var reason = Player.PersonalLifestoneBlockReason(loc);
-                Msg($"{loc.Landblock:X4} cell {loc.Cell:X8} at {Player.NoLogScopeName(Player.NoLogVariationKey(loc.Variation))}: "
-                    + (reason == null ? "ALLOWED - a Personal Lifestone works here." : $"BLOCKED by {reason}."));
+                Msg(Player.PersonalLifestoneCheckText(player.Location));
                 return;
             }
 
@@ -7907,13 +7907,17 @@ namespace ACE.Server.Command.Handlers
                     if (townPos == null) { Msg($"No spot found for {townName} (its Free Ride spell is missing). Nothing changed."); return; }
                 }
                 var lsGuid = lsTarget.Guid;
+                var admin = session?.Player;
                 OnWorldThread(() =>
                 {
                     // looked up again ON the world thread: online, just logged out or offline - whichever it is now
                     var now = (IPlayer)PlayerManager.GetOnlinePlayer(lsGuid) ?? PlayerManager.FindByGuid(lsGuid);
-                    Msg(now == null ? "That character is gone." : $"{now.Name}: {Player.ResetLifestonePoints(now, townPos)}.");
+                    if (now == null) { Msg("That character is gone. Nothing changed."); return; }
+                    var result = Player.ResetLifestonePoints(now, townPos, out var changed);
+                    Msg($"{now.Name}: {result}.");
+                    if (changed)
+                        PlayerManager.BroadcastToAuditChannel(admin, $"Reset the lifestone point and tie of {now.Name}{(townName != null ? " to " + townName : "")}");
                 });
-                PlayerManager.BroadcastToAuditChannel(session?.Player, $"Reset the lifestone point and tie of {lsTarget.Name}{(townName != null ? " to " + townName : "")}");
                 return;
             }
 
@@ -7973,7 +7977,7 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
             }
-            if (!Player.IsListableNoLogScope(variationKey))
+            if (!Player.IsListableNoLogScope(variationKey) || (string.IsNullOrWhiteSpace(scopeArg) && !Player.IsListableNoLogLayer(rawVariation)))
             {
                 Msg("You are in a rift layer - those are temporary and cannot be listed. Add a scope: base, all, or a variation number.");
                 return;

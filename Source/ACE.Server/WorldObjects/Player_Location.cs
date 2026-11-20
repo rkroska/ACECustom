@@ -957,6 +957,10 @@ namespace ACE.Server.WorldObjects
         public static bool IsListableNoLogScope(int variationKey)
             => variationKey >= 0 || variationKey == NoLogBaseKey || variationKey == NoLogAllKey;
 
+        /// <summary>True for a layer a 'here' target may stand for: the base world or a real variation. Any negative layer
+        /// (a rift) is not - and -1 / -2 would otherwise read as the base / all scope keys (PR #616).</summary>
+        public static bool IsListableNoLogLayer(int? variation) => !variation.HasValue || variation.Value >= 0;
+
         /// <summary>The token an override entry is written as - the inverse of TryParseNoLogToken.</summary>
         public static string NoLogTokenFor(ushort landblock, int variationKey, bool suppress)
         {

@@ -179,6 +179,17 @@ namespace ACE.Server.WorldObjects
 
         private const string OutdoorsOnlyReason = "an indoor cell (outdoors-only switch)";
 
+        /// <summary>/plstone check: what the AREA rules say about this spot, and whether the item is switched on at all.</summary>
+        public static string PersonalLifestoneCheckText(Position loc)
+        {
+            var reason = PersonalLifestoneBlockReason(loc);
+            var text = $"{loc.Landblock:X4} cell {loc.Cell:X8} at {NoLogScopeName(NoLogVariationKey(loc.Variation))}: "
+                + (reason == null ? "ALLOWED by the area rules." : $"BLOCKED by {reason}.");
+            if (!ServerConfig.personal_lifestone_enabled.Value)
+                text += " The item is switched OFF (personal_lifestone_enabled), so it works nowhere right now.";
+            return text;
+        }
+
         /// <summary>What the landblock-level rules say: nothing (None), an explicit '-' token (Allowed), or a block.</summary>
         private enum RuleKind { None, Allowed, Blocked }
         private readonly record struct RuleResult(RuleKind Kind, string Reason);
@@ -297,10 +308,24 @@ namespace ACE.Server.WorldObjects
             return left > 0 ? left : 0;
         }
 
-        /// <summary>"13h 42m", "4m 10s", "12s".</summary>
+        /// <summary>The cooldown and lifetime are used within these ranges (PR #616): a /modifylong typo can never overflow
+        /// the time math or leave a stone standing for years.</summary>
+        public const long MaxPersonalLifestoneCooldownSeconds = 365L * 24 * 3600;
+        public const long MaxPersonalLifestoneLifetimeSeconds = 24L * 3600;
+
+        public static long PersonalLifestoneCooldownSeconds
+            => Math.Clamp(ServerConfig.personal_lifestone_cooldown_seconds.Value, 0, MaxPersonalLifestoneCooldownSeconds);
+
+        public static long PersonalLifestoneLifetimeSeconds
+            => Math.Clamp(ServerConfig.personal_lifestone_lifetime_seconds.Value, 1, MaxPersonalLifestoneLifetimeSeconds);
+
+        /// <summary>"13h 42m", "4m 10s", "12s". Safe for any number (NaN, negative, huge).</summary>
         public static string FormatPersonalLifestoneTime(double seconds)
         {
-            var t = TimeSpan.FromSeconds(Math.Ceiling(Math.Max(0, seconds)));
+            if (double.IsNaN(seconds) || seconds < 0)
+                seconds = 0;
+            seconds = Math.Min(seconds, 100.0 * 365 * 24 * 3600);   // far inside TimeSpan's range
+            var t = TimeSpan.FromSeconds(Math.Ceiling(seconds));
             if (t.TotalHours >= 1)
                 return $"{(int)t.TotalHours}h {t.Minutes}m";
             if (t.TotalMinutes >= 1)
@@ -401,7 +426,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var lifetime = Math.Max(1, ServerConfig.personal_lifestone_lifetime_seconds.Value);
+            var lifetime = PersonalLifestoneLifetimeSeconds;
             var now = Time.GetUnixTime();
 
             // only one standing stone per player (matters only after an admin cooldown reset)
@@ -445,7 +470,7 @@ namespace ACE.Server.WorldObjects
             ActivePersonalLifestones[Guid.Full] = stone;
 
             // the cooldown is spent only now, after the stone is really standing
-            var cooldown = Math.Max(0, ServerConfig.personal_lifestone_cooldown_seconds.Value);
+            var cooldown = PersonalLifestoneCooldownSeconds;
             SetProperty(PropertyInt64.PersonalLifestoneNextUse, (long)Math.Ceiling(now + cooldown));
 
             EnqueueBroadcast(new GameMessageSound(Guid, Sound.LifestoneOn, 1.0f));
@@ -576,13 +601,27 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Clear a character's Lifestone Tie, and either clear its lifestone point (death then falls back to the character's
-        /// own starter town, Instantiation - Player_Death: Sanctuary ?? Instantiation ?? Location) or set the point to
-        /// <paramref name="town"/>. A character with no Instantiation gets Holtburg's spot, so death never falls through to
-        /// "where you died". Works online and offline (offline: the biota is changed and saved). Returns what was done.
+        /// Where /plstone resetls puts the death point: the named town, else the character's starter town (Instantiation),
+        /// else Holtburg. Null when none of them exists - then the reset changes nothing.
         /// </summary>
-        public static string ResetLifestonePoints(IPlayer target, Position town)
+        public static Position ResolveResetlsDeathPoint(Position town, Position instantiation, Func<Position> holtburg, out string text)
         {
+            if (town != null) { text = $"death point set to {town.Cell:X8}"; return town; }
+            if (instantiation != null) { text = $"death point set to their starter town ({instantiation.Cell:X8})"; return instantiation; }
+            var h = holtburg();
+            text = h != null ? $"no starter town on record - death point set to Holtburg ({h.Cell:X8})" : null;
+            return h;
+        }
+
+        /// <summary>
+        /// Clear a character's Lifestone Tie and SET its lifestone point to a safe spot (ResolveResetlsDeathPoint): the named
+        /// town, their starter town, or Holtburg. Set, never cleared (PR #616) - a cleared point would also leave a logout in a
+        /// no-log area where it is (HandleNoLogLandblock goes to Sanctuary). When no safe spot exists nothing is changed.
+        /// Works online and offline (offline: the biota is changed and saved). <paramref name="changed"/> says whether it did.
+        /// </summary>
+        public static string ResetLifestonePoints(IPlayer target, Position town, out bool changed)
+        {
+            changed = false;
             // logged in since the lookup? then the online object is the one that will be saved - change that one
             if (target is OfflinePlayer && PlayerManager.GetOnlinePlayer(target.Guid) is Player nowOnline)
                 target = nowOnline;
@@ -595,31 +634,20 @@ namespace ACE.Server.WorldObjects
             else
                 instantiation = null;
 
-            var sanctuary = town;
-            string deathText;
-            if (town != null)
-                deathText = $"death point set to {town.Cell:X8}";
-            else if (instantiation != null)
-                deathText = $"death point cleared - they come back at their starter town ({instantiation.Cell:X8})";
-            else
-            {
-                sanctuary = StarterTownPosition("Holtburg");
-                deathText = sanctuary != null
-                    ? $"no starter town on record - death point set to Holtburg ({sanctuary.Cell:X8})"
-                    : "death point cleared (no starter town on record and no Holtburg spot found - they come back where they die)";
-            }
+            var sanctuary = ResolveResetlsDeathPoint(town, instantiation, () => StarterTownPosition("Holtburg"), out var deathText);
+            if (sanctuary == null)
+                return "NOTHING changed - no starter town on record and no Holtburg spot found. Name a town: /plstone resetls <player> <town>";
 
             if (target is Player online)
             {
-                if (sanctuary != null) online.Sanctuary = new Position(sanctuary); else online.RemovePosition(PositionType.Sanctuary);
+                online.Sanctuary = new Position(sanctuary);
                 online.RemovePosition(PositionType.LinkedLifestone);
                 online.RemoveProperty(PropertyString.PersonalLifestoneAttuneSpot);
                 online.RemoveProperty(PropertyString.PersonalLifestoneTieSpot);
             }
             else if (target is OfflinePlayer offline)
             {
-                if (sanctuary != null) offline.Biota.SetPosition(PositionType.Sanctuary, sanctuary, offline.BiotaDatabaseLock);
-                else offline.Biota.TryRemoveProperty(PositionType.Sanctuary, offline.BiotaDatabaseLock);
+                offline.Biota.SetPosition(PositionType.Sanctuary, new Position(sanctuary), offline.BiotaDatabaseLock);
                 offline.Biota.TryRemoveProperty(PositionType.LinkedLifestone, offline.BiotaDatabaseLock);
                 offline.Biota.TryRemoveProperty(PropertyString.PersonalLifestoneAttuneSpot, offline.BiotaDatabaseLock);
                 offline.Biota.TryRemoveProperty(PropertyString.PersonalLifestoneTieSpot, offline.BiotaDatabaseLock);
@@ -627,8 +655,9 @@ namespace ACE.Server.WorldObjects
                 offline.SaveBiotaToDatabase();
             }
             else
-                return "not a player";
+                return "not a player - nothing changed";
 
+            changed = true;
             return deathText + "; Lifestone Tie cleared";
         }
         // ---- where a personal stone put a character's death point / tie, and the audit (owner 2026-11-14) ----------------
