@@ -528,6 +528,7 @@ namespace ACE.Server.Tests
             state = ChainState.Finished;
             AccountQuestLimits.Release(claim);
             Assert.IsNotNull(TryClaim(9_000_017, "TestAccountQuest", Running));
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(claim));   // the question was answered: nothing to fence
 
             // with the asking emotes over, released at once, though the object is busy with another use
             var other = ChainState.Finished;
@@ -541,6 +542,23 @@ namespace ACE.Server.Tests
             Assert.AreEqual(GateHold.None, AccountQuestLimits.GetGateHold(9_000_018, "TestAccountQuest"));
             Assert.IsNotNull(TryClaim(9_000_018, "TestAccountQuest", Running));
             Assert.IsFalse(AccountQuestLimits.IsTakenOver(parked));
+        }
+
+        [TestMethod]
+        public void Claim_ReleasedAfterItsQuestionClosedUnanswered_IsFenced()
+        {
+            // the asking emotes run on past the question's time, with no answer handled yet, then end: the claim is released,
+            // fenced, so when another use has taken the gate, an answer handled late can't act on it
+            var claim = TryClaim(9_000_019, "TestAccountQuest", Running);
+            Assert.IsTrue(AccountQuestLimits.TryAct(new[] { claim }));
+            AccountQuestLimits.AwaitAnswer(new[] { claim }, TimeSpan.Zero);   // the question's time is up while they run
+
+            AccountQuestLimits.Release(claim);
+            Assert.IsNotNull(TryClaim(9_000_019, "TestAccountQuest", Running));
+            Assert.IsTrue(AccountQuestLimits.IsTakenOver(claim));
+
+            AccountQuestLimits.AnswerArrived(new[] { claim }, taken: true);
+            Assert.IsFalse(AccountQuestLimits.TryAct(new[] { claim }));
         }
     }
 }
