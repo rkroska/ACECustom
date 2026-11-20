@@ -52,16 +52,19 @@ namespace ACE.Server.Managers
         /// character through, the account takes a Claim, and the gate stays closed for the account for as long as the claim
         /// is held: while the object running the reward still has emotes in flight, however long they wait, until they have
         /// all finished (the reward and the stamp, or a stop such as a full pack; EmoteManager releases its claims then).
-        /// There is no timer. A claim stops counting early only if its object leaves the world (isHeld). Emotes that stop on
-        /// a server error never finish, so the gate then stays closed for the account until the object leaves the world or
-        /// the server restarts (claims are memory only): it fails closed, as for a database error.
+        /// There is no timer. A claim stops counting early only if its object leaves the world (isHeld); another use can
+        /// then take the gate over, and once that use goes ahead EmoteManager runs nothing more of the old chain, not even
+        /// an action queued before (IsTakenOver). Emotes that stop on a server error never finish, so the gate then stays
+        /// closed for the account until the object leaves the world or the server restarts (claims are memory only): it
+        /// fails closed, as for a database error.
         /// </summary>
         public sealed class Claim
         {
-            internal Claim((uint AccountId, string Quest) key, Func<bool> isHeld)
+            internal Claim((uint AccountId, string Quest) key, Func<bool> isHeld, Claim replaced)
             {
                 Key = key;
                 IsHeld = isHeld;
+                Replaced = replaced;
             }
 
             internal (uint AccountId, string Quest) Key { get; }
@@ -69,6 +72,14 @@ namespace ACE.Server.Managers
             /// <summary>True while the chain that took the claim can still pay out: its object has emotes in flight and is in
             /// the world.</summary>
             internal Func<bool> IsHeld { get; }
+
+            /// <summary>The claim this one took over after it stopped counting, put back if this use doesn't go ahead after
+            /// all (claimLock).</summary>
+            internal Claim Replaced { get; set; }
+
+            /// <summary>Set when the claim ends as the account's hold: its chain is over, or its use didn't go ahead
+            /// (claimLock).</summary>
+            internal bool Released { get; set; }
         }
 
         private static readonly Dictionary<(uint AccountId, string Quest), Claim> claims = new();
@@ -108,26 +119,70 @@ namespace ACE.Server.Managers
                 return true;
             }
 
-            if (!TryReadAccountStamps(player, questName, out var stamps))
+            return Admit(player.Account?.AccountId, questName, claimHeld, () =>
+            {
+                if (!TryReadAccountStamps(player, questName, out var stamps))
+                    return null;
+
+                // A quest with no world row is deliberately not failed closed: as with InqQuest (HasQuest && !CanSolve,
+                // where QuestManager.GetNextSolveTime can't solve a missing quest), it stays open until a character on the
+                // account has the stamp, then closes for good. Content keeps working when its InqQuest step becomes
+                // InqAccountQuest. A world database that can't be read does fail closed.
+                if (!TryGetWorldQuest(questName, out var quest))
+                    return null;
+
+                return IsDone(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime());
+            }, out claim);
+        }
+
+        /// <summary>
+        /// The gate behind HasQuestAndCannotSolve, with its reads passed in. The account's claim comes first and the reads
+        /// after it: with landblocks ticking in parallel, stamps read before claiming could predate a stamp that another use
+        /// lands and then releases, and this use would go ahead on the old read. With no account to claim for, it reads and
+        /// decides without a claim.
+        /// </summary>
+        /// <param name="readIsDone">Reads the account's stamps and the world quest: true = done, false = go ahead, null = a
+        /// database couldn't be read.</param>
+        /// <returns>True (QuestSuccess) when another use holds the gate, the account is done or a read failed, with this
+        /// use's claim released; false (go ahead) with the claim held.</returns>
+        internal static bool Admit(uint? accountId, string questName, Func<bool> claimHeld, Func<bool?> readIsDone, out Claim claim)
+        {
+            claim = null;
+
+            Claim taken = null;
+            if (accountId.HasValue)
+            {
+                taken = TryClaim(accountId.Value, questName, claimHeld);
+                if (taken == null)
+                    return true;   // another use on the account holds the gate
+            }
+
+            bool? done;
+            try
+            {
+                done = readIsDone();
+            }
+            catch
+            {
+                Withdraw(taken);
+                throw;
+            }
+
+            if (done != false)
+            {
+                Withdraw(taken);
                 return true;
+            }
 
-            // A quest with no world row is deliberately not failed closed: as with InqQuest (HasQuest && !CanSolve, where
-            // QuestManager.GetNextSolveTime can't solve a missing quest), it stays open until a character on the account
-            // has the stamp, then closes for good. Content keeps working when its InqQuest step becomes InqAccountQuest.
-            // A world database that can't be read does fail closed.
-            if (!TryGetWorldQuest(questName, out var quest))
-                return true;
+            // going ahead: a claim this one took over stays taken over
+            if (taken != null)
+            {
+                lock (claimLock)
+                    taken.Replaced = null;
+            }
 
-            if (IsDone(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime()))
-                return true;
-
-            // Going ahead: claim the gate for the account until the object running the reward has finished its emotes (see
-            // Claim).
-            if (player.Account == null)
-                return false;
-
-            claim = TryClaim(player.Account.AccountId, questName, claimHeld);
-            return claim == null;
+            claim = taken;
+            return false;
         }
 
         /// <summary>
@@ -163,11 +218,11 @@ namespace ACE.Server.Managers
                 if (claims.TryGetValue(key, out var held) && held.IsHeld())
                     return null;
 
-                var claim = new Claim(key, isHeld);
+                var claim = new Claim(key, isHeld, held);
                 claims[key] = claim;
 
                 // claims no longer held (their object finished without a release, or left the world) are dropped now and
-                // then, so the table stays small
+                // then, so the table stays small; one dropped this way counts as taken over
                 if (claims.Count > 1024)
                 {
                     foreach (var stale in claims.Where(c => !c.Value.IsHeld()).Select(c => c.Key).ToList())
@@ -178,7 +233,7 @@ namespace ACE.Server.Managers
             }
         }
 
-        /// <summary>Ends a claim. One that stopped counting and was taken again since is left alone.</summary>
+        /// <summary>Ends a claim: its chain is over. One that stopped counting and was taken over since stays taken over.</summary>
         internal static void Release(Claim claim)
         {
             if (claim == null)
@@ -187,8 +242,50 @@ namespace ACE.Server.Managers
             lock (claimLock)
             {
                 if (claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
+                {
                     claims.Remove(claim.Key);
+                    claim.Released = true;
+                    claim.Replaced = null;
+                }
             }
+        }
+
+        /// <summary>
+        /// Ends the claim of a use that doesn't go ahead after all (done, or a read failed). A claim it took over is the
+        /// account's hold again, so a check that lets nothing through doesn't stop that chain.
+        /// </summary>
+        private static void Withdraw(Claim claim)
+        {
+            if (claim == null)
+                return;
+
+            lock (claimLock)
+            {
+                if (claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
+                {
+                    if (claim.Replaced != null)
+                        claims[claim.Key] = claim.Replaced;
+                    else
+                        claims.Remove(claim.Key);
+                }
+
+                claim.Released = true;
+                claim.Replaced = null;
+            }
+        }
+
+        /// <summary>
+        /// True once another use went ahead on the claim's gate after the claim stopped counting; false while it is the
+        /// account's hold, and after it was released. EmoteManager checks this before each step and before a queued Give or
+        /// CastSpell, so a chain whose claim was taken over pays out nothing more, not even from an action queued before.
+        /// </summary>
+        internal static bool IsTakenOver(Claim claim)
+        {
+            if (claim == null)
+                return false;
+
+            lock (claimLock)
+                return !claim.Released && !(claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim));
         }
 
         /// <summary>The quest's world row (null when it has none), or false when the world database can't be read.</summary>

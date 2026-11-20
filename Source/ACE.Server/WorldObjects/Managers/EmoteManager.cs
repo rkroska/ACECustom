@@ -55,13 +55,8 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 isBusy = value;
 
-                if (!value && Nested == 0 && heldAccountClaims != null && heldAccountClaims.Count > 0)
-                {
-                    foreach (var claim in heldAccountClaims)
-                        AccountQuestLimits.Release(claim);
-
-                    heldAccountClaims.Clear();
-                }
+                if (!value && Nested == 0)
+                    ReleaseHeldAccountClaims();
             }
         }
 
@@ -69,6 +64,34 @@ namespace ACE.Server.WorldObjects.Managers
 
         /// <summary>ILT: InqAccountQuest claims this object holds until its emotes have finished (created on first use).</summary>
         private List<AccountQuestLimits.Claim> heldAccountClaims;
+
+        /// <summary>ILT: true while this object holds InqAccountQuest claims for the emotes it has in flight.</summary>
+        private bool HoldsAccountClaims => heldAccountClaims != null && heldAccountClaims.Count > 0;
+
+        /// <summary>ILT: ends the InqAccountQuest claims this object holds: the emotes that took them are over.</summary>
+        private void ReleaseHeldAccountClaims()
+        {
+            if (!HoldsAccountClaims)
+                return;
+
+            foreach (var claim in heldAccountClaims)
+                AccountQuestLimits.Release(claim);
+
+            heldAccountClaims.Clear();
+        }
+
+        /// <summary>
+        /// ILT: true once another use on the account went ahead on the gate of an InqAccountQuest claim this object holds
+        /// (a claim stops counting when its object leaves the world). Nothing more of the chain may run then, not even an
+        /// action queued before: the other use is the one going ahead.
+        /// </summary>
+        private bool AccountClaimTakenOver() => HoldsAccountClaims && heldAccountClaims.Any(AccountQuestLimits.IsTakenOver);
+
+        /// <summary>ILT: the InqAccountQuest claims this object holds now, for an action that runs later (null if none).</summary>
+        private AccountQuestLimits.Claim[] AccountClaimsNow() => HoldsAccountClaims ? heldAccountClaims.ToArray() : null;
+
+        /// <summary>ILT: true once another use on the account went ahead on one of these claims' gates.</summary>
+        private static bool AnyTakenOver(AccountQuestLimits.Claim[] claims) => claims != null && claims.Any(AccountQuestLimits.IsTakenOver);
 
         public int Nested { get; set; }
 
@@ -525,11 +548,16 @@ namespace ACE.Server.WorldObjects.Managers
 
                         delay = preCastTime + creature.GetPostCastTime(spell);
 
+                        // ILT: no spell once another use on the account went ahead on this chain's InqAccountQuest gate
+                        var castClaims = AccountClaimsNow();
+
                         var castChain = new ActionChain();
                         castChain.AddDelaySeconds(preCastTime);
                         castChain.AddAction(creature, ActionType.EmoteManager_CastSpell, () =>
                         {
-                            creature.TryCastSpell_WithRedirects(spell, spellTarget, creature);
+                            if (!AnyTakenOver(castClaims))
+                                creature.TryCastSpell_WithRedirects(spell, spellTarget, creature);
+
                             creature.PostCastMotion();
                         });
                         castChain.EnqueueChain();
@@ -774,7 +802,13 @@ namespace ACE.Server.WorldObjects.Managers
                             delay = creature.Rotate(targetCreature);
                             motionChain.AddDelaySeconds(delay);
                         }
-                        motionChain.AddAction(WorldObject, ActionType.EmoteManager_Give, () => player.GiveFromEmote(WorldObject, emote.WeenieClassId ?? 0, giveAmount, emote.Palette ?? 0, emote.Shade ?? 0));
+                        // ILT: no item once another use on the account went ahead on this chain's InqAccountQuest gate
+                        var giveClaims = AccountClaimsNow();
+                        motionChain.AddAction(WorldObject, ActionType.EmoteManager_Give, () =>
+                        {
+                            if (!AnyTakenOver(giveClaims))
+                                player.GiveFromEmote(WorldObject, emote.WeenieClassId ?? 0, giveAmount, emote.Palette ?? 0, emote.Shade ?? 0);
+                        });
                         motionChain.EnqueueChain();
                     }
 
@@ -786,11 +820,7 @@ namespace ACE.Server.WorldObjects.Managers
                     // TODO: revisit if nested chains need to back-propagate timers
                     var gotoSet = GetEmoteSet(EmoteCategory.GotoSet, emote.Message);
                     if (gotoSet != null)
-                    {
-                        var actionChain = new ActionChain();
-                        actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => ExecuteEmoteSet(gotoSet, targetObject, true));
-                        actionChain.EnqueueChain();
-                    }
+                        EnqueueNestedSet(gotoSet, targetObject);
                     break;
 
                 /* increments a PropertyInt stat by some amount */
@@ -1239,7 +1269,9 @@ namespace ACE.Server.WorldObjects.Managers
                         if (accountClaim != null)
                             (heldAccountClaims ??= new List<AccountQuestLimits.Claim>()).Add(accountClaim);
 
-                        ExecuteEmoteSetStayingBusy(accountQuestDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject);
+                        // runs on the next tick, as for InqQuest; with a claim held, this object stays busy until then
+                        // (EnqueueNestedSet)
+                        ExecuteEmoteSet(accountQuestDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
                     }
 
                     break;
@@ -3969,9 +4001,7 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (nested)
             {
-                var actionChain = new ActionChain();
-                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => ExecuteEmoteSet(emoteSet, targetObject, true));
-                actionChain.EnqueueChain();
+                EnqueueNestedSet(emoteSet, targetObject);
             }
             else
             {
@@ -3988,28 +4018,31 @@ namespace ACE.Server.WorldObjects.Managers
         }
 
         /// <summary>
-        /// ILT: ExecuteEmoteSet(category, quest, targetObject, nested: true) for InqAccountQuest. The set still runs on the
-        /// next tick, as for InqQuest, but the object stays busy until it has run: otherwise IsBusy clears in between (the
-        /// gate's own set ends first) and would end the account's claim before the reward and the stamp.
+        /// Runs a nested set on the next tick: a branch's QuestSuccess or QuestFailure (and the like), or a Goto. ILT: while
+        /// this object holds InqAccountQuest claims, it also stays busy until the set has started (Nested is held), so the
+        /// claims last through every branch of the chain. Otherwise Nested can reach 0 in between (the branching set ends
+        /// first) and end them before the reward and the stamp.
         /// </summary>
-        private void ExecuteEmoteSetStayingBusy(EmoteCategory category, string quest, WorldObject targetObject)
+        private void EnqueueNestedSet(PropertiesEmote emoteSet, WorldObject targetObject)
         {
-            var emoteSet = GetEmoteSet(category, quest);
+            var holdForClaims = HoldsAccountClaims;
 
-            if (emoteSet == null) return;
-
-            // held until the deferred set has started (it counts itself in Nested while it runs)
-            Nested++;
+            // held until the set has started (it counts itself in Nested while it runs)
+            if (holdForClaims)
+                Nested++;
 
             var actionChain = new ActionChain();
             actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () =>
             {
                 ExecuteEmoteSet(emoteSet, targetObject, true);
 
-                Nested--;
+                if (holdForClaims)
+                {
+                    Nested--;
 
-                if (Nested == 0)
-                    IsBusy = false;
+                    if (Nested == 0)
+                        IsBusy = false;
+                }
             });
             actionChain.EnqueueChain();
         }
@@ -4028,6 +4061,10 @@ namespace ACE.Server.WorldObjects.Managers
             // TODO: maybe eventually we should consider having categories that can be queued?
             // there are some categories that shouldn't be queued, like heartbeats...
             if (IsBusy && !nested) return false;
+
+            // ILT: with nothing in flight, any InqAccountQuest claims still listed belong to emotes that are over
+            if (Nested == 0)
+                ReleaseHeldAccountClaims();
 
             // start action chain
             Nested++;
@@ -4104,6 +4141,16 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         private void DoEnqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx, PropertiesEmoteAction emote)
         {
+            // ILT: another use on the account went ahead on this object's InqAccountQuest gate, so this chain stops here,
+            // even for a step queued before then (AccountClaimTakenOver)
+            if (AccountClaimTakenOver())
+            {
+                Nested--;
+                if (Nested == 0)
+                    IsBusy = false;
+                return;
+            }
+
             // If a previous emote in this chain (e.g. a failed Give) requested an abort,
             // stop here before firing this action. This prevents StampQuest from running
             // after a Give that failed due to full inventory or over-burden.

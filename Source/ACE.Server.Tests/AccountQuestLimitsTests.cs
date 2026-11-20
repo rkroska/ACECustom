@@ -15,8 +15,9 @@ namespace ACE.Server.Tests
     /// %tqc counted across every character on an account. Pins the pure rules behind them: AccountQuestLimits.IsDone
     /// (QuestManager.HasQuest and CanSolve applied to all of an account's stamps; true = QuestSuccess, done / timer running;
     /// false = QuestFailure, go ahead), NextSolveTime and Completions (what %aqt and %aqc show), and AccountStamps (a
-    /// character in memory is read from memory, never from its possibly stale saved row), and TryClaim / Release (the
-    /// account's claim on a gate, from the gate to the end of the object's emotes). No DB, no world.
+    /// character in memory is read from memory, never from its possibly stale saved row), and Admit / TryClaim / Release /
+    /// IsTakenOver (the account's claim on a gate, taken before the stamps are read and held to the end of the object's
+    /// emotes). No DB, no world.
     /// </summary>
     [TestClass]
     public class AccountQuestLimitsTests
@@ -226,9 +227,11 @@ namespace ACE.Server.Tests
             Assert.IsTrue(Done(stamps, Quest(TwentyHours)));   // the alt, an hour ago
         }
 
-        // ---- the account's claim on the gate, from the gate to the end of the object's emotes (TryClaim, Release) ----
+        // ---- the account's claim on the gate, from the gate to the end of the object's emotes (Admit, TryClaim, Release,
+        // IsTakenOver) ----
         // Each test uses its own account ids: the claims are shared state. isHeld stands in for "the object running the
-        // reward still has emotes in flight and is in the world".
+        // reward still has emotes in flight and is in the world"; readIsDone for the account's stamps (true = done, false =
+        // go ahead, null = a database couldn't be read).
 
         private static readonly Func<bool> Busy = () => true;
 
@@ -279,6 +282,107 @@ namespace ACE.Server.Tests
             Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_004, "TestAccountQuest", Busy));   // another account
             Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_003, "OtherAccountQuest", Busy));   // another quest
             AccountQuestLimits.Release(null);   // no claim: nothing to do
+        }
+
+        [TestMethod]
+        public void Claim_TakenOverOnceAnotherUseGoesAhead()
+        {
+            // the old chain's object left the world with an action still queued: once another use goes ahead on the gate,
+            // EmoteManager runs nothing more of the old chain (IsTakenOver), that action included
+            var held = true;
+            var old = AccountQuestLimits.TryClaim(9_000_006, "TestAccountQuest", () => held);
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(old));
+
+            held = false;
+            Assert.IsFalse(AccountQuestLimits.Admit(9_000_006, "TestAccountQuest", Busy, () => false, out var taker));
+            Assert.IsTrue(AccountQuestLimits.IsTakenOver(old));
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(taker));
+
+            AccountQuestLimits.Release(old);   // the old chain stopping: still taken over, and the taker keeps the gate
+            Assert.IsTrue(AccountQuestLimits.IsTakenOver(old));
+            Assert.IsNull(AccountQuestLimits.TryClaim(9_000_006, "TestAccountQuest", Busy));
+
+            AccountQuestLimits.Release(taker);   // the taker's chain is over
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(taker));
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(null));
+        }
+
+        [TestMethod]
+        public void Admit_ACheckThatLetsNothingThrough_LeavesTheOldChainAlone()
+        {
+            var held = true;
+            var old = AccountQuestLimits.TryClaim(9_000_007, "TestAccountQuest", () => held);
+            held = false;
+
+            // done (the old chain's stamp, say), an unreadable database, a read that throws: nothing goes ahead, so the
+            // old claim is the account's hold again
+            Assert.IsTrue(AccountQuestLimits.Admit(9_000_007, "TestAccountQuest", Busy, () => true, out var claim));
+            Assert.IsNull(claim);
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(old));
+
+            Assert.IsTrue(AccountQuestLimits.Admit(9_000_007, "TestAccountQuest", Busy, () => null, out claim));
+            Assert.IsNull(claim);
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(old));
+
+            try
+            {
+                AccountQuestLimits.Admit(9_000_007, "TestAccountQuest", Busy, () => throw new InvalidOperationException("read"), out _);
+                Assert.Fail("The read's exception should reach the caller.");
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(old));
+
+            // a use that does go ahead takes it over
+            Assert.IsFalse(AccountQuestLimits.Admit(9_000_007, "TestAccountQuest", Busy, () => false, out claim));
+            Assert.IsNotNull(claim);
+            Assert.IsTrue(AccountQuestLimits.IsTakenOver(old));
+        }
+
+        [TestMethod]
+        public void Admit_ClaimsTheGateBeforeReadingTheStamps()
+        {
+            // while this use reads the stamps, the gate is already its own: another use can't claim it, stamp and release
+            // between the read and the claim (landblocks tick in parallel), which would leave this use going ahead on an
+            // old read
+            var read = false;
+            Assert.IsFalse(AccountQuestLimits.Admit(9_000_008, "TestAccountQuest", Busy, () =>
+            {
+                read = true;
+                Assert.IsNull(AccountQuestLimits.TryClaim(9_000_008, "TestAccountQuest", Busy));
+                return false;
+            }, out var claim));
+
+            Assert.IsTrue(read);
+            Assert.IsNotNull(claim);
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(claim));
+        }
+
+        [TestMethod]
+        public void Admit_WhileAnotherUseHoldsTheGate_IsDoneWithoutReading()
+        {
+            var first = AccountQuestLimits.TryClaim(9_000_009, "TestAccountQuest", Busy);   // its reward and stamp in flight
+
+            var read = false;
+            Assert.IsTrue(AccountQuestLimits.Admit(9_000_009, "TestAccountQuest", Busy, () => { read = true; return false; }, out var claim));
+            Assert.IsFalse(read);
+            Assert.IsNull(claim);
+
+            // that use stamps and finishes: the next one claims, reads the stamp, is done, and leaves the gate free
+            AccountQuestLimits.Release(first);
+            Assert.IsTrue(AccountQuestLimits.Admit(9_000_009, "TestAccountQuest", Busy, () => true, out claim));
+            Assert.IsNull(claim);
+            Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_009, "TestAccountQuest", Busy));
+        }
+
+        [TestMethod]
+        public void Admit_NoAccount_DecidesWithoutAClaim()
+        {
+            Assert.IsFalse(AccountQuestLimits.Admit(null, "TestAccountQuest", Busy, () => false, out var claim));
+            Assert.IsNull(claim);
+            Assert.IsTrue(AccountQuestLimits.Admit(null, "TestAccountQuest", Busy, () => true, out claim));
+            Assert.IsNull(claim);
         }
     }
 }
