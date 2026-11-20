@@ -89,17 +89,17 @@ namespace ACE.Server.WorldObjects.Managers
 
         /// <summary>
         /// ILT: before each step of a chain holding InqAccountQuest claims. False when the chain must stop: a claim was
-        /// taken over (its object left the world before the chain acted), or the chain's target left the world to log out,
-        /// so a stamp would no longer be saved (AccountQuestLimits.Abandon: released if the chain never acted, otherwise
-        /// closed). Otherwise the claims can't be taken over from then on (AccountQuestLimits.TryAct), so what the step
-        /// queues (a Give, a CastSpell) is covered too.
+        /// taken over (its object left the world before the chain acted), or the chain's target has left the world to log
+        /// out (Player.HasLeftWorldToLogOut, a normal logout or a forced logoff), so a stamp would no longer be saved
+        /// (AccountQuestLimits.Abandon: released if the chain never acted, otherwise closed). Otherwise the claims can't be
+        /// taken over from then on (AccountQuestLimits.TryAct), so what the step queues (a Give, a CastSpell) is covered too.
         /// </summary>
         private bool TryActOnChainClaims(List<AccountQuestLimits.Claim> chainClaims, WorldObject targetObject)
         {
             if (chainClaims == null || chainClaims.Count == 0)
                 return true;
 
-            if (targetObject is Player target && target.IsLoggingOut && target.CurrentLandblock == null)
+            if (targetObject is Player target && target.HasLeftWorldToLogOut)
             {
                 AccountQuestLimits.Abandon(chainClaims);
                 heldAccountClaims?.RemoveAll(chainClaims.Contains);
@@ -4244,6 +4244,8 @@ namespace ACE.Server.WorldObjects.Managers
             }
             finally
             {
+                // an InqAccountQuest step can start this chain's claims: the rest of this set goes on with them too
+                chainClaims = executingClaims;
                 executingClaims = previousClaims;
             }
 
