@@ -198,50 +198,65 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Writes the updated config values to the database.
+        /// Writes the updated config values to the database. Returns false when any row could not be written.
+        /// A row that fails (e.g. the database is unreachable) is NOT dropped (2026-11-19): it stays queued, so the next save
+        /// - the property worker's, every 5 minutes - tries it again, and LoadFromDb keeps the in-memory value meanwhile
+        /// instead of reverting it to the old row. One failing row never stops the others from being written.
         /// </summary>
-        public static void WriteUpdatesToDb()
+        public static bool WriteUpdatesToDb()
         {
-            foreach (var key in _modifiedBoolProps.Keys)
+            var ok = true;
+            ok &= FlushPending(_modifiedBoolProps, (key, property) =>
             {
-                if (_modifiedBoolProps.TryRemove(key, out ConfigProperty<bool>? property))
+                if (DatabaseManager.ShardConfig.BoolExists(key))
+                    DatabaseManager.ShardConfig.SaveBool(new ConfigPropertiesBoolean { Key = key, Value = property.Value, Description = property.Description });
+                else
+                    DatabaseManager.ShardConfig.AddBool(key, property.Value, property.Description);
+            });
+            ok &= FlushPending(_modifiedLongProps, (key, property) =>
+            {
+                if (DatabaseManager.ShardConfig.LongExists(key))
+                    DatabaseManager.ShardConfig.SaveLong(new ConfigPropertiesLong { Key = key, Value = property.Value, Description = property.Description });
+                else
+                    DatabaseManager.ShardConfig.AddLong(key, property.Value, property.Description);
+            });
+            ok &= FlushPending(_modifiedDoubleProps, (key, property) =>
+            {
+                if (DatabaseManager.ShardConfig.DoubleExists(key))
+                    DatabaseManager.ShardConfig.SaveDouble(new ConfigPropertiesDouble { Key = key, Value = property.Value, Description = property.Description });
+                else
+                    DatabaseManager.ShardConfig.AddDouble(key, property.Value, property.Description);
+            });
+            ok &= FlushPending(_modifiedStringProps, (key, property) =>
+            {
+                if (DatabaseManager.ShardConfig.StringExists(key))
+                    DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = key, Value = property.Value, Description = property.Description });
+                else
+                    DatabaseManager.ShardConfig.AddString(key, property.Value, property.Description);
+            });
+            return ok;
+        }
+
+        /// <summary>Writes each queued row; a row that throws is logged and queued again (a newer change made meanwhile wins).</summary>
+        private static bool FlushPending<T>(ConcurrentDictionary<string, ConfigProperty<T>> pending, Action<string, ConfigProperty<T>> save)
+        {
+            var ok = true;
+            foreach (var key in pending.Keys)
+            {
+                if (!pending.TryRemove(key, out var property))
+                    continue;
+                try
                 {
-                    if (DatabaseManager.ShardConfig.BoolExists(key))
-                        DatabaseManager.ShardConfig.SaveBool(new ConfigPropertiesBoolean { Key = key, Value = property.Value, Description = property.Description });
-                    else
-                        DatabaseManager.ShardConfig.AddBool(key, property.Value, property.Description);
+                    save(key, property);
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    pending.TryAdd(key, property);
+                    log.Error($"[CONFIG] could not write {key} to the database - kept, it is tried again on the next save: {ex.Message}");
                 }
             }
-            foreach (var key in _modifiedLongProps.Keys)
-            {
-                if (_modifiedLongProps.TryRemove(key, out ConfigProperty<long>? property))
-                {
-                    if (DatabaseManager.ShardConfig.LongExists(key))
-                        DatabaseManager.ShardConfig.SaveLong(new ConfigPropertiesLong { Key = key, Value = property.Value, Description = property.Description });
-                    else
-                        DatabaseManager.ShardConfig.AddLong(key, property.Value, property.Description);
-                }
-            }
-            foreach (var key in _modifiedDoubleProps.Keys)
-            {
-                if (_modifiedDoubleProps.TryRemove(key, out ConfigProperty<double>? property))
-                {
-                    if (DatabaseManager.ShardConfig.DoubleExists(key))
-                        DatabaseManager.ShardConfig.SaveDouble(new ConfigPropertiesDouble { Key = key, Value = property.Value, Description = property.Description });
-                    else
-                        DatabaseManager.ShardConfig.AddDouble(key, property.Value, property.Description);
-                }
-            }
-            foreach (var key in _modifiedStringProps.Keys)
-            {
-                if (_modifiedStringProps.TryRemove(key, out ConfigProperty<string>? property))
-                {
-                    if (DatabaseManager.ShardConfig.StringExists(key))
-                        DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = key, Value = property.Value, Description = property.Description });
-                    else
-                        DatabaseManager.ShardConfig.AddString(key, property.Value, property.Description);
-                }
-            }
+            return ok;
         }
 
         /// <summary>

@@ -654,6 +654,11 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void SetPosition(PositionType positionType, Position position)
         {
+            // Personal Lifestone (2026-11-19): any write of a death point or tie ends its personal-stone record; a personal
+            // stone writes the record again right after its own write
+            if ((positionType == PositionType.Sanctuary || positionType == PositionType.LinkedLifestone) && this is Player player)
+                player.ClearPersonalLifestoneSpot(positionType);
+
             //if (position != null && !position.Rotation.IsRotationValid())
                 //position.AttemptToFixRotation(this, positionType);
 
@@ -679,6 +684,9 @@ namespace ACE.Server.WorldObjects
 
         public void RemovePosition(PositionType positionType)
         {
+            if ((positionType == PositionType.Sanctuary || positionType == PositionType.LinkedLifestone) && this is Player player)
+                player.ClearPersonalLifestoneSpot(positionType);   // Personal Lifestone: see SetPosition
+
             if (EphemeralProperties.PositionTypes.Contains(positionType))
                 ephemeralPositions[positionType] = null;
             else

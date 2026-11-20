@@ -7726,7 +7726,8 @@ namespace ACE.Server.Command.Handlers
             // flushing. So an edit followed by a shutdown inside five minutes is silently lost - the
             // admin sees it working live, then it is gone on the next start. That is intolerable for a
             // setting whose whole job is to survive a relog, and it bit exactly that way in testing.
-            ServerConfig.WriteUpdatesToDb();
+            if (!ServerConfig.WriteUpdatesToDb())
+                Msg(UnsavedConfigWarning);
 
             Msg($"{DescribeNoLogTargets(landblocks)} at {Player.NoLogScopeName(variationKey)} "
                 + $"{(landblocks.Count == 1 ? "is" : "are")} now {(adding ? "NO-LOG" : "normal")}.");
@@ -7889,7 +7890,8 @@ namespace ACE.Server.Command.Handlers
                 }
                 var block = arg == "on";
                 if (!ServerConfig.SetValue("personal_lifestone_block_t10_vod", block)) { Msg("Could not write personal_lifestone_block_t10_vod."); return; }
-                ServerConfig.WriteUpdatesToDb();
+                if (!ServerConfig.WriteUpdatesToDb())
+                    Msg(UnsavedConfigWarning);
                 Msg($"T10 (Thaelaryn Island) + Valley of Death are now {(block ? "BLOCKED" : "allowed")} for the Personal Lifestone, every variation.");
                 PlayerManager.BroadcastToAuditChannel(session?.Player, $"Personal Lifestone: T10 + Valley of Death {(block ? "blocked" : "allowed")}");
                 return;
@@ -7919,8 +7921,11 @@ namespace ACE.Server.Command.Handlers
             {
                 // offline characters are read here (their biotas under their own locks); only the online half, which reads live
                 // players, runs on the world thread - a big shard never stalls the world tick for the whole scan
-                var offlineFlagged = Player.PersonalLifestoneAudit(online: false);
-                OnWorldThread(() => RunPersonalLifestoneAudit(offlineFlagged, Msg));
+                // ONE snapshot of who is online / offline, so a login or logout during the scan neither drops nor doubles anyone
+                var everyone = Player.PersonalLifestoneAuditSnapshot();
+                var offlineFlagged = Player.PersonalLifestoneAudit(everyone.Where(p => p is not Player));
+                var onlineAtSnapshot = everyone.OfType<Player>().ToList();
+                OnWorldThread(() => RunPersonalLifestoneAudit(offlineFlagged, onlineAtSnapshot, Msg));
                 return;
             }
 
@@ -7968,6 +7973,11 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
             }
+            if (!Player.IsListableNoLogScope(variationKey))
+            {
+                Msg("You are in a rift layer - those are temporary and cannot be listed. Add a scope: base, all, or a variation number.");
+                return;
+            }
 
             var adding = sub == "add";
             var original = ServerConfig.personal_lifestone_excluded_landblocks?.Value ?? "";
@@ -7991,7 +8001,8 @@ namespace ACE.Server.Command.Handlers
                 Msg("Could not write the personal_lifestone_excluded_landblocks property.");
                 return;
             }
-            ServerConfig.WriteUpdatesToDb();   // flush now - the property worker runs every 5 minutes and is not flushed on shutdown
+            if (!ServerConfig.WriteUpdatesToDb())   // flush now - the property worker runs every 5 minutes and is not flushed on shutdown
+                Msg(UnsavedConfigWarning);
 
             Report("now");   // what the rule says NOW, landblock by landblock (never just echo the request)
             Msg(string.IsNullOrWhiteSpace(updated) ? "Overrides: none." : "Overrides: " + updated);
@@ -8004,13 +8015,17 @@ namespace ACE.Server.Command.Handlers
         /// and must not read or write live players from there; a player's own queue would not do either - it stops being
         /// processed once the player logs out, so a change queued there could be lost. The work looks the character up again.
         /// </summary>
+        /// <summary>A config edit that is live but could not be written to the database (2026-11-19).</summary>
+        private const string UnsavedConfigWarning =
+            "WARNING: the change is live but could NOT be saved to the database - it is retried every 5 minutes; a restart before that loses it. See the server log ([CONFIG]).";
+
         private static void OnWorldThread(Action action)
             => WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, action));
 
         /// <summary>/plstone audit - every personal-stone death point or tie that sits in a spot blocked now.</summary>
-        private static void RunPersonalLifestoneAudit(List<Player.PersonalLifestoneSpots> offlineFlagged, Action<string> msg)
+        private static void RunPersonalLifestoneAudit(List<Player.PersonalLifestoneSpots> offlineFlagged, List<Player> onlineAtSnapshot, Action<string> msg)
         {
-            var flagged = offlineFlagged.Concat(Player.PersonalLifestoneAudit(online: true))
+            var flagged = offlineFlagged.Concat(Player.PersonalLifestoneAudit(onlineAtSnapshot))
                 .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
             msg(flagged.Count == 0
                 ? "Audit: no character has a personal-stone death point or tie in a blocked spot."

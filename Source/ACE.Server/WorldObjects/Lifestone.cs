@@ -128,6 +128,11 @@ namespace ACE.Server.WorldObjects
             {
                 if (IsDestroyed)
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat("The lifestone has faded.", ChatMessageType.Broadcast));
+                else if (IsPersonalLifestone && !CheckPersonalLifestoneAccess(player))
+                {
+                    // checked again at the bind: the stone may have passed its time (before the heartbeat rots it) or been
+                    // blocked by an admin during the animation - it already told the player why
+                }
                 else if (player.IsWithinUseRadiusOf(this))
                 {
                     // Personal Lifestone: bind to the STONE's own spot - the one checked when it rose and again by

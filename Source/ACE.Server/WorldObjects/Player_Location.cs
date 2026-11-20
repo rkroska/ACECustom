@@ -952,6 +952,11 @@ namespace ACE.Server.WorldObjects
             return normalized.HasValue ? normalized.Value : NoLogBaseKey;
         }
 
+        /// <summary>True for a scope a token can name: base, all, or a real variation (0 and up). A rift layer (-1000 and
+        /// down) is temporary and has no token form.</summary>
+        public static bool IsListableNoLogScope(int variationKey)
+            => variationKey >= 0 || variationKey == NoLogBaseKey || variationKey == NoLogAllKey;
+
         /// <summary>The token an override entry is written as - the inverse of TryParseNoLogToken.</summary>
         public static string NoLogTokenFor(ushort landblock, int variationKey, bool suppress)
         {

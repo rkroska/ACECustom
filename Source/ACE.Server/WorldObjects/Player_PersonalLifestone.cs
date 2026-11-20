@@ -214,7 +214,7 @@ namespace ACE.Server.WorldObjects
                 // one layer: that layer's no-log list (base = the base world). 'all': see anyLayer.
                 var nolog = scopeKey == NoLogAllScopeKey
                     ? (anyLayer ? IsNoLogAnyLayer(landblock) : IsNoLogEveryLayer(landblock))
-                    : IsNoLogArea(landblock, scopeKey >= 0 ? scopeKey : null);
+                    : IsNoLogArea(landblock, scopeKey == NoLogBaseScopeKey ? null : scopeKey);   // a rift layer (-1000 and down) is its own
                 if (nolog)
                     return new RuleResult(RuleKind.Blocked, "a no-log area");
             }
@@ -401,36 +401,41 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var spot = FindPersonalLifestoneSpot();
-            if (spot == null)
-            {
-                SendTransientError("There is no room in front of you for a lifestone.");
-                return;
-            }
-
-            if (WorldObjectFactory.CreateNewWorldObject(PersonalLifestoneStoneWcid) is not Lifestone stone)
-            {
-                log.Error($"[PersonalLifestone] weenie {PersonalLifestoneStoneWcid} is missing or is not a LifeStone - {Name} could not raise one.");
-                SendTransientError("The stone fails to answer. Please tell an admin.");
-                return;
-            }
-
             var lifetime = Math.Max(1, ServerConfig.personal_lifestone_lifetime_seconds.Value);
             var now = Time.GetUnixTime();
-
-            stone.Location = spot;
-            stone.Name = $"{Name}'s Lifestone";
-            stone.PersonalLifestoneOwner = Guid.Full;
-            stone.PersonalLifestoneExpiresAt = now + lifetime;
-            stone.SuppressShardPersistence = true;   // never saved: gone after an unload or a restart
-            stone.TimeToRot = lifetime;              // the landblock heartbeat rots it away (same as a summoned gateway)
 
             // only one standing stone per player (matters only after an admin cooldown reset)
             var old = GetActivePersonalLifestone();
 
-            if (!stone.EnterWorld())
+            // each candidate spot in turn (2 m, then 1.5 m): one the world will not take (EnterWorld false) falls through to
+            // the next. The old stone and the cooldown stay untouched until a stone really stands.
+            Lifestone stone = null;
+            foreach (var spot in FindPersonalLifestoneSpots())
             {
-                stone.Destroy();
+                if (WorldObjectFactory.CreateNewWorldObject(PersonalLifestoneStoneWcid) is not Lifestone candidate)
+                {
+                    log.Error($"[PersonalLifestone] weenie {PersonalLifestoneStoneWcid} is missing or is not a LifeStone - {Name} could not raise one.");
+                    SendTransientError("The stone fails to answer. Please tell an admin.");
+                    return;
+                }
+
+                candidate.Location = spot;
+                candidate.Name = $"{Name}'s Lifestone";
+                candidate.PersonalLifestoneOwner = Guid.Full;
+                candidate.PersonalLifestoneExpiresAt = now + lifetime;
+                candidate.SuppressShardPersistence = true;   // never saved: gone after an unload or a restart
+                candidate.TimeToRot = lifetime;              // the landblock heartbeat rots it away (same as a summoned gateway)
+
+                if (candidate.EnterWorld())
+                {
+                    stone = candidate;
+                    break;
+                }
+                candidate.Destroy();
+            }
+
+            if (stone == null)
+            {
                 SendTransientError("There is no room in front of you for a lifestone.");
                 return;
             }
@@ -446,11 +451,12 @@ namespace ACE.Server.WorldObjects
             EnqueueBroadcast(new GameMessageSound(Guid, Sound.LifestoneOn, 1.0f));
             Session.Network.EnqueueSend(new GameMessageSystemChat($"A lifestone rises before you. Only you can attune to it or tie to it, and it fades in {FormatPersonalLifestoneTime(lifetime)}.", ChatMessageType.Magic));
 
-            log.Info($"[PersonalLifestone] {Name} raised 0x{stone.Guid.Full:X8} at {spot} (variation {spot.Variation?.ToString() ?? "base"}); next use in {cooldown}s.");
+            log.Info($"[PersonalLifestone] {Name} raised 0x{stone.Guid.Full:X8} at {stone.Location} (variation {stone.Location.Variation?.ToString() ?? "base"}); next use in {cooldown}s.");
         }
 
-        /// <summary>A spot in front of the player that lies inside a real cell, facing the player; null when none.</summary>
-        private Position FindPersonalLifestoneSpot()
+        /// <summary>Every spot in front of the player (nearest rule first: 2 m, then 1.5 m) that lies inside a real cell the
+        /// player can walk to and is not blocked, facing the player. Empty when none.</summary>
+        private IEnumerable<Position> FindPersonalLifestoneSpots()
         {
             foreach (var dist in PersonalLifestoneSpawnDistances)
             {
@@ -475,9 +481,8 @@ namespace ACE.Server.WorldObjects
                 if (PersonalLifestoneBlockReason(spot) != null)
                     continue;
 
-                return spot;
+                yield return spot;
             }
-            return null;
         }
         /// <summary>
         /// True when <paramref name="to"/> is <paramref name="from"/> or one portal step from it. Outdoor cells reach each other;
@@ -628,13 +633,24 @@ namespace ACE.Server.WorldObjects
         }
         // ---- where a personal stone put a character's death point / tie, and the audit (owner 2026-11-14) ----------------
         //
-        // On a personal stone attune / tie the exact spot is written to PropertyString.PersonalLifestoneAttuneSpot / TieSpot.
-        // A death point or tie counts as "from a personal stone" only while it still MATCHES that record, so a later normal
-        // lifestone, @save, a quest emote or anything else that moves it falls out by itself - no other code path is touched.
+        // On a personal stone attune / tie the exact spot is written to PropertyString.PersonalLifestoneAttuneSpot / TieSpot,
+        // right AFTER the position itself. Any write or removal of that position (WorldObject.SetPosition / RemovePosition -
+        // a normal lifestone, @save, a quest emote, an admin command, even one at the same coordinates) clears the record
+        // first, so it only ever describes the latest write. A death point or tie also counts as personal only while it
+        // still matches the record (belt and braces for writes that bypass SetPosition, e.g. an offline biota edit).
 
         private static string SpotText(Position p)
             => string.Format(CultureInfo.InvariantCulture, "{0:X8} {1:0.000} {2:0.000} {3:0.000} {4}",
                 p.Cell, p.PositionX, p.PositionY, p.PositionZ, p.Variation.HasValue ? p.Variation.Value.ToString(CultureInfo.InvariantCulture) : "-");
+
+        /// <summary>WorldObject.SetPosition / RemovePosition: the death point or tie was just written by something - its
+        /// personal-stone record no longer describes it.</summary>
+        public void ClearPersonalLifestoneSpot(PositionType type)
+        {
+            var prop = type == PositionType.Sanctuary ? PropertyString.PersonalLifestoneAttuneSpot : PropertyString.PersonalLifestoneTieSpot;
+            if (GetProperty(prop) != null)
+                RemoveProperty(prop);
+        }
 
         /// <summary>Lifestone.ActOnUse (attune) and HandleCastSpell_PortalLink (tie), personal stones only.</summary>
         public void RecordPersonalLifestoneSpot(PositionType type, Position pos)
@@ -702,19 +718,17 @@ namespace ACE.Server.WorldObjects
         /// <summary>/plstone audit: every character (online and offline) whose personal-stone death point or tie sits in a
         /// spot that is blocked now. Only characters that ever used a personal stone are looked at.</summary>
         public static List<PersonalLifestoneSpots> PersonalLifestoneAudit()
-        {
-            var list = PersonalLifestoneAudit(online: false);
-            list.AddRange(PersonalLifestoneAudit(online: true));
-            list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-            return list;
-        }
+            => PersonalLifestoneAudit(PersonalLifestoneAuditSnapshot());
 
-        /// <summary>One half of the audit: online players (read on the world thread) or offline characters (their biotas are
-        /// read under their own locks - safe on any thread, so a big shard never stalls the world tick for it).</summary>
-        public static List<PersonalLifestoneSpots> PersonalLifestoneAudit(bool online)
+        /// <summary>Everyone, online and offline, from ONE read of PlayerManager's lists (its lock): a character who logs in
+        /// or out while the audit runs is in it exactly once.</summary>
+        public static List<IPlayer> PersonalLifestoneAuditSnapshot() => PlayerManager.FindAllPlayers(_ => true);
+
+        /// <summary>The audit over the given characters. Offline ones (biotas read under their own locks) are safe on any
+        /// thread; pass online ones only on the world thread.</summary>
+        public static List<PersonalLifestoneSpots> PersonalLifestoneAudit(IEnumerable<IPlayer> who)
         {
             var list = new List<PersonalLifestoneSpots>();
-            IEnumerable<IPlayer> who = online ? PlayerManager.GetAllOnline() : PlayerManager.GetAllOffline();
             foreach (var p in who)
             {
                 if (p.GetProperty(PropertyString.PersonalLifestoneAttuneSpot) == null && p.GetProperty(PropertyString.PersonalLifestoneTieSpot) == null)
