@@ -216,5 +216,11 @@ namespace ACE.Entity.Enum.Properties
         /// override it at that place). The rewards and weights live in Zone Control (/zonecontrol bountytable), never on the
         /// weenie, so the admins can change them live for every mystery bounty already out there. 57704.</summary>
         ItemBountyRewardTable = 57704,
+
+        /// <summary>Personal Lifestone (2026-11-14), server-only: the exact spot a personal stone set this character's death
+        /// point to ("CELL x y z variation"). The death point counts as personal only while it still matches.</summary>
+        PersonalLifestoneAttuneSpot = 59100,
+        /// <summary>Personal Lifestone (2026-11-14), server-only: the spot a personal stone set this character's Lifestone Tie to.</summary>
+        PersonalLifestoneTieSpot = 59101,
     }
 }

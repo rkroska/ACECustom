@@ -123,6 +123,13 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         DeedsQb          = 56000,
 
+        /// <summary>
+        /// Server-only: Personal Lifestone - unix time (seconds) when this character may use the item again.
+        /// Real time, so the cooldown keeps running while logged out (a cooldown enchantment would only
+        /// tick while online). 59100, free in EVERY Property enum, every branch and the DBs (2026-11-14).
+        /// </summary>
+        PersonalLifestoneNextUse = 59100,
+
         // Pet Bonding System (Combat Pet Devices) — [AssessmentProperty] for identify + plugin PublicUpdateProperty*
         /// <summary>Current bond XP toward next level on a PetDevice.</summary>
         [AssessmentProperty]
