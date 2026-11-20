@@ -212,68 +212,117 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Writes the updated config values to the database. Returns false when any row could not be written.
-        /// A row that fails (e.g. the database is unreachable) is NOT dropped (2026-11-19): it stays queued, so the next save
+        /// Writes the updated config values to the database. Returns false when a row could not be written.
+        /// A row that fails (e.g. the database is unreachable) is NOT dropped (2026-11-19): it is queued again, so the next save
         /// - the property worker's, every 5 minutes - tries it again, and LoadFromDb keeps the in-memory value meanwhile
-        /// instead of reverting it to the old row. One failing row never stops the others from being written.
+        /// instead of reverting it to the old row. When the DATABASE is the problem (a connection or transient failure) the
+        /// pass stops there, as before - the rows after it stay queued, so an outage costs one row's retries per pass, not one
+        /// per queued row. Any other failure belongs to that row only: it is logged and queued again, and the pass goes on,
+        /// so one row that can never be written does not hold back every other setting.
+        /// One pass at a time (FlushLock; the property worker holds it for its write AND its reload, see FlushAndReload): a
+        /// failed older row can only be queued again while no newer value for its key is pending (TryAdd), so it never comes
+        /// back over a newer one.
         /// </summary>
         public static bool WriteUpdatesToDb()
         {
-            // one save at a time (PR #616): an admin command's save WAITS for the property worker's save in flight, so it
-            // reports what really reached the database, and a failed older row can only be queued again while no newer
-            // value for its key is pending (TryAdd) - it can never come back after a newer value was written
             lock (FlushLock)
                 return WriteUpdatesToDbLocked();
         }
 
-        /// <summary>The property worker's pass: save, then reload, as one step under the save lock.</summary>
-        public static void FlushAndReload()
+        /// <summary>
+        /// For an admin command (often on the world thread): write the queued rows now. It waits at most 2 s for a pass that is
+        /// already running (the property worker's) instead of queueing behind it; its own write is synchronous, as it always
+        /// was. Returns true only when THIS key has really been written; false = not saved yet (the write failed, or the
+        /// worker's pass was still running) - a later pass writes it, and only a crash or forced stop before that loses it.
+        /// </summary>
+        public static bool SaveNow(string key)
         {
-            lock (FlushLock)
+            if (!System.Threading.Monitor.TryEnter(FlushLock, TimeSpan.FromSeconds(2)))
+                return false;   // the worker's pass may be writing this very row right now - never report it as saved
+            try
+            {
+                WriteUpdatesToDbLocked();
+                return !IsPendingSave(key);   // answered inside the lock: no other pass can be half way through it
+            }
+            finally { System.Threading.Monitor.Exit(FlushLock); }
+        }
+
+        /// <summary>The property worker's pass (and the shutdown flush): write, then reload, under the save lock - so no save
+        /// can complete between the reload reading a row and checking whether that key is still queued, and put the old row
+        /// back over a value that was just saved.</summary>
+        /// <param name="skipIfBusy">The 5-minute timer: when a pass is still running (stuck on a database outage), skip this
+        /// tick instead of piling up threads waiting behind it. The shutdown flush waits.</param>
+        public static void FlushAndReload(bool skipIfBusy = false)
+        {
+            if (!System.Threading.Monitor.TryEnter(FlushLock, skipIfBusy ? TimeSpan.Zero : System.Threading.Timeout.InfiniteTimeSpan))
+                return;
+            try
             {
                 WriteUpdatesToDbLocked();
                 LoadFromDb();
             }
+            finally { System.Threading.Monitor.Exit(FlushLock); }
+        }
+
+        /// <summary>True when the database itself failed (connection, timeout, retries used up) - not this one row.</summary>
+        public static bool IsDatabaseOutage(Exception ex)
+        {
+            for (var e = ex; e != null; e = e.InnerException)
+            {
+                if (e is Microsoft.EntityFrameworkCore.Storage.RetryLimitExceededException || e is TimeoutException
+                    || e is System.Net.Sockets.SocketException || (e is System.Data.Common.DbException db && db.IsTransient))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>True while a change to this config key is queued and not yet in the database.</summary>
+        public static bool IsPendingSave(string key)
+        {
+            var k = CanonicalKey(key);
+            return _modifiedBoolProps.ContainsKey(k) || _modifiedLongProps.ContainsKey(k)
+                || _modifiedDoubleProps.ContainsKey(k) || _modifiedStringProps.ContainsKey(k);
         }
 
         private static readonly object FlushLock = new();
 
         private static bool WriteUpdatesToDbLocked()
         {
-            var ok = true;
-            ok &= FlushPending(_modifiedBoolProps, (key, property) =>
-            {
-                if (DatabaseManager.ShardConfig.BoolExists(key))
-                    DatabaseManager.ShardConfig.SaveBool(new ConfigPropertiesBoolean { Key = key, Value = property.Value, Description = property.Description });
-                else
-                    DatabaseManager.ShardConfig.AddBool(key, property.Value, property.Description);
-            });
-            ok &= FlushPending(_modifiedLongProps, (key, property) =>
-            {
-                if (DatabaseManager.ShardConfig.LongExists(key))
-                    DatabaseManager.ShardConfig.SaveLong(new ConfigPropertiesLong { Key = key, Value = property.Value, Description = property.Description });
-                else
-                    DatabaseManager.ShardConfig.AddLong(key, property.Value, property.Description);
-            });
-            ok &= FlushPending(_modifiedDoubleProps, (key, property) =>
-            {
-                if (DatabaseManager.ShardConfig.DoubleExists(key))
-                    DatabaseManager.ShardConfig.SaveDouble(new ConfigPropertiesDouble { Key = key, Value = property.Value, Description = property.Description });
-                else
-                    DatabaseManager.ShardConfig.AddDouble(key, property.Value, property.Description);
-            });
-            ok &= FlushPending(_modifiedStringProps, (key, property) =>
-            {
-                if (DatabaseManager.ShardConfig.StringExists(key))
-                    DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = key, Value = property.Value, Description = property.Description });
-                else
-                    DatabaseManager.ShardConfig.AddString(key, property.Value, property.Description);
-            });
-            return ok;
+            var outage = false;
+            var ok = FlushPending(_modifiedBoolProps, ref outage, (key, property) =>
+                {
+                    if (DatabaseManager.ShardConfig.BoolExists(key))
+                        DatabaseManager.ShardConfig.SaveBool(new ConfigPropertiesBoolean { Key = key, Value = property.Value, Description = property.Description });
+                    else
+                        DatabaseManager.ShardConfig.AddBool(key, property.Value, property.Description);
+                });
+            if (!outage) ok &= FlushPending(_modifiedLongProps, ref outage, (key, property) =>
+                {
+                    if (DatabaseManager.ShardConfig.LongExists(key))
+                        DatabaseManager.ShardConfig.SaveLong(new ConfigPropertiesLong { Key = key, Value = property.Value, Description = property.Description });
+                    else
+                        DatabaseManager.ShardConfig.AddLong(key, property.Value, property.Description);
+                });
+            if (!outage) ok &= FlushPending(_modifiedDoubleProps, ref outage, (key, property) =>
+                {
+                    if (DatabaseManager.ShardConfig.DoubleExists(key))
+                        DatabaseManager.ShardConfig.SaveDouble(new ConfigPropertiesDouble { Key = key, Value = property.Value, Description = property.Description });
+                    else
+                        DatabaseManager.ShardConfig.AddDouble(key, property.Value, property.Description);
+                });
+            if (!outage) ok &= FlushPending(_modifiedStringProps, ref outage, (key, property) =>
+                {
+                    if (DatabaseManager.ShardConfig.StringExists(key))
+                        DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = key, Value = property.Value, Description = property.Description });
+                    else
+                        DatabaseManager.ShardConfig.AddString(key, property.Value, property.Description);
+                });
+            return ok && !outage;
         }
 
-        /// <summary>Writes each queued row; a row that throws is logged and queued again (a newer change made meanwhile wins).</summary>
-        private static bool FlushPending<T>(ConcurrentDictionary<string, ConfigProperty<T>> pending, Action<string, ConfigProperty<T>> save)
+        /// <summary>Writes the queued rows. A row that throws is logged and queued again (a newer change made meanwhile wins);
+        /// on a database outage the pass stops there (<paramref name="outage"/> set), otherwise it goes on with the next row.</summary>
+        private static bool FlushPending<T>(ConcurrentDictionary<string, ConfigProperty<T>> pending, ref bool outage, Action<string, ConfigProperty<T>> save)
         {
             var ok = true;
             foreach (var key in pending.Keys)
@@ -289,6 +338,11 @@ namespace ACE.Server.Managers
                     ok = false;
                     pending.TryAdd(key, property);
                     log.Error($"[CONFIG] could not write {key} to the database - kept, it is tried again on the next save: {ex.Message}");
+                    if (IsDatabaseOutage(ex))
+                    {
+                        outage = true;   // the database is down: leave the rest queued for the next pass
+                        return false;
+                    }
                 }
             }
             return ok;
@@ -1342,7 +1396,7 @@ namespace ACE.Server.Managers
                 ServerConfig.SetValue("content_folder", "/ace/Content");
 
             // Subscribe the worker thread to  execute DoWork whenever it elapses.
-            _workerThread.Elapsed += (source, e) => DoWork();
+            _workerThread.Elapsed += (source, e) => DoWork(skipIfBusy: true);
             _workerThread.AutoReset = true;
             _workerThread.Start();
         }
@@ -1369,10 +1423,10 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Flushes pending writes to the datbase, then refreshes our view to be consistent.
         /// </summary>
-        private static void DoWork()
+        private static void DoWork(bool skipIfBusy = false)
         {
             var startTime = DateTime.UtcNow;
-            ServerConfig.FlushAndReload();
+            ServerConfig.FlushAndReload(skipIfBusy);
             log.Debug($"PropertyManager DoWork took {(DateTime.UtcNow - startTime).TotalMilliseconds:N0} ms");
         }
     }

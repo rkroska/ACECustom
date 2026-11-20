@@ -130,8 +130,8 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// The physics Landblock.IsDungeon rule (all terrain heights 0, at least one env cell, no buildings, the NW island
-        /// excepted) read from the cell dat - so it is safe off the world thread (/plstone audit from the console) and never
-        /// loads a physics landblock just to answer a question. Cached per landblock.
+        /// excepted) read from the cell dat - so it never loads a physics landblock just to answer a question (/plstone audit
+        /// checks every flagged character). Cached per landblock.
         /// </summary>
         public static bool IsDungeonLandblock(ushort landblock)
             => DungeonLandblockCache.GetOrAdd(landblock, lb =>
@@ -167,6 +167,8 @@ namespace ACE.Server.WorldObjects
                 return "a house";
             if (RoomAssignManager.IsInRoomDungeon(pos))
                 return "a Vaulted Dungeon";
+            if (pos.Variation.HasValue && pos.Variation.Value < 0)
+                return "a negative layer (never allowed)";
 
             var rule = LandblockRule(GetPersonalLifestoneOverrides(), (ushort)pos.Landblock, NoLogVariationKey(pos.Variation));
             if (rule.Kind == RuleKind.Blocked)
@@ -192,7 +194,9 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>What the landblock-level rules say: nothing (None), an explicit '-' token (Allowed), or a block.</summary>
         private enum RuleKind { None, Allowed, Blocked }
-        private readonly record struct RuleResult(RuleKind Kind, string Reason);
+        /// <param name="Switchable">Blocked only by a rule that can be switched off (the T10 / Valley of Death switch, a no-log
+        /// area) - an admin's 'add' still writes its own entry there, so the block outlives the switch.</param>
+        private readonly record struct RuleResult(RuleKind Kind, string Reason, bool Switchable = false);
 
         /// <summary>
         /// The landblock-level rules for one scope key (a variation, NoLogBaseScopeKey or NoLogAllScopeKey). Tokens first, the
@@ -216,9 +220,9 @@ namespace ACE.Server.WorldObjects
             if (ServerConfig.personal_lifestone_block_t10_vod.Value)
             {
                 if (LandblockCollections.ThaelarynIslandLandblocks.Contains(landblock))
-                    return new RuleResult(RuleKind.Blocked, "Thaelaryn Island (T10 switch)");
+                    return new RuleResult(RuleKind.Blocked, "Thaelaryn Island (T10 switch)", true);
                 if (LandblockCollections.ValleyOfDeathLandblocks.Contains(landblock))
-                    return new RuleResult(RuleKind.Blocked, "the Valley of Death (T10 switch)");
+                    return new RuleResult(RuleKind.Blocked, "the Valley of Death (T10 switch)", true);
             }
             if (ServerConfig.personal_lifestone_block_nolog_areas.Value)
             {
@@ -227,7 +231,7 @@ namespace ACE.Server.WorldObjects
                     ? (anyLayer ? IsNoLogAnyLayer(landblock) : IsNoLogEveryLayer(landblock))
                     : IsNoLogArea(landblock, scopeKey == NoLogBaseScopeKey ? null : scopeKey);   // a rift layer (-1000 and down) is its own
                 if (nolog)
-                    return new RuleResult(RuleKind.Blocked, "a no-log area");
+                    return new RuleResult(RuleKind.Blocked, "a no-log area", true);
             }
             return new RuleResult(RuleKind.None, null);
         }
@@ -264,7 +268,7 @@ namespace ACE.Server.WorldObjects
 
                 // 'add' may skip only when every layer is already blocked; 'remove' lifts when any layer is
                 var rule = LandblockRule(o, lb, scopeKey, anyLayer: !adding);
-                if (adding && rule.Kind != RuleKind.Blocked)
+                if (adding && (rule.Kind != RuleKind.Blocked || rule.Switchable))
                 {
                     tokens.Add(NoLogTokenFor(lb, scopeKey, false));
                     AddScope(o.Adds, lb, scopeKey);
@@ -368,6 +372,13 @@ namespace ACE.Server.WorldObjects
                 return stone;
             ActivePersonalLifestones.TryRemove(new KeyValuePair<uint, Lifestone>(Guid.Full, stone));   // faded: drop it
             return null;
+        }
+
+        /// <summary>/plstone resetls: remove the stone this character has standing, online or not. World thread.</summary>
+        public static void DestroyActivePersonalLifestone(uint ownerGuid)
+        {
+            if (ActivePersonalLifestones.TryRemove(ownerGuid, out var stone) && stone != null && !stone.IsDestroyed)
+                stone.Destroy();
         }
 
         /// <summary>Drop every faded stone from ActivePersonalLifestones (run on each raise - the map stays tiny).</summary>
@@ -637,6 +648,8 @@ namespace ACE.Server.WorldObjects
             var sanctuary = ResolveResetlsDeathPoint(town, instantiation, () => StarterTownPosition("Holtburg"), out var deathText);
             if (sanctuary == null)
                 return "NOTHING changed - no starter town on record and no Holtburg spot found. Name a town: /plstone resetls <player> <town>";
+
+            DestroyActivePersonalLifestone(target.Guid.Full);   // a stone still standing would re-attune them with one click
 
             if (target is Player online)
             {

@@ -7728,7 +7728,7 @@ namespace ACE.Server.Command.Handlers
             // flushing. So an edit followed by a shutdown inside five minutes is silently lost - the
             // admin sees it working live, then it is gone on the next start. That is intolerable for a
             // setting whose whole job is to survive a relog, and it bit exactly that way in testing.
-            if (!ServerConfig.WriteUpdatesToDb())
+            if (!ServerConfig.SaveNow("nolog_landblocks"))
                 Msg(UnsavedConfigWarning);
 
             Msg($"{DescribeNoLogTargets(landblocks)} at {Player.NoLogScopeName(variationKey)} "
@@ -7853,7 +7853,7 @@ namespace ACE.Server.Command.Handlers
                 Msg("  scope:   base | 11 | all  ('here' alone = your layer)");
                 Msg("  One variation's entry wins over an 'all' entry;");
                 Msg("  add / remove with 'all' replace every layer's entry.");
-                Msg("  Always blocked: house interiors, Vaulted Dungeons.");
+                Msg("  Always blocked: house interiors, Vaulted Dungeons, negative layers.");
                 return;
             }
 
@@ -7865,7 +7865,7 @@ namespace ACE.Server.Command.Handlers
                     Msg("  (a setting is outside its range and is used at the nearest limit: cooldown 0 - 1 year, lifetime 1 s - 1 day)");
                 Msg($"  no-log areas block: {(ServerConfig.personal_lifestone_block_nolog_areas.Value ? "yes" : "no")}   outdoors only: {(ServerConfig.personal_lifestone_block_dungeons.Value ? "yes" : "no")}");
                 Msg($"  T10 (Thaelaryn Island, {LandblockCollections.ThaelarynIslandLandblocks.Count} lb) + Valley of Death ({LandblockCollections.ValleyOfDeathLandblocks.Count} lb), every variation: {(ServerConfig.personal_lifestone_block_t10_vod.Value ? "BLOCKED" : "allowed")}   (/plstone t10vod on|off)");
-                Msg("  Always blocked: house interiors, Vaulted Dungeons.");
+                Msg("  Always blocked: house interiors, Vaulted Dungeons, negative layers.");
                 Msg("  Built-in (every variation):");
                 foreach (var kv in Player.PersonalLifestoneBuiltIns.OrderBy(k => k.Key))
                     Msg($"    {kv.Key:X4}  {kv.Value}");
@@ -7892,7 +7892,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 var block = arg == "on";
                 if (!ServerConfig.SetValue("personal_lifestone_block_t10_vod", block)) { Msg("Could not write personal_lifestone_block_t10_vod."); return; }
-                if (!ServerConfig.WriteUpdatesToDb())
+                if (!ServerConfig.SaveNow("personal_lifestone_block_t10_vod"))
                     Msg(UnsavedConfigWarning);
                 Msg($"T10 (Thaelaryn Island) + Valley of Death are now {(block ? "BLOCKED" : "allowed")} for the Personal Lifestone, every variation.");
                 PlayerManager.BroadcastToAuditChannel(session?.Player, $"Personal Lifestone: T10 + Valley of Death {(block ? "blocked" : "allowed")}");
@@ -7925,13 +7925,10 @@ namespace ACE.Server.Command.Handlers
 
             if (sub == "audit")
             {
-                // offline characters are read here (their biotas under their own locks); only the online half, which reads live
-                // players, runs on the world thread - a big shard never stalls the world tick for the whole scan
-                // ONE snapshot of who is online / offline, so a login or logout during the scan neither drops nor doubles anyone
-                var everyone = Player.PersonalLifestoneAuditSnapshot();
-                var offlineFlagged = Player.PersonalLifestoneAudit(everyone.Where(p => p is not Player));
-                var onlineAtSnapshot = everyone.OfType<Player>().ToList();
-                OnWorldThread(() => RunPersonalLifestoneAudit(offlineFlagged, onlineAtSnapshot, Msg));
+                // the whole scan in ONE pass on the world thread: one snapshot of who is online / offline, read where logins
+                // happen, so nobody is missed, doubled, mislabelled, or read while their biota is handed to a new Player.
+                // Cheap: only characters that ever used a personal stone are looked at past two property reads.
+                OnWorldThread(() => RunPersonalLifestoneAudit(Msg));
                 return;
             }
 
@@ -7945,15 +7942,16 @@ namespace ACE.Server.Command.Handlers
 
                 if (sub == "reset")
                 {
+                    var resetAdmin = session?.Player;
                     OnWorldThread(() =>
                     {
                         // looked up again ON the world thread: online, just logged out or offline - whichever it is now
                         var now = (IPlayer)PlayerManager.GetOnlinePlayer(guid) ?? PlayerManager.FindByGuid(guid);
-                        if (now == null) { Msg("That character is gone."); return; }
+                        if (now == null) { Msg("That character is gone. Nothing changed."); return; }
                         Player.ResetPersonalLifestoneCooldown(now);
                         Msg($"{now.Name}: Personal Lifestone cooldown cleared.");
+                        PlayerManager.BroadcastToAuditChannel(resetAdmin, $"Cleared the Personal Lifestone cooldown of {now.Name}");
                     });
-                    PlayerManager.BroadcastToAuditChannel(session?.Player, $"Cleared the Personal Lifestone cooldown of {found.Name}");
                     return;
                 }
 
@@ -8004,7 +8002,7 @@ namespace ACE.Server.Command.Handlers
                 Msg("Could not write the personal_lifestone_excluded_landblocks property.");
                 return;
             }
-            if (!ServerConfig.WriteUpdatesToDb())   // flush now - the property worker runs every 5 minutes and is not flushed on shutdown
+            if (!ServerConfig.SaveNow("personal_lifestone_excluded_landblocks"))   // flush now - the property worker only runs every 5 minutes
                 Msg(UnsavedConfigWarning);
 
             Report("now");   // what the rule says NOW, landblock by landblock (never just echo the request)
@@ -8018,18 +8016,21 @@ namespace ACE.Server.Command.Handlers
         /// and must not read or write live players from there; a player's own queue would not do either - it stops being
         /// processed once the player logs out, so a change queued there could be lost. The work looks the character up again.
         /// </summary>
-        /// <summary>A config edit that is live but could not be written to the database (2026-11-19).</summary>
-        private const string UnsavedConfigWarning =
-            "WARNING: the change is live but could NOT be saved to the database - it is retried every 5 minutes; a restart before that loses it. See the server log ([CONFIG]).";
-
         private static void OnWorldThread(Action action)
             => WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, action));
 
+        /// <summary>A config edit that is live but not in the database yet (2026-11-19).</summary>
+        private const string UnsavedConfigWarning =
+            "WARNING: the change is live but NOT saved to the database yet - it is retried every 5 minutes and at a normal shutdown; a crash, a forced stop, or the database still being down at shutdown loses it. See the server log ([CONFIG]).";
+
         /// <summary>/plstone audit - every personal-stone death point or tie that sits in a spot blocked now.</summary>
-        private static void RunPersonalLifestoneAudit(List<Player.PersonalLifestoneSpots> offlineFlagged, List<Player> onlineAtSnapshot, Action<string> msg)
+        private static void RunPersonalLifestoneAudit(Action<string> msg)
         {
-            var flagged = offlineFlagged.Concat(Player.PersonalLifestoneAudit(onlineAtSnapshot))
-                .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var everyone = Player.PersonalLifestoneAuditSnapshot();
+            var flagged = Player.PersonalLifestoneAudit(everyone);
+            sw.Stop();
+            msg($"Audit: scanned {everyone.Count} characters in {sw.ElapsedMilliseconds} ms.");
             msg(flagged.Count == 0
                 ? "Audit: no character has a personal-stone death point or tie in a blocked spot."
                 : $"Audit: {flagged.Count} character(s) with a personal-stone point in a blocked spot (fix with /plstone resetls <guid>):");
