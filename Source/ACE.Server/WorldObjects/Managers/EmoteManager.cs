@@ -43,9 +43,31 @@ namespace ACE.Server.WorldObjects.Managers
         private WorldObject _proxy;
 
         /// <summary>
-        /// Returns TRUE if this WorldObject is currently busy processing other emotes
+        /// Returns TRUE if this WorldObject is currently busy processing other emotes. Going idle also ends the
+        /// InqAccountQuest claims this object took (AccountQuestLimits.Claim): its emotes, reward and stamp included, are done.
         /// </summary>
-        public bool IsBusy { get; set; }
+        public bool IsBusy
+        {
+            get => isBusy;
+            set
+            {
+                isBusy = value;
+
+                if (!value && heldAccountClaims != null && heldAccountClaims.Count > 0)
+                {
+                    foreach (var claim in heldAccountClaims)
+                        AccountQuestLimits.Release(claim);
+
+                    heldAccountClaims.Clear();
+                }
+            }
+        }
+
+        private bool isBusy;
+
+        /// <summary>ILT: InqAccountQuest claims this object holds until it goes idle (created on first use).</summary>
+        private List<AccountQuestLimits.Claim> heldAccountClaims;
+
         public int Nested { get; set; }
 
         /// <summary>
@@ -1203,12 +1225,17 @@ namespace ACE.Server.WorldObjects.Managers
                     // ILT custom: InqQuest counted across every character on the player's account, so any content gated on
                     // InqQuest can be account-locked by switching that step to this one (docs/ACCOUNT_LOCKED_CONTENT_GUIDE.md).
                     // QuestSuccess = a character on the account has the quest and the account can't solve it yet
-                    // (max solves reached across the account, or the newest completion's timer still running).
+                    // (max solves reached across the account, or the newest completion's timer still running), or another
+                    // use on the account holds the quest's gate. Letting the character through takes the account's claim on
+                    // the gate, held until this object goes idle (IsBusy), so it covers the reward and the stamp.
                     if (player != null)
                     {
-                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message);
+                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message, out var accountClaim);
 
-                        ExecuteEmoteSet(accountQuestDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                        if (accountClaim != null)
+                            (heldAccountClaims ??= new List<AccountQuestLimits.Claim>()).Add(accountClaim);
+
+                        ExecuteEmoteSetStayingBusy(accountQuestDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject);
                     }
 
                     break;
@@ -3954,6 +3981,33 @@ namespace ACE.Server.WorldObjects.Managers
                     return;
                 }
             }
+        }
+
+        /// <summary>
+        /// ILT: ExecuteEmoteSet(category, quest, targetObject, nested: true) for InqAccountQuest. The set still runs on the
+        /// next tick, as for InqQuest, but the object stays busy until it has run: otherwise IsBusy clears in between (the
+        /// gate's own set ends first) and would end the account's claim before the reward and the stamp.
+        /// </summary>
+        private void ExecuteEmoteSetStayingBusy(EmoteCategory category, string quest, WorldObject targetObject)
+        {
+            var emoteSet = GetEmoteSet(category, quest);
+
+            if (emoteSet == null) return;
+
+            // held until the deferred set has started (it counts itself in Nested while it runs)
+            Nested++;
+
+            var actionChain = new ActionChain();
+            actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () =>
+            {
+                ExecuteEmoteSet(emoteSet, targetObject, true);
+
+                Nested--;
+
+                if (Nested == 0)
+                    IsBusy = false;
+            });
+            actionChain.EnqueueChain();
         }
 
         /// <summary>

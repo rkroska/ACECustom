@@ -187,16 +187,16 @@ objects already in the world keep the emotes they spawned with.
   from the shard's `character_properties_quest_registry` table (the character is offline, so the change
   counts at once).
 - **Keep the gate and the stamp together.** Give the `InqAccountQuest` step, the reward and the
-  `StampQuest` no delay, as the Chests of Chance do. The stamp still lands a moment after the gate: the
-  QuestSuccess or QuestFailure set runs on the next server tick, and some steps make the next one wait even
-  with no delay (an NPC turns to face the player before a `Give` unless it has `DontTurnOrMoveWhenGiving`,
-  bool 82; `Motion`, `Turn`, `TurnToTarget`, `MoveHome`, `CastSpell` and `AwardSkillXP` wait too). To cover
-  that moment, the gate stays closed for the account for 5 seconds after it lets a character through (even
-  when the set it runs stamps nothing), so a second check can't pass before the stamp lands. Keep everything
-  between the gate and the stamp well inside those 5 seconds. An account has one login at a time (a second
-  login boots the first or is refused), so no other character on the account can be playing meanwhile. If
-  the reward can't be given (a full pack stops the chain before the stamp), the player can try again once
-  the 5 seconds are up.
+  `StampQuest` no delay, as the Chests of Chance do. The stamp still lands a while after the gate: the
+  QuestSuccess or QuestFailure set runs on the next server tick, as with `InqQuest`, and some steps make the
+  next one wait even with no delay (an NPC turns to face the player before a `Give` unless it has
+  `DontTurnOrMoveWhenGiving`, bool 82; `Motion`, `Turn`, `TurnToTarget`, `MoveHome`, `CastSpell` and
+  `AwardSkillXP` wait too). So when the gate lets a character through, the account claims the quest's gate:
+  it stays closed for the whole account until the object has finished its emotes, the reward and the stamp,
+  or a stop such as a full pack, and the object stays busy (refusing new uses) until then. A claim whose
+  object never finishes ends after 5 minutes. An account has one login at a time (a second login boots the
+  first or is refused), so no other character on the account can be playing meanwhile. After a stop with no
+  stamp, the gate opens again as soon as the object is idle, so the player can simply try again.
 - **It fails closed.** If the shard or world database can't be read, or the emote names no quest, the
   account is treated as having done it (QuestSuccess), so a problem never hands out extra rewards. Those errors are
   logged at most once a minute.

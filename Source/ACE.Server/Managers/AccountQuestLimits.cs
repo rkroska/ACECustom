@@ -32,8 +32,8 @@ namespace ACE.Server.Managers
     ///   - every other character, from the shard database. Deleted characters still count until the character is purged
     ///     (its quest rows cascade away with it), so deleting a character doesn't reset the timer.
     ///
-    /// After the gate lets a character through, it stays closed for that account for AdmissionHold (5 seconds), so a second
-    /// check can't pass before the stamp lands.
+    /// After the gate lets a character through, the account holds a Claim on the quest's gate until the object running
+    /// the reward has finished its emotes (or ClaimTimeout), so a second check can't pass before the stamp lands.
     /// </summary>
     public static class AccountQuestLimits
     {
@@ -46,15 +46,31 @@ namespace ACE.Server.Managers
         private static double nextLogAt;
 
         /// <summary>
-        /// How long the gate stays closed for an account after it lets one of its characters through. The QuestSuccess or
-        /// QuestFailure set runs on the next server tick (EmoteManager.ExecuteEmoteSet defers nested sets), and some of its
-        /// steps wait on their own (an NPC turning to give, Motion, CastSpell), so the stamp lands a moment after the gate.
-        /// Until it does, the account's stamps don't show the claim; the hold keeps a second check from passing on them.
+        /// An account's hold on one quest's gate. The QuestSuccess or QuestFailure set runs on the next server tick (as for
+        /// InqQuest) and some of its steps wait on their own (an NPC turning to give, Motion, CastSpell), so the stamp lands
+        /// a while after the gate, and until it does the account's stamps don't show the claim. So when the gate lets a
+        /// character through, the account takes a Claim, and the gate stays closed for the account until the object running
+        /// the reward has finished its emotes: the reward and the stamp, or a stop such as a full pack (EmoteManager releases
+        /// its claims when it goes idle). ClaimTimeout ends a claim whose object never goes idle.
         /// </summary>
-        public static readonly TimeSpan AdmissionHold = TimeSpan.FromSeconds(5);
+        public sealed class Claim
+        {
+            internal Claim((uint AccountId, string Quest) key, DateTime expires)
+            {
+                Key = key;
+                Expires = expires;
+            }
 
-        private static readonly Dictionary<(uint AccountId, string Quest), DateTime> heldUntil = new();
-        private static readonly object holdLock = new();
+            internal (uint AccountId, string Quest) Key { get; }
+
+            internal DateTime Expires { get; }
+        }
+
+        /// <summary>A claim ends at the latest this long after it was taken, released or not.</summary>
+        public static readonly TimeSpan ClaimTimeout = TimeSpan.FromMinutes(5);
+
+        private static readonly Dictionary<(uint AccountId, string Quest), Claim> claims = new();
+        private static readonly object claimLock = new();
 
         /// <summary>One character's registry row for a quest.</summary>
         public readonly record struct Stamp(uint LastTimeCompleted, int NumTimesCompleted);
@@ -68,12 +84,16 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// The account-wide InqQuest test (HasQuest &amp;&amp; !CanSolve): true when a character on the player's account has the
-        /// quest and the account can't solve it right now, or when the gate let a character of the account through less than
-        /// AdmissionHold ago. Fails closed (true) when the database can't be read or the emote names no quest, so neither a
-        /// database problem nor a misconfigured emote hands out extra rewards.
+        /// quest and the account can't solve it right now, or when another use on the account holds the quest's gate (Claim).
+        /// Fails closed (true) when the database can't be read or the emote names no quest, so neither a database problem nor
+        /// a misconfigured emote hands out extra rewards.
         /// </summary>
-        public static bool HasQuestAndCannotSolve(Player player, string questFormat)
+        /// <param name="claim">When this lets the character through (false), the account's claim on the gate, for the object
+        /// running the reward to release when it goes idle; otherwise null.</param>
+        public static bool HasQuestAndCannotSolve(Player player, string questFormat, out Claim claim)
         {
+            claim = null;
+
             if (player == null)
                 return true;
 
@@ -97,8 +117,12 @@ namespace ACE.Server.Managers
             if (IsDone(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime()))
                 return true;
 
-            // Going ahead: hold the gate closed for the account until the stamp has had time to land (AdmissionHold).
-            return player.Account != null && !TryAdmit(player.Account.AccountId, questName, DateTime.UtcNow);
+            // Going ahead: claim the gate for the account until the object running the reward goes idle (see Claim).
+            if (player.Account == null)
+                return false;
+
+            claim = TryClaim(player.Account.AccountId, questName, DateTime.UtcNow);
+            return claim == null;
         }
 
         /// <summary>
@@ -118,28 +142,42 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Lets an account's character through the gate unless another one went through for this quest less than
-        /// AdmissionHold ago, and starts the hold when it does. Quest names match without regard to case, as in the registry.
+        /// Takes the account's claim on a quest's gate, or returns null while another one is held (not released, not past
+        /// ClaimTimeout). Quest names match without regard to case, as in the registry.
         /// </summary>
-        internal static bool TryAdmit(uint accountId, string questName, DateTime now)
+        internal static Claim TryClaim(uint accountId, string questName, DateTime now)
         {
             var key = (accountId, questName.ToLowerInvariant());
 
-            lock (holdLock)
+            lock (claimLock)
             {
-                if (heldUntil.TryGetValue(key, out var until) && until > now)
-                    return false;
+                if (claims.TryGetValue(key, out var held) && held.Expires > now)
+                    return null;
 
-                heldUntil[key] = now + AdmissionHold;
+                var claim = new Claim(key, now + ClaimTimeout);
+                claims[key] = claim;
 
-                // expired holds are dropped now and then, so the table stays small
-                if (heldUntil.Count > 1024)
+                // claims past their timeout are dropped now and then, so the table stays small
+                if (claims.Count > 1024)
                 {
-                    foreach (var expired in heldUntil.Where(h => h.Value <= now).Select(h => h.Key).ToList())
-                        heldUntil.Remove(expired);
+                    foreach (var expired in claims.Where(c => c.Value.Expires <= now).Select(c => c.Key).ToList())
+                        claims.Remove(expired);
                 }
 
-                return true;
+                return claim;
+            }
+        }
+
+        /// <summary>Ends a claim. One that timed out and was taken again since is left alone.</summary>
+        internal static void Release(Claim claim)
+        {
+            if (claim == null)
+                return;
+
+            lock (claimLock)
+            {
+                if (claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
+                    claims.Remove(claim.Key);
             }
         }
 
