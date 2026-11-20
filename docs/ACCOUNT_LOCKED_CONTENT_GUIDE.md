@@ -196,12 +196,12 @@ objects already in the world keep the emotes they spawned with.
   gate: it stays closed for the whole account until the object has finished its emotes (branches inside
   the outcome, such as a nested `InqQuest` or a `Goto`, included), the reward and the stamp, or a stop
   such as a full pack, and the object stays busy (refusing new uses) until then. There is no timer,
-  however long the emotes wait: the claim ends early only if the object leaves the world (a despawn, a
-  server restart), and once another use goes ahead after that, nothing more of the old object's emotes
-  runs. If the object's emotes stop on a server error, the claim stays until the object leaves the world,
-  so the gate fails closed for that account. An account has one login at a time (a second login boots the
-  first or is refused), so no other character on the account can be playing meanwhile. After a stop with
-  no stamp, the gate opens again as soon as the object is idle, so the player can simply try again.
+  however long the emotes wait. If the object leaves the world (a despawn) before its emotes have done
+  anything, another use can go ahead and those emotes never run; if it leaves after they started, or they
+  stop on a server error, the gate stays closed for that account until the server restarts, so it fails
+  closed. An account has one login at a time (a second login boots the first or is refused), so no other
+  character on the account can be playing meanwhile. After a stop with no stamp, the gate opens again as
+  soon as the object is idle, so the player can simply try again.
 - **It fails closed.** If the shard or world database can't be read, or the emote names no quest, the
   account is treated as having done it (QuestSuccess), so a problem never hands out extra rewards. Those errors are
   logged at most once a minute.
