@@ -52,7 +52,9 @@ namespace ACE.Server.Managers
         /// a while after the gate, and until it does the account's stamps don't show it. So the gate takes a Claim for the
         /// account before it reads the stamps (Admit), and while the claim's chain is Running (its object has emotes in
         /// flight, branches included, however long they wait) the gate stays closed for the account. EmoteManager releases
-        /// its claims when those emotes have all finished. There is no timer.
+        /// its claims when those emotes have all finished. There is no timer on a running chain. A chain that asks a yes/no
+        /// question (InqYesNo) keeps its claims while the question is open, up to its timeout, and the answer's set carries
+        /// them on (AwaitAnswer, AnswerArrived).
         ///
         /// The chain that took a claim must TryAct before each of its steps (only that chain: other emote sets on the object
         /// don't), so what a step queues (a Give, a CastSpell) comes after it acted. A chain whose object left the world
@@ -95,6 +97,13 @@ namespace ACE.Server.Managers
             /// under claimLock.
             /// </summary>
             internal DateTime AwaitingAnswerUntil { get; set; }
+
+            /// <summary>
+            /// Set when the emotes holding the claim ended while their question was still open: from then on only the answer
+            /// can carry the claim on, and once the question has closed with no answer taking it, the claim is over whatever
+            /// the object does next. Read and written under claimLock.
+            /// </summary>
+            internal bool ParkedForAnswer { get; set; }
 
             /// <summary>Set when the claim is taken over: its chain may not act from then on. Read and written under
             /// claimLock.</summary>
@@ -244,9 +253,10 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Takes the account's claim on a quest's gate, or returns null while another chain holds it: one that is Running, or
-        /// one that has acted and can't finish. A Finished chain's claim is replaced as it is; a Gone chain's claim that never
-        /// acted is fenced and replaced. Quest names match without regard to case, as in the registry.
+        /// Takes the account's claim on a quest's gate, or returns null while another chain holds it: one that is Running, one
+        /// whose yes/no question is still open, or one that has acted and can't finish. A Finished chain's claim is replaced
+        /// as it is; a Gone chain's claim that never acted, or one whose question closed with no answer taking it on, is
+        /// fenced and replaced. Quest names match without regard to case, as in the registry.
         /// </summary>
         /// <param name="chain">Where the chain taking the claim stands (see Claim.Chain).</param>
         internal static Claim TryClaim(uint accountId, string questName, Func<ChainState> chain)
@@ -275,13 +285,21 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Under claimLock: whether a claim may end for another to take its place. Not while its chain is Running, nor once a
-        /// chain that can't finish has acted (fails closed). A Gone chain that never acted is fenced here, so it never will.
+        /// Under claimLock: whether a claim may end for another to take its place. Not while its chain is Running or its
+        /// question is open, nor once a chain that can't finish has acted (fails closed). A Gone chain that never acted is
+        /// fenced here, so it never will, and so is a claim whose question closed with no answer taking it on, so an answer
+        /// that still turns up can't act on it.
         /// </summary>
         private static bool TryEnd(Claim held)
         {
             if (held.Closed || held.AwaitingAnswerUntil > DateTime.UtcNow)
                 return false;
+
+            if (held.ParkedForAnswer)
+            {
+                held.Fenced = true;
+                return true;
+            }
 
             switch (held.Chain())
             {
@@ -298,8 +316,8 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Ends a claim: its chain is over, or its use didn't go ahead. One replaced since, or closed, is left alone, and so
-        /// is one whose chain asked a yes/no question that is still open (the answer carries it on).
+        /// Ends a claim: its chain is over, or its use didn't go ahead. One replaced since, or closed, is left alone. One whose
+        /// chain asked a yes/no question that is still open stays, parked for the answer, which carries it on.
         /// </summary>
         internal static void Release(Claim claim)
         {
@@ -308,15 +326,30 @@ namespace ACE.Server.Managers
 
             lock (claimLock)
             {
-                if (!claim.Closed && claim.AwaitingAnswerUntil <= DateTime.UtcNow && claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
-                    claims.Remove(claim.Key);
+                if (claim.Closed)
+                    return;
+
+                if (claim.AwaitingAnswerUntil > DateTime.UtcNow)
+                {
+                    claim.ParkedForAnswer = true;
+                    return;
+                }
+
+                RemoveIfCurrent(claim);
             }
         }
 
+        /// <summary>Under claimLock: drops a claim from the table unless another has taken its place.</summary>
+        private static void RemoveIfCurrent(Claim claim)
+        {
+            if (claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
+                claims.Remove(claim.Key);
+        }
+
         /// <summary>
-        /// A chain holding these claims asked a yes/no question (InqYesNo): the claims hold until the answer's set takes them
-        /// on (AnswerArrived) or the question has been open for <paramref name="wait"/>, after which an answer can no longer
-        /// come and the claims end like any whose emotes are over.
+        /// A chain holding these claims asked a yes/no question (InqYesNo): the claims hold until the answer comes
+        /// (AnswerArrived) or the question has been open for <paramref name="wait"/>, after which an answer is no longer
+        /// expected: claims whose emotes ended meanwhile are then over (see TryEnd), the rest end with their emotes.
         /// </summary>
         internal static void AwaitAnswer(IReadOnlyCollection<Claim> chainClaims, TimeSpan wait)
         {
@@ -332,8 +365,12 @@ namespace ACE.Server.Managers
             }
         }
 
-        /// <summary>The answer to the chain's question has come: from here, its emotes hold the claims as usual.</summary>
-        internal static void AnswerArrived(IReadOnlyCollection<Claim> chainClaims)
+        /// <summary>
+        /// The answer to the chain's question has come. Taken (its set runs as part of the chain): from here its emotes hold
+        /// the claims as usual. Not taken (the object is busy or gone, or has no set for that answer): the claims end as they
+        /// would have with no question, at once if the asking emotes are over, otherwise when those end.
+        /// </summary>
+        internal static void AnswerArrived(IReadOnlyCollection<Claim> chainClaims, bool taken)
         {
             if (chainClaims == null || chainClaims.Count == 0)
                 return;
@@ -341,7 +378,15 @@ namespace ACE.Server.Managers
             lock (claimLock)
             {
                 foreach (var claim in chainClaims)
+                {
+                    var parked = claim.ParkedForAnswer;
+
                     claim.AwaitingAnswerUntil = DateTime.MinValue;
+                    claim.ParkedForAnswer = false;
+
+                    if (!taken && parked && !claim.Closed)
+                        RemoveIfCurrent(claim);
+                }
             }
         }
 
@@ -362,8 +407,8 @@ namespace ACE.Server.Managers
                 {
                     if (claim.Acted)
                         claim.Close();
-                    else if (claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
-                        claims.Remove(claim.Key);
+                    else
+                        RemoveIfCurrent(claim);
                 }
             }
         }
@@ -371,7 +416,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Whether a claim keeps the account's gate on this quest closed for a reason other than a stamp: InProgress for a
         /// chain still running or a question it asked still open (its reward is on its way), ClosedUntilRestart for one that
-        /// acted and can't finish.
+        /// acted and can't finish. None once a question has closed with no answer taking the claim on.
         /// </summary>
         internal static GateHold GetGateHold(uint accountId, string questName)
         {
@@ -387,6 +432,9 @@ namespace ACE.Server.Managers
 
                 if (held.AwaitingAnswerUntil > DateTime.UtcNow)
                     return GateHold.InProgress;
+
+                if (held.ParkedForAnswer)
+                    return GateHold.None;
 
                 switch (held.Chain())
                 {

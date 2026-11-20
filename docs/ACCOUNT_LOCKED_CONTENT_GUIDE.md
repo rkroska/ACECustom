@@ -206,11 +206,12 @@ objects already in the world keep the emotes they spawned with.
   anything, they stop and another use can go ahead; if that happens after they started, or they stop on a
   server error, the gate stays closed for that account until the server restarts, so it fails closed. A
   yes/no question (`InqYesNo`) after the gate keeps it closed while the question is open (up to its
-  30-second timeout), and the answer's set carries the claim on to the reward and the stamp. An account
-  has one login at a time (a second login boots the first or is refused), so no other character on the
-  account can be playing meanwhile. When the emotes end on their own without a stamp (the full-pack check
-  stops them, say), the gate opens as soon as the object is idle, so the player can just retry; only
-  emotes that can't finish keep it closed.
+  30-second timeout), and the answer's set carries the claim on to the reward and the stamp; if the answer
+  can't run (the object is busy then, or has no set for that answer), the gate opens again. An account has
+  one login at a time (a second login boots the first or is refused), so no other character on the account
+  can be playing meanwhile. When the emotes end on their own without a stamp (the full-pack check stops
+  them, say), the gate opens as soon as the object is idle, so the player can just retry; only emotes that
+  can't finish keep it closed.
 - **A treasure isn't counted by the full-pack check.** The check that stops a reward set on a full pack,
   so the player can free space and retry, counts `Give` steps but not `CreateTreasure`. A treasure can
   take the last free slot, and a later `Give` then stops the set before its `StampQuest`, so the player

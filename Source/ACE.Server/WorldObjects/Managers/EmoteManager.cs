@@ -1551,8 +1551,9 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         // ILT: the answer runs as a new emote set. A chain holding InqAccountQuest claims hands them to it,
                         // and they stay held while the question is open (at most the confirmation's timeout), so the account's
-                        // gate stays closed until the answer has run (ExecuteAnswerSet)
-                        var answerClaims = executingClaims != null && executingClaims.Count > 0 ? executingClaims : null;
+                        // gate stays closed until the answer has run (ExecuteAnswerSet). A copy: the answer carries on the
+                        // claims the chain holds as it asks
+                        var answerClaims = executingClaims != null && executingClaims.Count > 0 ? new List<AccountQuestLimits.Claim>(executingClaims) : null;
 
                         if (!player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(WorldObject.Guid, player.Guid, emote.Message) { ChainClaims = answerClaims }, Replace(emote.TestString, WorldObject, targetObject, emoteSet.Quest)))
                         {
@@ -4085,8 +4086,8 @@ namespace ACE.Server.WorldObjects.Managers
         /// <summary>
         /// ILT: runs the set for the answer to a yes/no question (Confirmation_YesNo) as part of the chain that asked, with that
         /// chain's InqAccountQuest claims, which stayed held while the question was open (InqYesNo). As for any answer, an
-        /// object busy with other emotes, or with no set for it, doesn't take it; the claims then end like any whose emotes
-        /// are over.
+        /// object busy with other emotes, or with no set for it, doesn't take it; the claims then end as they would have with
+        /// no question (AccountQuestLimits.AnswerArrived).
         /// </summary>
         public void ExecuteAnswerSet(EmoteCategory category, string quest, Player player, List<AccountQuestLimits.Claim> chainClaims)
         {
@@ -4094,7 +4095,7 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (emoteSet == null || IsBusy)
             {
-                AccountQuestLimits.AnswerArrived(chainClaims);
+                AccountQuestLimits.AnswerArrived(chainClaims, taken: false);
                 return;
             }
 
@@ -4111,7 +4112,7 @@ namespace ACE.Server.WorldObjects.Managers
 
             // from here the answer's emotes, in flight, hold the claims
             Nested++;
-            AccountQuestLimits.AnswerArrived(chainClaims);
+            AccountQuestLimits.AnswerArrived(chainClaims, taken: true);
             Enqueue(emoteSet, player, chainClaims: chainClaims);
         }
 

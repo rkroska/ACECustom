@@ -480,7 +480,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(GateHold.InProgress, AccountQuestLimits.GetGateHold(9_000_015, "TestAccountQuest"));
 
             // the answer's set takes the claims on: while it runs they hold as usual, and when it ends they're released
-            AccountQuestLimits.AnswerArrived(new[] { claim });
+            AccountQuestLimits.AnswerArrived(new[] { claim }, taken: true);
             state = ChainState.Running;
             Assert.IsNull(TryClaim(9_000_015, "TestAccountQuest", Running));
 
@@ -490,15 +490,57 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void Claim_AwaitingAnAnswer_LapsesWithTheQuestion()
+        public void Claim_QuestionClosedWithNoAnswer_IsTakenOverFenced()
         {
-            // no answer by the time the question has closed (timed out, or the player left): an answer can't come any more,
-            // so the claim ends like any whose emotes are over
-            var claim = TryClaim(9_000_016, "TestAccountQuest", () => ChainState.Finished);
-            AccountQuestLimits.AwaitAnswer(new[] { claim }, TimeSpan.Zero);
+            // the asking emotes ended at the question, then it closed with no answer (the player walked away): the claim is
+            // over whatever its object does next, here leaving the world, and an answer that still turns up can't act on it
+            var state = ChainState.Finished;
+            var claim = TryClaim(9_000_016, "TestAccountQuest", () => state);
+            Assert.IsTrue(AccountQuestLimits.TryAct(new[] { claim }));
 
+            AccountQuestLimits.AwaitAnswer(new[] { claim }, TimeSpan.FromMinutes(5));
+            AccountQuestLimits.Release(claim);
+            state = ChainState.Gone;
+            Assert.IsNull(TryClaim(9_000_016, "TestAccountQuest", Running));
+
+            AccountQuestLimits.AwaitAnswer(new[] { claim }, TimeSpan.Zero);   // the question's time is up
             Assert.AreEqual(GateHold.None, AccountQuestLimits.GetGateHold(9_000_016, "TestAccountQuest"));
             Assert.IsNotNull(TryClaim(9_000_016, "TestAccountQuest", Running));
+            Assert.IsTrue(AccountQuestLimits.IsTakenOver(claim));
+
+            AccountQuestLimits.AnswerArrived(new[] { claim }, taken: true);
+            Assert.IsFalse(AccountQuestLimits.TryAct(new[] { claim }));
+        }
+
+        [TestMethod]
+        public void Claim_AnswerNotTaken_EndsAsWithNoQuestion()
+        {
+            // an answer the object doesn't take (busy with another use, or no set for it): with the asking emotes still
+            // running, they keep holding the claim and release it when they end
+            var state = ChainState.Running;
+            var claim = TryClaim(9_000_017, "TestAccountQuest", () => state);
+            Assert.IsTrue(AccountQuestLimits.TryAct(new[] { claim }));
+            AccountQuestLimits.AwaitAnswer(new[] { claim }, TimeSpan.FromMinutes(5));
+
+            AccountQuestLimits.AnswerArrived(new[] { claim }, taken: false);
+            Assert.IsNull(TryClaim(9_000_017, "TestAccountQuest", Running));
+
+            state = ChainState.Finished;
+            AccountQuestLimits.Release(claim);
+            Assert.IsNotNull(TryClaim(9_000_017, "TestAccountQuest", Running));
+
+            // with the asking emotes over, released at once, though the object is busy with another use
+            var other = ChainState.Finished;
+            var parked = TryClaim(9_000_018, "TestAccountQuest", () => other);
+            Assert.IsTrue(AccountQuestLimits.TryAct(new[] { parked }));
+            AccountQuestLimits.AwaitAnswer(new[] { parked }, TimeSpan.FromMinutes(5));
+            AccountQuestLimits.Release(parked);
+
+            other = ChainState.Running;
+            AccountQuestLimits.AnswerArrived(new[] { parked }, taken: false);
+            Assert.AreEqual(GateHold.None, AccountQuestLimits.GetGateHold(9_000_018, "TestAccountQuest"));
+            Assert.IsNotNull(TryClaim(9_000_018, "TestAccountQuest", Running));
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(parked));
         }
     }
 }

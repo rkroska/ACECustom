@@ -160,7 +160,11 @@ namespace ACE.Server.Entity
         public override void ProcessConfirmation(bool response, bool timeout = false)
         {
             var player = Player;
-            if (player == null) return;
+            if (player == null)
+            {
+                AccountQuestLimits.AnswerArrived(ChainClaims, taken: false);   // ILT: no answer can run
+                return;
+            }
 
             var source = player.FindObject(SourceGuid.Full, Player.SearchLocations.Landblock);
 
@@ -169,10 +173,12 @@ namespace ACE.Server.Entity
 
             var category = response ? EmoteCategory.TestSuccess : EmoteCategory.TestFailure;
 
-            if (ChainClaims != null)
-                source?.EmoteManager.ExecuteAnswerSet(category, Quest, player, ChainClaims);
-            else
+            if (ChainClaims == null)
                 source?.EmoteManager.ExecuteEmoteSet(category, Quest, player);
+            else if (source != null)
+                source.EmoteManager.ExecuteAnswerSet(category, Quest, player, ChainClaims);
+            else
+                AccountQuestLimits.AnswerArrived(ChainClaims, taken: false);
         }
     }
 
