@@ -89,6 +89,13 @@ namespace ACE.Server.Managers
             /// <summary>Set once the chain has acted (TryAct). Read and written under claimLock.</summary>
             internal bool Acted { get; set; }
 
+            /// <summary>
+            /// Until when a yes/no question the chain asked (InqYesNo) stays open: its answer carries the claim on
+            /// (EmoteManager.ExecuteAnswerSet), so until then the claim holds even with no emotes in flight. Read and written
+            /// under claimLock.
+            /// </summary>
+            internal DateTime AwaitingAnswerUntil { get; set; }
+
             /// <summary>Set when the claim is taken over: its chain may not act from then on. Read and written under
             /// claimLock.</summary>
             internal bool Fenced { get; set; }
@@ -115,13 +122,25 @@ namespace ACE.Server.Managers
         /// <summary>One character's registry row for a quest.</summary>
         public readonly record struct Stamp(uint LastTimeCompleted, int NumTimesCompleted);
 
+        /// <summary>Why a claim keeps the account's gate closed when the stamps alone would let it through (for %aqt).</summary>
+        public enum GateHold
+        {
+            /// <summary>No claim holds the gate.</summary>
+            None,
+
+            /// <summary>A reward is on its way: a chain still running, or a yes/no question it asked still open.</summary>
+            InProgress,
+
+            /// <summary>A chain acted and can't finish: the gate stays closed until the server restarts.</summary>
+            ClosedUntilRestart,
+        }
+
         /// <summary>
         /// What the %aqt and %aqc emote text show for an account: the time until the account can solve the quest again
         /// (TimeSpan.MinValue = now, TimeSpan.MaxValue = never, as QuestManager.GetNextSolveTime returns them), the
-        /// account's total completions, and whether another use is still being rewarded (its claim holds the gate before
-        /// its stamp has landed; %aqt then reads "a moment").
+        /// account's total completions, and when the stamps would let it through, whether a claim holds the gate anyway.
         /// </summary>
-        public readonly record struct AccountStatus(TimeSpan NextSolveTime, long Completions, bool RewardInProgress = false);
+        public readonly record struct AccountStatus(TimeSpan NextSolveTime, long Completions, GateHold Hold = GateHold.None);
 
         /// <summary>
         /// The account-wide InqQuest test (HasQuest &amp;&amp; !CanSolve): true when a character on the player's account has the
@@ -219,9 +238,9 @@ namespace ACE.Server.Managers
                 return null;
 
             var nextSolveTime = NextSolveTime(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime());
-            var inProgress = nextSolveTime == TimeSpan.MinValue && player.Account != null && IsGateHeld(player.Account.AccountId, questName);
+            var hold = nextSolveTime == TimeSpan.MinValue && player.Account != null ? GetGateHold(player.Account.AccountId, questName) : GateHold.None;
 
-            return new AccountStatus(nextSolveTime, Completions(stamps), inProgress);
+            return new AccountStatus(nextSolveTime, Completions(stamps), hold);
         }
 
         /// <summary>
@@ -261,7 +280,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static bool TryEnd(Claim held)
         {
-            if (held.Closed)
+            if (held.Closed || held.AwaitingAnswerUntil > DateTime.UtcNow)
                 return false;
 
             switch (held.Chain())
@@ -278,7 +297,10 @@ namespace ACE.Server.Managers
             }
         }
 
-        /// <summary>Ends a claim: its chain is over, or its use didn't go ahead. One replaced since, or closed, is left alone.</summary>
+        /// <summary>
+        /// Ends a claim: its chain is over, or its use didn't go ahead. One replaced since, or closed, is left alone, and so
+        /// is one whose chain asked a yes/no question that is still open (the answer carries it on).
+        /// </summary>
         internal static void Release(Claim claim)
         {
             if (claim == null)
@@ -286,8 +308,40 @@ namespace ACE.Server.Managers
 
             lock (claimLock)
             {
-                if (!claim.Closed && claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
+                if (!claim.Closed && claim.AwaitingAnswerUntil <= DateTime.UtcNow && claims.TryGetValue(claim.Key, out var held) && ReferenceEquals(held, claim))
                     claims.Remove(claim.Key);
+            }
+        }
+
+        /// <summary>
+        /// A chain holding these claims asked a yes/no question (InqYesNo): the claims hold until the answer's set takes them
+        /// on (AnswerArrived) or the question has been open for <paramref name="wait"/>, after which an answer can no longer
+        /// come and the claims end like any whose emotes are over.
+        /// </summary>
+        internal static void AwaitAnswer(IReadOnlyCollection<Claim> chainClaims, TimeSpan wait)
+        {
+            if (chainClaims == null || chainClaims.Count == 0)
+                return;
+
+            lock (claimLock)
+            {
+                var until = DateTime.UtcNow + wait;
+
+                foreach (var claim in chainClaims)
+                    claim.AwaitingAnswerUntil = until;
+            }
+        }
+
+        /// <summary>The answer to the chain's question has come: from here, its emotes hold the claims as usual.</summary>
+        internal static void AnswerArrived(IReadOnlyCollection<Claim> chainClaims)
+        {
+            if (chainClaims == null || chainClaims.Count == 0)
+                return;
+
+            lock (claimLock)
+            {
+                foreach (var claim in chainClaims)
+                    claim.AwaitingAnswerUntil = DateTime.MinValue;
             }
         }
 
@@ -315,23 +369,36 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// True while a claim keeps the account's gate on this quest closed for a reason other than a stamp: a chain still
-        /// running (its reward on the way), or one that acted and can't finish.
+        /// Whether a claim keeps the account's gate on this quest closed for a reason other than a stamp: InProgress for a
+        /// chain still running or a question it asked still open (its reward is on its way), ClosedUntilRestart for one that
+        /// acted and can't finish.
         /// </summary>
-        internal static bool IsGateHeld(uint accountId, string questName)
+        internal static GateHold GetGateHold(uint accountId, string questName)
         {
             var key = (accountId, questName.ToLowerInvariant());
 
             lock (claimLock)
             {
                 if (!claims.TryGetValue(key, out var held))
-                    return false;
+                    return GateHold.None;
 
                 if (held.Closed)
-                    return true;
+                    return GateHold.ClosedUntilRestart;
 
-                var state = held.Chain();
-                return state == ChainState.Running || (state == ChainState.Gone && held.Acted);
+                if (held.AwaitingAnswerUntil > DateTime.UtcNow)
+                    return GateHold.InProgress;
+
+                switch (held.Chain())
+                {
+                    case ChainState.Running:
+                        return GateHold.InProgress;
+
+                    case ChainState.Gone when held.Acted:
+                        return GateHold.ClosedUntilRestart;
+
+                    default:
+                        return GateHold.None;
+                }
             }
         }
 

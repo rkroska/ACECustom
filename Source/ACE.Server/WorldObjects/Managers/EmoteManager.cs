@@ -1549,9 +1549,19 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (player != null)
                     {
-                        if (!player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(WorldObject.Guid, player.Guid, emote.Message), Replace(emote.TestString, WorldObject, targetObject, emoteSet.Quest)))
+                        // ILT: the answer runs as a new emote set. A chain holding InqAccountQuest claims hands them to it,
+                        // and they stay held while the question is open (at most the confirmation's timeout), so the account's
+                        // gate stays closed until the answer has run (ExecuteAnswerSet)
+                        var answerClaims = executingClaims != null && executingClaims.Count > 0 ? executingClaims : null;
+
+                        if (!player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(WorldObject.Guid, player.Guid, emote.Message) { ChainClaims = answerClaims }, Replace(emote.TestString, WorldObject, targetObject, emoteSet.Quest)))
                         {
                             ExecuteEmoteSet(EmoteCategory.TestFailure, emote.Message, player);
+                        }
+                        else if (answerClaims != null)
+                        {
+                            // a few seconds past the timeout, for the abort that ends an unanswered question to run
+                            AccountQuestLimits.AwaitAnswer(answerClaims, TimeSpan.FromSeconds(ConfirmationManager.DefaultTimeoutSeconds + 5));
                         }
                     }
                     break;
@@ -4073,6 +4083,39 @@ namespace ACE.Server.WorldObjects.Managers
         }
 
         /// <summary>
+        /// ILT: runs the set for the answer to a yes/no question (Confirmation_YesNo) as part of the chain that asked, with that
+        /// chain's InqAccountQuest claims, which stayed held while the question was open (InqYesNo). As for any answer, an
+        /// object busy with other emotes, or with no set for it, doesn't take it; the claims then end like any whose emotes
+        /// are over.
+        /// </summary>
+        public void ExecuteAnswerSet(EmoteCategory category, string quest, Player player, List<AccountQuestLimits.Claim> chainClaims)
+        {
+            var emoteSet = GetEmoteSet(category, quest);
+
+            if (emoteSet == null || IsBusy)
+            {
+                AccountQuestLimits.AnswerArrived(chainClaims);
+                return;
+            }
+
+            // claims still listed from emotes that are over go first, as at the start of any chain; then this chain's
+            if (Nested == 0)
+                ReleaseHeldAccountClaims();
+
+            heldAccountClaims ??= new List<AccountQuestLimits.Claim>();
+            foreach (var claim in chainClaims)
+            {
+                if (!heldAccountClaims.Contains(claim))
+                    heldAccountClaims.Add(claim);
+            }
+
+            // from here the answer's emotes, in flight, hold the claims
+            Nested++;
+            AccountQuestLimits.AnswerArrived(chainClaims);
+            Enqueue(emoteSet, player, chainClaims: chainClaims);
+        }
+
+        /// <summary>
         /// Executes a set of emotes to run with delays
         /// </summary>
         /// <param name="emoteSet">A list of emotes to execute</param>
@@ -4364,6 +4407,18 @@ namespace ACE.Server.WorldObjects.Managers
             return _worldObject.Biota.PropertiesEmote.Where(x => x.Category == emoteCategory);
         }
 
+        /// <summary>
+        /// ILT: %aqt. While another use's reward is on its way (its claim holds the gate, no stamp yet), "a moment"; when a
+        /// chain that acted can't finish and the gate stays closed until a restart, says so; otherwise the account's time
+        /// until it can solve the quest again, as %tqt shows a character's.
+        /// </summary>
+        private static string AccountTimeText(AccountQuestLimits.AccountStatus status) => status.Hold switch
+        {
+            AccountQuestLimits.GateHold.InProgress => "a moment",
+            AccountQuestLimits.GateHold.ClosedUntilRestart => "a while (after the next server restart)",
+            _ => status.NextSolveTime.GetFriendlyString(),
+        };
+
         public string Replace(string message, WorldObject source, WorldObject target, string quest)
         {
             var result = message;
@@ -4440,12 +4495,12 @@ namespace ACE.Server.WorldObjects.Managers
                     result = result.Replace("%tqc", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetCurrentSolves(questName).ToString() : "");
 
                 // ILT custom: %tqt and %tqc for the whole account (InqAccountQuest content). Only read when the text uses them.
-                // While another use's reward is still on its way (its claim holds the gate, no stamp yet), %aqt reads "a moment".
+                // When a claim holds the gate before any stamp, %aqt says so instead of "negative time" (AccountTimeText).
                 if (result.Contains("%aqt") || result.Contains("%aqc"))
                 {
                     var account = !string.IsNullOrWhiteSpace(quest) ? AccountQuestLimits.GetStatus(targetPlayer, questName) : null;
 
-                    result = result.Replace("%aqt", account.HasValue ? (account.Value.RewardInProgress ? "a moment" : account.Value.NextSolveTime.GetFriendlyString()) : "");
+                    result = result.Replace("%aqt", account.HasValue ? AccountTimeText(account.Value) : "");
 
                     result = result.Replace("%aqc", account.HasValue ? account.Value.Completions.ToString() : "");
                 }

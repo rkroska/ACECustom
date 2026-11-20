@@ -153,7 +153,9 @@ objects already in the world keep the emotes they spawned with.
   `%aqt` is meant for the QuestSuccess text. In a QuestFailure set it reads "negative time", and once
   `max_Solves` is reached it shows a very long time, so write once-ever text without it.
 - While another use on the account is still being rewarded (its claim holds the gate and its stamp hasn't
-  landed yet), `%aqt` reads "a moment", so "Come back in %aqt." still makes sense.
+  landed yet), `%aqt` reads "a moment", so "Come back in %aqt." still makes sense. If the gate stays
+  closed until a restart (emotes that acted but couldn't finish), it reads "a while (after the next server
+  restart)".
 - The account is only read when the text contains `%aqt` or `%aqc`.
 
 ---
@@ -202,10 +204,13 @@ objects already in the world keep the emotes they spawned with.
   There is no timer, however long the emotes wait. If the object leaves the world (a despawn), or the
   player's character leaves it to log out (a stamp would no longer be saved), before the emotes have done
   anything, they stop and another use can go ahead; if that happens after they started, or they stop on a
-  server error, the gate stays closed for that account until the server restarts, so it fails closed. An
-  account has one login at a time (a second login boots the first or is refused), so no other character on
-  the account can be playing meanwhile. After a stop with no stamp, the gate opens again as soon as the
-  object is idle, so the player can simply try again.
+  server error, the gate stays closed for that account until the server restarts, so it fails closed. A
+  yes/no question (`InqYesNo`) after the gate keeps it closed while the question is open (up to its
+  30-second timeout), and the answer's set carries the claim on to the reward and the stamp. An account
+  has one login at a time (a second login boots the first or is refused), so no other character on the
+  account can be playing meanwhile. When the emotes end on their own without a stamp (the full-pack check
+  stops them, say), the gate opens as soon as the object is idle, so the player can just retry; only
+  emotes that can't finish keep it closed.
 - **A treasure isn't counted by the full-pack check.** The check that stops a reward set on a full pack,
   so the player can free space and retry, counts `Give` steps but not `CreateTreasure`. A treasure can
   take the last free slot, and a later `Give` then stops the set before its `StampQuest`, so the player

@@ -7,6 +7,7 @@ using ACE.Server.Managers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using ChainState = ACE.Server.Managers.AccountQuestLimits.ChainState;
+using GateHold = ACE.Server.Managers.AccountQuestLimits.GateHold;
 using WorldQuest = ACE.Database.Models.World.Quest;
 
 namespace ACE.Server.Tests
@@ -228,7 +229,7 @@ namespace ACE.Server.Tests
             Assert.IsTrue(Done(stamps, Quest(TwentyHours)));   // the alt, an hour ago
         }
 
-        // ---- the account's claim on the gate (Admit, TryClaim, TryAct, Release, Abandon) ----
+        // ---- the account's claim on the gate (Admit, TryClaim, TryAct, Release, Abandon, AwaitAnswer) ----
         // Each test uses its own account ids, and every gate a test touches is dropped after it (the claims are shared,
         // static state, so a repeated run starts clean). The chain delegates stand in for the object running the gate
         // (EmoteManager: Running while it has emotes in flight, Finished when it has none, Gone when it left the world with
@@ -430,7 +431,7 @@ namespace ACE.Server.Tests
             AccountQuestLimits.Abandon(new[] { claim });   // again, from another step of the same chain
             AccountQuestLimits.Release(claim);             // and the object going idle
             Assert.IsNull(TryClaim(9_000_011, "TestAccountQuest", Running));
-            Assert.IsTrue(AccountQuestLimits.IsGateHeld(9_000_011, "TestAccountQuest"));
+            Assert.AreEqual(GateHold.ClosedUntilRestart, AccountQuestLimits.GetGateHold(9_000_011, "TestAccountQuest"));
         }
 
         [TestMethod]
@@ -439,27 +440,65 @@ namespace ACE.Server.Tests
             var claim = TryClaim(9_000_012, "TestAccountQuest", Running);
 
             AccountQuestLimits.Abandon(new[] { claim });
-            Assert.IsFalse(AccountQuestLimits.IsGateHeld(9_000_012, "TestAccountQuest"));
+            Assert.AreEqual(GateHold.None, AccountQuestLimits.GetGateHold(9_000_012, "TestAccountQuest"));
             Assert.IsNotNull(TryClaim(9_000_012, "TestAccountQuest", Running));
         }
 
         [TestMethod]
-        public void IsGateHeld_WhileTheRewardIsOnItsWay()
+        public void GetGateHold_InProgressOrClosedUntilRestart()
         {
-            // what %aqt reads as "a moment": a running chain, or one that acted and can't finish; not a finished chain, nor
+            // what %aqt shows when a claim holds the gate before any stamp: "a moment" while the reward is on its way (a
+            // running chain), the restart note once a chain that acted can't finish; nothing for a finished chain, nor for
             // one whose object left before it acted (the next use can take that over)
             var state = ChainState.Running;
             var claim = TryClaim(9_000_013, "TestAccountQuest", () => state);
-            Assert.IsTrue(AccountQuestLimits.IsGateHeld(9_000_013, "testaccountquest"));
+            Assert.AreEqual(GateHold.InProgress, AccountQuestLimits.GetGateHold(9_000_013, "testaccountquest"));
 
             state = ChainState.Gone;
-            Assert.IsFalse(AccountQuestLimits.IsGateHeld(9_000_013, "TestAccountQuest"));
+            Assert.AreEqual(GateHold.None, AccountQuestLimits.GetGateHold(9_000_013, "TestAccountQuest"));
             Assert.IsTrue(AccountQuestLimits.TryAct(new[] { claim }));
-            Assert.IsTrue(AccountQuestLimits.IsGateHeld(9_000_013, "TestAccountQuest"));
+            Assert.AreEqual(GateHold.ClosedUntilRestart, AccountQuestLimits.GetGateHold(9_000_013, "TestAccountQuest"));
 
             state = ChainState.Finished;
-            Assert.IsFalse(AccountQuestLimits.IsGateHeld(9_000_013, "TestAccountQuest"));
-            Assert.IsFalse(AccountQuestLimits.IsGateHeld(9_000_014, "TestAccountQuest"));   // no claim at all
+            Assert.AreEqual(GateHold.None, AccountQuestLimits.GetGateHold(9_000_013, "TestAccountQuest"));
+            Assert.AreEqual(GateHold.None, AccountQuestLimits.GetGateHold(9_000_014, "TestAccountQuest"));   // no claim at all
+        }
+
+        [TestMethod]
+        public void Claim_AwaitingAnAnswer_HoldsUntilTheAnswerTakesIt()
+        {
+            // the chain asked a yes/no question and its emotes ended: until the answer comes, the claim holds even with
+            // nothing in flight, and the object going idle doesn't release it
+            var state = ChainState.Running;
+            var claim = TryClaim(9_000_015, "TestAccountQuest", () => state);
+            Assert.IsTrue(AccountQuestLimits.TryAct(new[] { claim }));
+
+            AccountQuestLimits.AwaitAnswer(new[] { claim }, TimeSpan.FromMinutes(5));
+            state = ChainState.Finished;
+            AccountQuestLimits.Release(claim);
+            Assert.IsNull(TryClaim(9_000_015, "TestAccountQuest", Running));
+            Assert.AreEqual(GateHold.InProgress, AccountQuestLimits.GetGateHold(9_000_015, "TestAccountQuest"));
+
+            // the answer's set takes the claims on: while it runs they hold as usual, and when it ends they're released
+            AccountQuestLimits.AnswerArrived(new[] { claim });
+            state = ChainState.Running;
+            Assert.IsNull(TryClaim(9_000_015, "TestAccountQuest", Running));
+
+            state = ChainState.Finished;
+            AccountQuestLimits.Release(claim);
+            Assert.IsNotNull(TryClaim(9_000_015, "TestAccountQuest", Running));
+        }
+
+        [TestMethod]
+        public void Claim_AwaitingAnAnswer_LapsesWithTheQuestion()
+        {
+            // no answer by the time the question has closed (timed out, or the player left): an answer can't come any more,
+            // so the claim ends like any whose emotes are over
+            var claim = TryClaim(9_000_016, "TestAccountQuest", () => ChainState.Finished);
+            AccountQuestLimits.AwaitAnswer(new[] { claim }, TimeSpan.Zero);
+
+            Assert.AreEqual(GateHold.None, AccountQuestLimits.GetGateHold(9_000_016, "TestAccountQuest"));
+            Assert.IsNotNull(TryClaim(9_000_016, "TestAccountQuest", Running));
         }
     }
 }
