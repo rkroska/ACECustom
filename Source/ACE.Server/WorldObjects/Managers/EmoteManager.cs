@@ -43,8 +43,10 @@ namespace ACE.Server.WorldObjects.Managers
         private WorldObject _proxy;
 
         /// <summary>
-        /// Returns TRUE if this WorldObject is currently busy processing other emotes. Going idle also ends the
-        /// InqAccountQuest claims this object took (AccountQuestLimits.Claim): its emotes, reward and stamp included, are done.
+        /// Returns TRUE if this WorldObject is currently busy processing other emotes. Going idle with no emotes left in
+        /// flight (Nested 0) also ends the InqAccountQuest claims this object took (AccountQuestLimits.Claim): its emotes,
+        /// reward and stamp included, are done. OnDeath and OnPortal clear IsBusy while emotes may still be in flight, so
+        /// the claims stay until those have finished.
         /// </summary>
         public bool IsBusy
         {
@@ -53,7 +55,7 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 isBusy = value;
 
-                if (!value && heldAccountClaims != null && heldAccountClaims.Count > 0)
+                if (!value && Nested == 0 && heldAccountClaims != null && heldAccountClaims.Count > 0)
                 {
                     foreach (var claim in heldAccountClaims)
                         AccountQuestLimits.Release(claim);
@@ -65,7 +67,7 @@ namespace ACE.Server.WorldObjects.Managers
 
         private bool isBusy;
 
-        /// <summary>ILT: InqAccountQuest claims this object holds until it goes idle (created on first use).</summary>
+        /// <summary>ILT: InqAccountQuest claims this object holds until its emotes have finished (created on first use).</summary>
         private List<AccountQuestLimits.Claim> heldAccountClaims;
 
         public int Nested { get; set; }
@@ -1227,11 +1229,12 @@ namespace ACE.Server.WorldObjects.Managers
                     // QuestSuccess = a character on the account has the quest and the account can't solve it yet
                     // (max solves reached across the account, or the newest completion's timer still running), or another
                     // use on the account holds the quest's gate. Letting the character through takes the account's claim on
-                    // the gate, held until this object goes idle (IsBusy), so it covers the reward and the stamp.
+                    // the gate, held until this object's emotes have all finished, so it covers the reward and the stamp.
                     if (player != null)
                     {
-                        // the claim counts while this object is busy with the chain and still in the world
-                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message, () => IsBusy && !WorldObject.IsDestroyed, out var accountClaim);
+                        // the claim counts while this object still has emotes in flight (Nested, which OnDeath and OnPortal
+                        // leave alone when they clear IsBusy) and is still in the world
+                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message, () => Nested > 0 && !WorldObject.IsDestroyed, out var accountClaim);
 
                         if (accountClaim != null)
                             (heldAccountClaims ??= new List<AccountQuestLimits.Claim>()).Add(accountClaim);

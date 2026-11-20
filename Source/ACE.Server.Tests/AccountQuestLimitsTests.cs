@@ -228,7 +228,7 @@ namespace ACE.Server.Tests
 
         // ---- the account's claim on the gate, from the gate to the end of the object's emotes (TryClaim, Release) ----
         // Each test uses its own account ids: the claims are shared state. isHeld stands in for "the object running the
-        // reward is still busy with it and in the world".
+        // reward still has emotes in flight and is in the world".
 
         private static readonly Func<bool> Busy = () => true;
 
@@ -256,7 +256,7 @@ namespace ACE.Server.Tests
             for (var i = 0; i < 3; i++)
                 Assert.IsNull(AccountQuestLimits.TryClaim(9_000_002, "TestAccountQuest", Busy));
 
-            running = false;   // the chain ended (its object went idle without a release, or left the world)
+            running = false;   // the chain ended (its object finished without a release, or left the world)
             Assert.IsNotNull(AccountQuestLimits.TryClaim(9_000_002, "TestAccountQuest", Busy));
         }
 

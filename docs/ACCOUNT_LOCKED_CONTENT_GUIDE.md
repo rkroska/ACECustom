@@ -194,10 +194,11 @@ objects already in the world keep the emotes they spawned with.
   `AwardSkillXP` wait too). So when the gate lets a character through, the account claims the quest's gate:
   it stays closed for the whole account until the object has finished its emotes, the reward and the stamp,
   or a stop such as a full pack, and the object stays busy (refusing new uses) until then. There is no
-  timer: the claim also ends if the object leaves the world (a despawn, a server restart). An account has one
-  login at a time (a second login boots the first or is refused), so no other character on the account can
-  be playing meanwhile. After a stop with no stamp, the gate opens again as soon as the object is idle, so
-  the player can simply try again.
+  timer, however long the emotes wait: the claim ends early only if the object leaves the world (a despawn,
+  a server restart). If the object's emotes stop on a server error, the claim stays until then, so the gate
+  fails closed for that account. An account has one login at a time (a second login boots the first or is
+  refused), so no other character on the account can be playing meanwhile. After a stop with no stamp, the
+  gate opens again as soon as the object is idle, so the player can simply try again.
 - **It fails closed.** If the shard or world database can't be read, or the emote names no quest, the
   account is treated as having done it (QuestSuccess), so a problem never hands out extra rewards. Those errors are
   logged at most once a minute.

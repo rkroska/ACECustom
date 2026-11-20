@@ -50,10 +50,11 @@ namespace ACE.Server.Managers
         /// InqQuest) and some of its steps wait on their own (an NPC turning to give, Motion, CastSpell), so the stamp lands
         /// a while after the gate, and until it does the account's stamps don't show the claim. So when the gate lets a
         /// character through, the account takes a Claim, and the gate stays closed for the account for as long as the claim
-        /// is held: until the object running the reward has finished its emotes, the reward and the stamp or a stop such as a
-        /// full pack (EmoteManager releases its claims when it goes idle). There is no timer: a claim also stops counting
-        /// once its object is no longer busy or has left the world (isHeld), and claims are memory only, so a restart
-        /// clears them.
+        /// is held: while the object running the reward still has emotes in flight, however long they wait, until they have
+        /// all finished (the reward and the stamp, or a stop such as a full pack; EmoteManager releases its claims then).
+        /// There is no timer. A claim stops counting early only if its object leaves the world (isHeld). Emotes that stop on
+        /// a server error never finish, so the gate then stays closed for the account until the object leaves the world or
+        /// the server restarts (claims are memory only): it fails closed, as for a database error.
         /// </summary>
         public sealed class Claim
         {
@@ -65,7 +66,8 @@ namespace ACE.Server.Managers
 
             internal (uint AccountId, string Quest) Key { get; }
 
-            /// <summary>True while the chain that took the claim can still pay out: its object is busy and in the world.</summary>
+            /// <summary>True while the chain that took the claim can still pay out: its object has emotes in flight and is in
+            /// the world.</summary>
             internal Func<bool> IsHeld { get; }
         }
 
@@ -89,9 +91,9 @@ namespace ACE.Server.Managers
         /// a misconfigured emote hands out extra rewards.
         /// </summary>
         /// <param name="claimHeld">For the claim taken when this lets the character through: true while the object running
-        /// the reward is still busy with it and in the world.</param>
+        /// the reward still has emotes in flight and is in the world.</param>
         /// <param name="claim">When this lets the character through (false), the account's claim on the gate, for the object
-        /// running the reward to release when it goes idle; otherwise null.</param>
+        /// running the reward to release when its emotes have finished; otherwise null.</param>
         public static bool HasQuestAndCannotSolve(Player player, string questFormat, Func<bool> claimHeld, out Claim claim)
         {
             claim = null;
@@ -119,7 +121,8 @@ namespace ACE.Server.Managers
             if (IsDone(stamps, quest, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime()))
                 return true;
 
-            // Going ahead: claim the gate for the account until the object running the reward goes idle (see Claim).
+            // Going ahead: claim the gate for the account until the object running the reward has finished its emotes (see
+            // Claim).
             if (player.Account == null)
                 return false;
 
@@ -145,7 +148,8 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Takes the account's claim on a quest's gate, or returns null while another one is held (not released, and its
-        /// object still busy and in the world). Quest names match without regard to case, as in the registry.
+        /// object still has emotes in flight and is in the world). Quest names match without regard to case, as in the
+        /// registry.
         /// </summary>
         /// <param name="isHeld">True while the chain taking the claim can still pay out (see Claim.IsHeld).</param>
         internal static Claim TryClaim(uint accountId, string questName, Func<bool> isHeld)
@@ -162,7 +166,7 @@ namespace ACE.Server.Managers
                 var claim = new Claim(key, isHeld);
                 claims[key] = claim;
 
-                // claims no longer held (their object went idle without a release, or left the world) are dropped now and
+                // claims no longer held (their object finished without a release, or left the world) are dropped now and
                 // then, so the table stays small
                 if (claims.Count > 1024)
                 {
