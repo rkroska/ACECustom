@@ -189,10 +189,16 @@ namespace ACE.Server.Managers
             }
 
             private readonly Dictionary<AreaKey, List<StuckEvent>> events = new Dictionary<AreaKey, List<StuckEvent>>();
-            private readonly Dictionary<AreaKey, DateTime> lastDiscordAlert = new Dictionary<AreaKey, DateTime>();
+            // when the last episode Discord was told about cleared: the Discord cooldown runs from there (CodeRabbit #617),
+            // so a long episode that clears and comes straight back doesn't post again at once
+            private readonly Dictionary<AreaKey, DateTime> lastDiscordClear = new Dictionary<AreaKey, DateTime>();
             private readonly Dictionary<AreaKey, ActiveArea> active = new Dictionary<AreaKey, ActiveArea>();
 
             public bool HasActiveAreas => active.Count > 0;
+
+            /// <summary>How many stuck loads are kept for an area (tests: history stays within the window).</summary>
+            internal int EventCountFor(ushort landblock, int? variation)
+                => events.TryGetValue(new AreaKey(landblock, variation), out var list) ? list.Count : 0;
 
             /// <summary>A player could not finish loading this area. Returns the alert to send when an episode starts.</summary>
             public List<Post> OnStuck(ushort landblock, int? variation, uint characterId, string name, DateTime nowUtc, Settings settings)
@@ -214,6 +220,7 @@ namespace ACE.Server.Managers
                 if (active.TryGetValue(key, out var current))
                 {
                     current.LastStuck = nowUtc;   // still happening: the check posts the reminders and the all-clear
+                    PlayersInWindow(list, nowUtc, settings.Window);   // keep only the window, however long the episode
                     return posts;
                 }
 
@@ -221,10 +228,9 @@ namespace ACE.Server.Managers
                 if (players == null)
                     return posts;
 
-                // an area that clears and comes straight back still tells staff in game, but Discord only once per cooldown
-                var toDiscord = !lastDiscordAlert.TryGetValue(key, out var last) || nowUtc - last >= settings.DiscordCooldown;
-                if (toDiscord)
-                    lastDiscordAlert[key] = nowUtc;
+                // an area that clears and comes straight back still tells staff in game, but Discord only once the cooldown
+                // has run since the last episode it announced cleared
+                var toDiscord = !lastDiscordClear.TryGetValue(key, out var lastClear) || nowUtc - lastClear >= settings.DiscordCooldown;
 
                 active[key] = new ActiveArea { LastStaffPost = nowUtc, LastStuck = nowUtc, AnnouncedToDiscord = toDiscord };
 
@@ -250,10 +256,13 @@ namespace ACE.Server.Managers
                 {
                     var list = events.TryGetValue(key, out var l) ? l : new List<StuckEvent>();
 
+                    // prune every check, whatever happens next: with reminders off nothing else would (CodeRabbit #617).
+                    // LastStuck is kept apart, so pruning never changes when the area clears.
+                    var players = PlayersInWindow(list, nowUtc, settings.Window);
+
                     switch (DecideCheck(area.LastStuck, settings.ClearQuiet, nowUtc, area.LastStaffPost, settings.StaffReminder))
                     {
                         case CheckOutcome.Reminder:
-                            var players = PlayersInWindow(list, nowUtc, settings.Window);
                             if (players.Count == 0)
                                 break;   // quiet for a whole window but not yet the quiet period: nothing to list
                             area.LastStaffPost = nowUtc;
@@ -264,7 +273,8 @@ namespace ACE.Server.Managers
 
                         case CheckOutcome.Cleared:
                             active.Remove(key);
-                            PlayersInWindow(list, nowUtc, settings.Window);
+                            if (area.AnnouncedToDiscord)
+                                lastDiscordClear[key] = nowUtc;
                             if (list.Count == 0)
                                 events.Remove(key);
                             posts.Add(new Post(PostKind.Cleared,

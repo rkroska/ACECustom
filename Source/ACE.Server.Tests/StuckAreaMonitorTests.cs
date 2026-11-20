@@ -198,6 +198,53 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void DiscordCooldown_RunsFromTheClear_NotFromTheAlert()
+        {
+            // CodeRabbit #617: alert at 0, still happening to 90, clears at 110; back at 115 must stay off Discord until 170
+            var first = new List<StuckAreaMonitor.Post>();
+            var t = StartEpisode(0, first);
+            Assert.IsTrue(first.Single().ToDiscord);
+            for (var m = 10; m <= 90; m += 10)
+                Stuck(t, m, 1);
+            var clear = CheckAt(t, 110);
+            Assert.IsTrue(clear.Single(p => p.Kind == StuckAreaMonitor.PostKind.Cleared).ToDiscord);
+
+            var second = new List<StuckAreaMonitor.Post>();
+            for (uint i = 21; i <= 25; i++)
+                second.AddRange(Stuck(t, 115 + i - 21, i));
+            Assert.IsFalse(second.Single().ToDiscord, "5 minutes after Discord's all-clear: in game only");
+            CheckAt(t, 140);   // last stuck at 119: clears at 139+, not announced, so the cooldown still runs from 110
+
+            var third = new List<StuckAreaMonitor.Post>();
+            for (uint i = 31; i <= 35; i++)
+                third.AddRange(Stuck(t, 160 + i - 31, i));
+            Assert.IsFalse(third.Single().ToDiscord, "54 minutes after the announced clear: still inside the cooldown");
+            CheckAt(t, 185);
+
+            var fourth = new List<StuckAreaMonitor.Post>();
+            for (uint i = 41; i <= 45; i++)
+                fourth.AddRange(Stuck(t, 190 + i - 41, i));
+            Assert.IsTrue(fourth.Single().ToDiscord, "80 minutes after the announced clear: Discord again");
+        }
+
+        [TestMethod]
+        public void LongEpisode_WithRemindersOff_KeepsOnlyTheWindow()
+        {
+            var noStaff = new StuckAreaMonitor.Settings(5, S.Window, S.DiscordCooldown, TimeSpan.Zero, S.ClearQuiet);
+            var t = new StuckAreaMonitor.Tracker();
+            // 10 stuck loads a minute for 3 hours, checked every minute
+            for (var m = 0; m < 180; m++)
+            {
+                for (uint i = 0; i < 10; i++)
+                    t.OnStuck(0x9722, null, 100 + i, "P" + i, T0.AddMinutes(m).AddSeconds(i), noStaff);
+                t.OnCheck(T0.AddMinutes(m).AddSeconds(30), noStaff);
+            }
+
+            Assert.IsTrue(t.HasActiveAreas);
+            Assert.IsTrue(t.EventCountFor(0x9722, null) <= 31 * 10, $"kept {t.EventCountFor(0x9722, null)} events; a 30 min window holds about 300");
+        }
+
+        [TestMethod]
         public void SwitchedOffMidEpisode_StopsWithoutAFalseAllClear()
         {
             var alert = new List<StuckAreaMonitor.Post>();
