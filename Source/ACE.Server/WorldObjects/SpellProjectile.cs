@@ -1050,7 +1050,7 @@ namespace ACE.Server.WorldObjects
             // Chain charm: a jump deals its share of a normal hit (the first jump's share, then the falloff per jump).
             if (Chain != null)
                 finalDamage *= Chain.Mult;
-            // QB Deeds (13k QB): a separate x1.10 on the player's war / void spell damage against monsters
+            // QB Deeds (3k-15k QB): the separate damage step (x1.02-x1.10) on the player's war / void spell damage against monsters
             if (Spell.School == MagicSchool.WarMagic || Spell.School == MagicSchool.VoidMagic)
                 finalDamage *= Player.GetDeedsDamageMod(sourcePlayer, target);
 

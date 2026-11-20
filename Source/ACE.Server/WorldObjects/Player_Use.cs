@@ -152,6 +152,16 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // Item bounties (owner 2026-11-10; Bounty Ledger rework 2026-11-12): a bounty item used on the player's Bounty
+            // Ledger starts; used on anything else (the player, a ring as before the rework) it shows its terms and how to
+            // start it - ItemBounties.HandleUse. Before the generic type check, so every target gets the bounty's own answer.
+            if (ItemBounties.IsBountyItem(sourceItem))
+            {
+                ItemBounties.HandleUse(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
             // re-verify client checks
             // Potency tools have non-standard source/target ItemType combinations, so we skip the
             // generic type check only for confirmed valid pairings -- not for any potency tool on any target.
@@ -182,6 +192,14 @@ namespace ACE.Server.WorldObjects
             {
                 // ItemHolder::TargetCompatibleWithObject
                 SendTransientError($"Cannot use the {sourceItem.Name} with the {target.Name}");
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Arrow Enlarging / Shrinking Stones (78780432 / 78780433): the size of a Quiver look's arrows only.
+            if (ACE.Server.Entity.QuiverLook.IsArrowStone(sourceItem))
+            {
+                ACE.Server.Entity.QuiverLook.HandleArrowStone(this, sourceItem, target);
                 SendUseDoneEvent();
                 return;
             }
@@ -248,6 +266,29 @@ namespace ACE.Server.WorldObjects
             if (sourceItem.WeenieClassId == ACE.Server.Entity.PetTailoring.FilledTailoringKitWcid)
             {
                 ACE.Server.Entity.PetTailoring.HandleApply(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Quiver looks: kit on an essence -> pattern; pattern on the Universal Quiver Charm or a launcher
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.QuiverLook.KitWcid)
+            {
+                ACE.Server.Entity.QuiverLook.HandleExtract(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
+            if (sourceItem.WeenieClassId == ACE.Server.Entity.QuiverLook.PatternWcid)
+            {
+                ACE.Server.Entity.QuiverLook.HandleApply(this, sourceItem, target);
+                SendUseDoneEvent();
+                return;
+            }
+
+            // Quiver Unraveling Kit: the look and arrow size off a charm or launcher, back to normal
+            if (ACE.Server.Entity.QuiverLook.IsUnravelKit(sourceItem))
+            {
+                ACE.Server.Entity.QuiverLook.HandleUnravel(this, sourceItem, target);
                 SendUseDoneEvent();
                 return;
             }
@@ -666,6 +707,16 @@ namespace ACE.Server.WorldObjects
             {
                 SendUseDoneEvent(WeenieError.TradeItemBeingTraded);
                 //SendWeenieError(WeenieError.TradeItemBeingTraded);
+                return;
+            }
+
+            // Item bounties (rework 2026-11-12): a bounty the client sends as a plain double-click - ledgers off, or one whose
+            // use the client still has from before - shows its terms, and a second double-click starts it (ItemBounties.HandleUse).
+            // Here, before any walk to the item or its own use rules, for any weenie type; one not in the pack is told so there.
+            if (ItemBounties.IsBountyItem(item))
+            {
+                ItemBounties.HandleUse(this, item);
+                SendUseDoneEvent();
                 return;
             }
 

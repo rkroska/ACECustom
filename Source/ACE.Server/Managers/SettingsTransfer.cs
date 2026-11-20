@@ -22,8 +22,10 @@ namespace ACE.Server.Managers
         public const string Folder = "SettingsExports";
 
         /// <summary>Zone Control parts that belong to the SERVER, not the balance: an import keeps the target's own
-        /// (bounty setup, gear-lock spots, which ladder version each tier has applied) unless asked to copy them too.</summary>
-        public static readonly string[] ServerOwnedZoneKeys = { "ladderApplies", "gearLockSpots", "zoneWideBounty", "regionBounties" };
+        /// (bounty setup - including the item bounties' mystery reward tables and drop weights, which bounties already out
+        /// there depend on - gear-lock spots, which ladder version each tier has applied) unless asked to copy them too.</summary>
+        public static readonly string[] ServerOwnedZoneKeys =
+            { "ladderApplies", "gearLockSpots", "zoneWideBounty", "regionBounties", "bountyRewardTables", "bountyPlaceWeights" };
 
         /// <summary>One settings file. Zone / weapon scaling are the stores' own JSON; charms are charm -> key -> value.</summary>
         public sealed class Bundle

@@ -2,6 +2,8 @@ using System;
 
 using ACE.Entity;
 
+using CellDatIndex = ACE.Server.Physics.Common.CellDatIndex;
+
 namespace ACE.Server.Network.GameAction.Actions
 {
     public static class GameActionAutonomousPosition
@@ -25,7 +27,10 @@ namespace ACE.Server.Network.GameAction.Actions
 
             session.Player.LastContact = message.Payload.ReadByte() != 0;   // TRUE if player is currently on ground
 
-            if (session.Player.LastContact)
+            // LastGroundPos is where the z-pos check in UpdatePosition puts the player back, so a position in a
+            // landblock that doesn't exist must never be stored here (ValidateMovement refuses it as a move).
+            // (not logged here: the same position reaches ValidateMovement as a move, which logs who sent it)
+            if (session.Player.LastContact && CellDatIndex.LandblockExists(position.Cell))
                 session.Player.LastGroundPos = position;
 
             if (!session.Player.Teleporting)

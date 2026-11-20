@@ -102,6 +102,56 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void CleaveRoles_DefaultsChangeNothing()
+        {
+            // owner 2026-11-09: both new settings start at today's behaviour - cleaved hits keep the full shield bonus, no 2H extra
+            Assert.AreEqual(1.0, CharmSettingsManager.ShieldArc.At("cleaveshare", 1), 1e-9);
+            Assert.AreEqual(1.0, CharmSettingsManager.ShieldArc.At("cleaveshare", 100), 1e-9);
+            Assert.AreEqual(0.0, CharmSettingsManager.ImprovedCleave.At("cleavebonus", 1), 1e-9);
+            Assert.AreEqual(0.0, CharmSettingsManager.ImprovedCleave.At("cleavebonus", 100), 1e-9);
+            Assert.AreEqual(1.5f, Creature.ShieldArcHitMod(0.5f, 1f, cleavedHit: true), 1e-6f);
+            Assert.AreEqual(1.15f, Creature.ImprovedCleaveHitMod(0.15f, 0f, cleavedHit: true), 1e-6f);
+        }
+
+        [TestMethod]
+        public void ShieldArc_CleaveShare_OnlyCleavedHitsLoseBonus_NeverBelowNormal()
+        {
+            Assert.AreEqual(1.6f, Creature.ShieldArcHitMod(0.6f, 0f, cleavedHit: false), 1e-6f, "main target keeps the full bonus");
+            Assert.AreEqual(1.0f, Creature.ShieldArcHitMod(0.6f, 0f, cleavedHit: true), 1e-6f, "share 0 = a normal hit, never less");
+            Assert.AreEqual(1.3f, Creature.ShieldArcHitMod(0.6f, 0.5f, cleavedHit: true), 1e-6f);
+            Assert.AreEqual(1.6f, Creature.ShieldArcHitMod(0.6f, 7f, cleavedHit: true), 1e-6f, "share held to 1");
+            Assert.AreEqual(1.0f, Creature.ShieldArcHitMod(0.6f, -1f, cleavedHit: true), 1e-6f, "share held to 0");
+            Assert.AreEqual(1.6f, Creature.ShieldArcHitMod(0.6f, float.NaN, cleavedHit: true), 1e-6f, "a bad share keeps today's rule");
+            Assert.AreEqual(1.0f, Creature.ShieldArcHitMod(float.NaN, 1f, cleavedHit: false), 1e-6f);
+        }
+
+        [TestMethod]
+        public void ImprovedCleave_CleaveBonus_OnlyOnCleavedHits()
+        {
+            Assert.AreEqual(1.15f, Creature.ImprovedCleaveHitMod(0.15f, 0.4f, cleavedHit: false), 1e-6f, "main target: bonus only");
+            Assert.AreEqual(1.55f, Creature.ImprovedCleaveHitMod(0.15f, 0.4f, cleavedHit: true), 1e-6f, "cleaved: bonus + cleavebonus");
+            Assert.AreEqual(6.15f, Creature.ImprovedCleaveHitMod(0.15f, 9f, cleavedHit: true), 1e-6f, "cleavebonus held to 5");
+            Assert.AreEqual(1.15f, Creature.ImprovedCleaveHitMod(0.15f, float.NaN, cleavedHit: true), 1e-6f);
+            Assert.AreEqual(1.4f, Creature.ImprovedCleaveHitMod(float.NaN, 0.4f, cleavedHit: true), 1e-6f, "a bad bonus counts as 0");
+        }
+
+        [TestMethod]
+        public void CleaveRoles_PlayerText_IsAsciiAndMentionsTheSplit()
+        {
+            var shield = CharmSettingsManager.ShieldArc;
+            var cleave = CharmSettingsManager.ImprovedCleave;
+            Assert.IsFalse(shield.PlayerText(1).Contains("cleave"), "today's text unchanged at the default share");
+            StringAssert.StartsWith(shield.TrySet("cleaveshare", "0"), "shieldarc.cleaveshare");
+            StringAssert.Contains(shield.PlayerText(1), "not on monsters you cleave");
+            shield.TrySet("cleaveshare", "0.5");
+            StringAssert.Contains(shield.PlayerText(1), "on monsters you cleave");
+            cleave.TrySet("cleavebonus", "0.4");
+            StringAssert.Contains(cleave.PlayerText(1), "Monsters you cleave take");
+            foreach (var text in new[] { shield.PlayerText(1), shield.PlayerText(100), cleave.PlayerText(1), cleave.PlayerText(100) })
+                Assert.IsTrue(text.All(c => c < 128), $"non-ASCII in: {text}");
+        }
+
+        [TestMethod]
         public void NewCharms_AreWiredLikeTheOthers()
         {
             Assert.AreEqual(CharmAbilityRegistry.ArmorBreakerAbilityId, CharmSettingsManager.LeveledAbilityId("armorbreaker"));

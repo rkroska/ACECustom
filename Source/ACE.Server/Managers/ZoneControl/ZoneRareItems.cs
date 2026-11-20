@@ -342,7 +342,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>The numbers one kill's rare roll runs on - also what `/zcrare tier` prints.</summary>
         public sealed class Odds
         {
-            public int PlayerTier;                  // TierHitGate.PlayerTier
+            public int PlayerTier;                  // TierHitGate.RewardTier: the tier they can hit and enter
             public int OwnTier;                     // the highest enabled zone tier at or below PlayerTier
             public int KillTier;                    // the tier the loot is generated at
             public double Scale;                    // BelowTierScale
@@ -356,7 +356,7 @@ namespace ACE.Server.Managers.ZoneControl
         {
             var o = new Odds
             {
-                PlayerTier = TierHitGate.PlayerTier(player),
+                PlayerTier = TierHitGate.RewardTier(player),
                 KillTier = killTier,
                 PristineOneIn = ServerConfig.zc_rare_pristine_odds.Value,
                 AscendantOneIn = ServerConfig.zc_rare_ascendant_odds.Value,

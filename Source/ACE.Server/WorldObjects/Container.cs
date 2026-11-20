@@ -375,7 +375,7 @@ namespace ACE.Server.WorldObjects
         /// Gets side containers from cache, rebuilding if necessary.
         /// Avoids repeated LINQ allocations with large inventories.
         /// </summary>
-        private List<Container> GetCachedSideContainers()
+        protected List<Container> GetCachedSideContainers()
         {
             if (_sideContainersCacheDirty || _cachedSideContainers == null)
             {

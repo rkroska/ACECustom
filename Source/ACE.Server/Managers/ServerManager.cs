@@ -98,6 +98,8 @@ namespace ACE.Server.Managers
 
             ShutdownTime = shutdownTime;
 
+            ServerStatusAnnouncer.AnnounceRestartScheduled(ShutdownInterval);
+
             var lastNoticeTime = DateTime.UtcNow;
 
             // wait for shutdown interval to expire
@@ -113,6 +115,8 @@ namespace ACE.Server.Managers
                     // special text
                     foreach (var player in PlayerManager.GetAllOnline())
                         player.Session.WorldBroadcast($"Broadcast from System> ATTENTION - This Asheron's Call Server shut down has been cancelled.");
+
+                    ServerStatusAnnouncer.AnnounceRestartCancelled();
 
                     // break function
                     return;
@@ -218,6 +222,9 @@ namespace ACE.Server.Managers
             // after every player and offline player save has been written
             PyrealLedger.Shutdown();
             EconomyLedger.Shutdown();
+
+            // everything is saved: tell Discord this was planned before the process goes away
+            ServerStatusAnnouncer.AnnounceOfflinePlanned();
 
             // Write exit to console/log
             log.Info($"Exiting at {DateTime.UtcNow}");

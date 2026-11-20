@@ -724,11 +724,12 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// ILT LUM TOKENS (owner 2026-10-05: "make those items bankable and auto convert to lum, just like how peas auto convert to
-        /// pyreals"): each token and the NPC that pays for it. ILT tokens only - their NPC turn-in is a FLAT IncrementInt64Stat on
-        /// BankedLuminance, so the bank can pay exactly the same. Retail lum gems stay NPC-only: their AwardLuminance turn-in is
-        /// multiplied by quest count / enlightenment, which a flat bank deposit would quietly undercut.
+        /// pyreals"): each token and the NPC whose Give emote holds its value, or no NPC (null) for a token whose value is in its
+        /// own Use emote. ILT tokens only - the value is a FLAT IncrementInt64Stat on BankedLuminance, so the bank can pay exactly
+        /// the same. Retail lum gems stay NPC-only: their AwardLuminance turn-in is multiplied by quest count / enlightenment, which
+        /// a flat bank deposit would quietly undercut.
         /// </summary>
-        private static readonly (uint Token, uint Npc)[] LumTokens =
+        private static readonly (uint Token, uint? Npc)[] LumTokens =
         {
             (227190187, 12050),     // Thaelaryn Token of Greater Luminance -> Agent of the Arcanum
             (300101211, 12050),     // Thaelaryn Token of Luminance -> Agent of the Arcanum
@@ -746,19 +747,50 @@ namespace ACE.Server.WorldObjects
             (777708008, 12050),     // 200B
             (777708009, 12050),     // 250B
             (777708010, 12050),     // 500B
+            // EVENT LUM TOKENS (Lum or Die event, 2026-11-10: "/b d" for the 1B / 3B / 5B tokens): no NPC takes these. Their value
+            // is in their OWN Use emote (Npc null). A click no longer runs that emote (GenericObject.RunsUseEmote): it goes
+            // through UseLumToken like the bounty tokens, so a click and /b d share one locked, ledgered, saved path. Nothing in
+            // the world database changes.
+            (99980076, null),   // Event Lum Token: 1B
+            (99980078, null),   // Event Lum Token: 3B
+            (99980079, null),   // Event Lum Token: 5B
         };
+
+        /// <summary>Every lum token the bank takes, as a set for the per-use checks and deposit-all. Declared after LumTokens, so
+        /// it is built from it (static fields initialise in order within this file).</summary>
+        private static readonly HashSet<uint> LumTokenSet = new HashSet<uint>(LumTokens.Select(t => t.Token));
+
+        /// <summary>The lum tokens whose value is in their own Use emote (no NPC), as a set for the per-use checks.</summary>
+        private static readonly HashSet<uint> OwnUseEmoteTokenSet = new HashSet<uint>(LumTokens.Where(t => t.Npc == null).Select(t => t.Token));
 
         /// <summary>Every lum token the bank takes (the economy ledger counts the same ones).</summary>
         public static IEnumerable<uint> LumTokenWcids => LumTokens.Select(t => t.Token);
 
+        /// <summary>True when the bank takes this weenie as a lum token (/b d, deposit-all, and use from the pack).</summary>
+        /// <param name="wcid">The item's weenie class id.</param>
+        /// <returns>True for every weenie on the LumTokens list.</returns>
+        public static bool IsLumToken(uint wcid) => LumTokenSet.Contains(wcid);
+
         /// <summary>
-        /// BOUNTY REWARD TOKENS, used from the pack (owner 2026-11-02: "Useable item, so long as there is no risk of dup or any
-        /// exploitable way"): exactly what /b d does for ONE token - the NPC's value, read from its Give emote (LumTokenValue), goes
-        /// to BankedLuminance. Under the bank lock the token is consumed FIRST and the lum only added when that worked, then the
+        /// True for a lum token whose value is written in its own Use emote rather than an NPC's Give emote (the event lum tokens).
+        /// A click doesn't run that emote (GenericObject.RunsUseEmote): it goes to UseLumToken instead, which reads the value
+        /// from the emote (LumTokenValue). Running both would pay twice, and the emote alone would bank outside the bank lock and
+        /// the economy ledger (its delete records no item leaving, so the ledger would count the luminance twice).
+        /// </summary>
+        /// <param name="wcid">The item's weenie class id.</param>
+        /// <returns>True when the token is on the LumTokens list with no NPC.</returns>
+        public static bool IsOwnUseEmoteLumToken(uint wcid) => OwnUseEmoteTokenSet.Contains(wcid);
+
+        /// <summary>
+        /// A lum token used from the pack (owner 2026-11-02: "Useable item, so long as there is no risk of dup or any exploitable
+        /// way"): exactly what /b d does for ONE token - its value (LumTokenValue: the NPC's Give emote, or the token's own Use emote)
+        /// goes to BankedLuminance. Under the bank lock the token is consumed FIRST and the lum only added when that worked, then the
         /// player is saved at once - the same order and lock as DepositLuminanceTokens, so a double-click, a token that left the
         /// pack, or one in an open trade window can never pay twice or pay without being spent. GenericObject.ActOnUse calls it
-        /// for an item on the LumTokens list that is marked usable from the pack (ItemUseable Contained: the bounty tokens).
+        /// for an item on the LumTokens list that is marked usable from the pack (ItemUseable Contained: the bounty tokens and the
+        /// event lum tokens).
         /// </summary>
+        /// <param name="item">The token the player used.</param>
         public void UseLumToken(WorldObject item)
         {
             void Tell(string text) => Session?.Network.EnqueueSend(new GameMessageSystemChat(text, ChatMessageType.Broadcast));
@@ -766,7 +798,10 @@ namespace ACE.Server.WorldObjects
             var value = LumTokenValue(item.WeenieClassId);
             if (value <= 0)
             {
-                Tell($"The {item.Name} can not be used right now. Hand it to an Agent of the Arcanum instead.");
+                // a token with no NPC can't be handed in anywhere, so don't send the player to one
+                Tell(IsOwnUseEmoteLumToken(item.WeenieClassId)
+                    ? $"The {item.Name} can not be used right now."
+                    : $"The {item.Name} can not be used right now. Hand it to an Agent of the Arcanum instead.");
                 return;
             }
             if (IsBusy)
@@ -815,20 +850,31 @@ namespace ACE.Server.WorldObjects
             Tell($"{item.Name}: +{ACE.Server.Command.ShortNumber.Amount(value, "Lum")} banked. Banked Lum: {ACE.Server.Command.ShortNumber.Both(after)}");
         }
 
-        /// <summary>The lum one token pays at its NPC: the NPC's own Give emote for that wcid, its IncrementInt64Stat on
-        /// BankedLuminance. Read from the cached weenie, so the bank always pays what the NPC pays (0 = not found - never deposited).</summary>
+        /// <summary>The lum one token pays: its NPC's Give emote for that wcid, or for a token with no NPC (the event lum tokens) the
+        /// token's own Use emote - in both cases the first IncrementInt64Stat on BankedLuminance found there. Read from the cached
+        /// weenie, so the bank pays what a hand-in pays and what the token's emote says (0 = not found - never deposited).</summary>
+        /// <param name="tokenWcid">The token's weenie class id.</param>
+        /// <returns>The luminance one token is worth, or 0 when it is not a bankable token or its emote can't be found.</returns>
         public static long LumTokenValue(uint tokenWcid)
         {
             foreach (var (token, npc) in LumTokens)
             {
                 if (token != tokenWcid) continue;
-                var emotes = DatabaseManager.World.GetCachedWeenie(npc)?.PropertiesEmote;
+
+                // where the value lives: the token's own Use emote (no NPC), or the NPC's Give emote for this token
+                var ownEmote = npc == null;
+                var emotes = DatabaseManager.World.GetCachedWeenie(npc ?? tokenWcid)?.PropertiesEmote;
                 if (emotes == null) return 0;
                 foreach (var e in emotes)
-                    if (e.Category == EmoteCategory.Give && e.WeenieClassId == tokenWcid)
-                        foreach (var a in e.PropertiesEmoteAction)
-                            if (a.Type == (uint)EmoteType.IncrementInt64Stat && a.Stat == (int)PropertyInt64.BankedLuminance && (a.Amount64 ?? 0) > 0)
-                                return a.Amount64.Value;
+                {
+                    var match = ownEmote
+                        ? e.Category == EmoteCategory.Use
+                        : (e.Category == EmoteCategory.Give && e.WeenieClassId == tokenWcid);
+                    if (!match) continue;
+                    foreach (var a in e.PropertiesEmoteAction)
+                        if (a.Type == (uint)EmoteType.IncrementInt64Stat && a.Stat == (int)PropertyInt64.BankedLuminance && (a.Amount64 ?? 0) > 0)
+                            return a.Amount64.Value;
+                }
                 return 0;
             }
             return 0;
@@ -844,10 +890,13 @@ namespace ACE.Server.WorldObjects
             return false;
         }
 
-        /// <summary>`/b lum` and deposit-all: every ILT lum token in the packs is consumed and its NPC value goes to BankedLuminance.
+        /// <summary>`/b lum` and deposit-all: every ILT lum token in the packs is consumed and its value (LumTokenValue) goes to BankedLuminance.
         /// Saves at once (the token is gone from the shard the moment it is consumed, so the lum must not wait for the 10-minute save).
         /// Returns the lum deposited. <paramref name="quietIfNone"/>: no "none found" line (deposit-all); <paramref name="showTotal"/>:
         /// a tokens-total line before Ending Banked Lum.</summary>
+        /// <param name="quietIfNone">True to say nothing when the packs hold no tokens (deposit-all).</param>
+        /// <param name="showTotal">True to add a tokens-total line before Ending Banked Lum.</param>
+        /// <returns>The luminance deposited.</returns>
         public long DepositLuminanceTokens(bool quietIfNone = false, bool showTotal = false)
         {
             long total = 0, tokensTotal = 0;
@@ -860,8 +909,7 @@ namespace ACE.Server.WorldObjects
                 before = oldBalance;
                 // one walk of the packs for every token kind; never a token in an open trade window, nor inside a pack that is
                 // there - banking it would hand the trade partner nothing for it
-                var tokenWcids = new HashSet<uint>(LumTokens.Select(t => t.Token));
-                var tokensHeld = GetAllPossessionsDeep().Where(i => tokenWcids.Contains(i.WeenieClassId) && i.Wielder == null).ToList();
+                var tokensHeld = GetAllPossessionsDeep().Where(i => LumTokenSet.Contains(i.WeenieClassId) && i.Wielder == null).ToList();
                 foreach (var traded in tokensHeld.Where(InTradeWindow))
                     skipped.Add($"{(long)(traded.StackSize ?? 1):N0} x {traded.Name} (in your trade window)");
                 var byWcid = tokensHeld.Where(i => !InTradeWindow(i))

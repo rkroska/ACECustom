@@ -118,6 +118,10 @@ namespace ACE.Server.WorldObjects
 
             SetProjectilePhysicsState(proj, target, velocity);
 
+            // Quiver looks (a launcher's or the Universal Quiver charm's): set AFTER the physics object is built, so the
+            // server keeps the arrow's own collision shape; clients get the look in the create message.
+            player?.ApplyQuiverLook(proj, weapon, ammo);
+
             var success = LandblockManager.AddObject(proj);
 
             if (!success || proj.PhysicsObj == null)
@@ -665,6 +669,9 @@ namespace ACE.Server.WorldObjects
                         continue;
                     }
                     SetProjectilePhysicsState(splitProj, splitTarget, splitVelocity);
+
+                    // Quiver looks: split arrows look like the main shot (after the physics object, as above)
+                    (this as Player)?.ApplyQuiverLook(splitProj, weapon, ammo);
                     
                     // Removed excessive debug logging
                     

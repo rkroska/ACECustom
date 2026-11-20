@@ -36,7 +36,8 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// The Shield Arc charm's damage (owner 2026-10-22): a player's melee hit on a monster while a shield is in hand
-        /// deals 1 + damage times as much. 1 when the charm does not apply - PvP, no shield, a missile or spell attack, no
+        /// deals 1 + damage times as much; a cleaved hit gets only 'cleaveshare' of the damage (owner 2026-11-09: the bonus is
+        /// for the main target, the two-hander owns pack damage). 1 when the charm does not apply - PvP, no shield, a missile or spell attack, no
         /// charm; with t11only the shield must be T11+.
         /// </summary>
         public float ShieldArcDamageMod(WorldObject weapon, Creature defender)
@@ -60,8 +61,20 @@ namespace ACE.Server.WorldObjects
             if (level < 1)
                 return 1f;
 
-            var bonus = cs.NumberAt("damage", level);
-            return float.IsFinite(bonus) ? 1f + Math.Clamp(bonus, 0f, 5f) : 1f;
+            return ShieldArcHitMod(cs.NumberAt("damage", level), cs.NumberAt("cleaveshare", level), DealingCleavedHit);
+        }
+
+        /// <summary>The Shield Arc multiplier for one hit (owner 2026-11-09): 1 + damage on the main target, 1 + damage x
+        /// cleaveshare on a cleaved one. damage held to 0..5, cleaveshare to 0..1; a damage that is not a number gives 1, a
+        /// share that is not a number counts as 1 (today's rule).</summary>
+        public static float ShieldArcHitMod(float damage, float cleaveShare, bool cleavedHit)
+        {
+            if (!float.IsFinite(damage))
+                return 1f;
+            var bonus = Math.Clamp(damage, 0f, 5f);
+            if (cleavedHit)
+                bonus *= float.IsFinite(cleaveShare) ? Math.Clamp(cleaveShare, 0f, 1f) : 1f;
+            return 1f + bonus;
         }
 
         /// <summary>

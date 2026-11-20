@@ -34,7 +34,7 @@ namespace ACE.Server.WorldObjects
     /// Deeds takes the spell, the gear's copy comes back when Deeds no longer gives it (SyncEquippedCopies). A stronger spell
     /// on gear is a different spell and still wins its category.
     ///
-    /// PvE only: the T12 / T13 / T14 effects apply only against a non-player creature.
+    /// PvE only: the damage steps (T3 / T6 / T9 / T12 / T15) and the T12 / T13 / T14 effects apply only against a non-player creature.
     ///
     /// The hooks in shared files read DeedsTier only - a cached int set at login, on /deeds on / off and when a quest stamp
     /// moves the QB across a tier.
@@ -48,13 +48,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public const uint DeedsCasterId = 0x00DEED00;
 
-        /// <summary>/rebuff waits this long after a monster or trap dispels one of the player's buffs.</summary>
-        public const double DeedsRebuffDispelLockoutSeconds = 120.0;
+        /// <summary>/rebuff waits this long after a monster or trap dispels one of the player's buffs - LIVE
+        /// (ServerConfig.deeds_rebuff_lockout, /modifydouble), never below 0.</summary>
+        public static double DeedsRebuffDispelLockoutSeconds => Math.Max(0.0, ACE.Server.Managers.ServerConfig.deeds_rebuff_lockout.Value);
 
         /// <summary>When another caster (monster, trap, player) last dispelled a beneficial enchantment off this player.</summary>
         public double LastHostileDispelTimestamp { get; set; }
 
-        /// <summary>The highest Deeds tier in effect: 0 when Deeds is OFF, else TierFor(QB). Every hook reads this.</summary>
+        /// <summary>The highest Deeds tier in effect: 0 when Deeds is OFF, else CappedTierFor(QB) (the QB's tier under the
+        /// server cap deeds_max_tier). Every hook reads this.</summary>
         public int DeedsTier { get; private set; }
 
         /// <summary>The player's Deeds setting: ON unless they typed /deeds off (saved on the character).</summary>
@@ -79,7 +81,7 @@ namespace ACE.Server.WorldObjects
         public long ReadDeedsQb() => Account?.CachedQuestBonusCount ?? QuestCompletionCount ?? 0;
 
         /// <summary>The tier the player is owed right now (0 when Deeds is OFF) - read live, so it is right before the first refresh.</summary>
-        private int OwedDeedsTier() => DeedsEnabled ? DeedsTiers.TierFor(ReadDeedsQb()) : 0;
+        private int OwedDeedsTier() => DeedsEnabled ? DeedsTiers.CappedTierFor(ReadDeedsQb()) : 0;
 
         /// <summary>A Deeds enchantment: a spell in the Deeds set, with the Deeds caster id, permanent.</summary>
         public static bool IsDeedsEnchantment(PropertiesEnchantmentRegistry entry)
@@ -118,7 +120,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Called at login (after AuditItemSpells), on /deeds on / off and whenever a quest stamp may have moved the QB. Saves
         /// the QB on the character; when the owed tier changed, makes the Deeds buffs exactly that tier's. Cheap when nothing
-        /// changed (one cached-count read and an int compare).
+        /// changed (one account QB count and an int compare).
         /// </summary>
         public void RefreshDeeds(bool login = false)
         {
@@ -126,7 +128,7 @@ namespace ACE.Server.WorldObjects
             if (DeedsQb != qb)
                 DeedsQb = qb;
 
-            var tier = DeedsEnabled ? DeedsTiers.TierFor(qb) : 0;
+            var tier = DeedsEnabled ? DeedsTiers.CappedTierFor(qb) : 0;
             if (tier == DeedsTier && !login && !deedsSyncPending)
             {
                 RebakeDeedsSurges();   // the life augs may have moved since (an aug bought, a Triune Weave)
@@ -153,6 +155,28 @@ namespace ACE.Server.WorldObjects
             // (CodeRabbit 10-22: the first tier in a session too - 999 -> 1,000 QB says so; login / on-off stay silent)
             if (!login && DeedsEnabled && tier > prevTier)
                 SendMessage($"Your Deeds grow stronger. Your {qb:N0} QB now unlocks {tier} of {DeedsTiers.MaxTier} tiers.", ChatMessageType.Advancement);
+            // (review 11-10) a lowered server cap takes buffs away - say so instead of dropping them silently
+            else if (!login && DeedsEnabled && tier < prevTier)
+                SendMessage($"Your Deeds now give {tier} of {DeedsTiers.MaxTier} tiers.{DeedsCapNote(qb)}", ChatMessageType.Advancement);
+        }
+
+        /// <summary>When the heartbeat last compared the owed tier (DeedsHeartbeatTick).</summary>
+        private double lastDeedsTierCheck;
+
+        /// <summary>
+        /// Heartbeat: moves an online player to the tier owed NOW when it differs from DeedsTier - the live server cap
+        /// (deeds_max_tier) changed, or the QB moved by a path that runs no RefreshDeeds. Every 5 s, one account QB count and
+        /// an int compare; RefreshDeeds (the buff sync) only runs on a change.
+        /// </summary>
+        public void DeedsHeartbeatTick(double currentUnixTime)
+        {
+            if (currentUnixTime >= lastDeedsTierCheck && currentUnixTime - lastDeedsTierCheck < 5.0)   // (a time before the last one - a clock step back - checks at once)
+                return;
+            lastDeedsTierCheck = currentUnixTime;
+            // a tier CHANGE only - never deedsSyncPending (review 11-10): a sync that keeps failing would re-run and log every
+            // 5 s; it retries on the next stamp / login / command, as it always did
+            if (OwedDeedsTier() != DeedsTier)
+                RefreshDeeds();
         }
 
         /// <summary>The first layer of a spell that is not the Deeds one - Asheron's Favor shares 4024 / 3811 and dispels its own
@@ -165,7 +189,8 @@ namespace ACE.Server.WorldObjects
         {
             DeedsEnabled = enabled;
             RefreshDeeds(login: true);   // (login: always sync, no "grows stronger" line)
-            SendMessage($"Your Deeds bonuses are {(enabled ? "ON" : "OFF")}. Your {ReadDeedsQb():N0} QB {(enabled ? "unlocks" : "would unlock")} {DeedsTiers.TierFor(ReadDeedsQb())} of {DeedsTiers.MaxTier} tiers.");
+            var qb = ReadDeedsQb();
+            SendMessage($"Your Deeds bonuses are {(enabled ? "ON" : "OFF")}. Your {qb:N0} QB {(enabled ? "unlocks" : "would unlock")} {DeedsTiers.CappedTierFor(qb)} of {DeedsTiers.MaxTier} tiers.{DeedsCapNote(qb)}");
         }
 
         /// <summary>
@@ -356,9 +381,14 @@ namespace ACE.Server.WorldObjects
                 SendMessage("Your Deeds bonuses are OFF. Type /deeds on to turn them on.");
                 return;
             }
+            // the tier as owed NOW: a QB that moved since the last refresh (the heartbeat catches it within 5 s) must not refuse
+            // with "unlocks at 10,000 QB. You have 12,345." (review 11-10). Only on a CHANGE, like the heartbeat: a sync that keeps
+            // failing must not re-run (and log) on every press.
+            if (OwedDeedsTier() != DeedsTier)
+                RefreshDeeds();
             if (DeedsTier < DeedsTiers.RebuffTier)
             {
-                SendMessage($"The Deedkeeper's Writ unlocks at {DeedsTiers.RebuffTier * DeedsTiers.QbPerTier:N0} QB. You have {ReadDeedsQb():N0}.");
+                SendMessage(DeedsTierRefusal("The Deedkeeper's Writ"));
                 return;
             }
             if (GetInventoryItemsOfWCID(DeedsTiers.DeedkeepersWritWcid).Count > 0)
@@ -402,20 +432,43 @@ namespace ACE.Server.WorldObjects
         /// <summary>PvE only: a Deeds combat effect applies against a creature that is not a player.</summary>
         private static bool IsDeedsTarget(WorldObject target) => target is Creature && target is not Player;
 
-        /// <summary>T13: the separate x1.10 damage term for every attack style against monsters (1.0 for anyone else / vs players).</summary>
+        /// <summary>T3 / T6 / T9 / T12 / T15: the separate damage term for every attack style against monsters, +2 pct per step tier
+        /// reached (x1.02 .. x1.10, DeedsTiers.DamageMultiplierFor). 1.0 for anyone else / vs players.</summary>
         public static float GetDeedsDamageMod(WorldObject attacker, WorldObject defender)
-            => attacker is Player p && p.DeedsTier >= DeedsTiers.DamageTier && IsDeedsTarget(defender) ? DeedsTiers.DamageMultiplier : 1.0f;
+            => attacker is Player p && p.DeedsTier > 0 && IsDeedsTarget(defender) ? DeedsTiers.DamageMultiplierFor(p.DeedsTier) : 1.0f;
+
+        /// <summary>T13: Cheat Death against a monster's killing blow (Player_Combat.ZcTryCheatDeath - the boots special's window
+        /// and cooldown, shared with the boots, every area). No save from a player, a trap, a zone tick or a fall (source not a monster).</summary>
+        public bool HasDeedsCheatDeath(WorldObject source)
+            => DeedsTier >= DeedsTiers.CheatDeathTier && DeedsTiers.CheatDeathEnabled && IsDeedsTarget(source)
+                && !(source is Pet { P_PetOwner: not null });   // a player's pet's kill is a player's kill (review 11-10)
 
         /// <summary>
         /// T14: +100 pct of the BASE crit chance, ADDED on top of the crit chance from every
         /// other source - the caller passes its own path's base (before Biting Strike / ratings / buffs). 0 for anyone else.
         /// </summary>
         public static float GetDeedsBaseCritBonus(Creature wielder, Creature target, float baseCritChance)
-            => wielder is Player p && p.DeedsTier >= DeedsTiers.CritTier && IsDeedsTarget(target) ? baseCritChance : 0.0f;
+            => wielder is Player p && p.DeedsTier >= DeedsTiers.CritTier && IsDeedsTarget(target) ? baseCritChance * DeedsCritBaseMult : 0.0f;
 
-        /// <summary>T15: the kill's loot is rolled with luck (the killer from the damage history, a pet's owner included).</summary>
+        /// <summary>T14: the share of the base crit chance added again, LIVE (ServerConfig.deeds_crit_base_mult), never below 0.</summary>
+        public static float DeedsCritBaseMult => (float)Math.Clamp(ACE.Server.Managers.ServerConfig.deeds_crit_base_mult.Value, 0.0, 10.0);   // clamped in double (1e39 -> float +Inf)
+
+        /// <summary>T15: the killer has loot luck (the killer from the damage history, a pet's owner included).</summary>
         public static bool HasDeedsLootLuck(DamageHistoryInfo killer)
             => killer?.TryGetPetOwnerOrAttacker() is Player p && p.DeedsTier >= DeedsTiers.LootLuckTier;
+
+        /// <summary>T15: this kill's loot is rolled with luck - the killer has it (HasDeedsLootLuck) and the live
+        /// deeds_loot_luck_chance roll passes (one roll per kill; 1.0 = every kill, no roll taken).</summary>
+        public static bool RollDeedsLootLuck(DamageHistoryInfo killer)
+        {
+            if (!HasDeedsLootLuck(killer))
+                return false;
+            var chance = DeedsLootLuckChance;
+            return chance >= 1.0 || (chance > 0.0 && ThreadSafeRandom.Next(0.0f, 1.0f) < chance);
+        }
+
+        /// <summary>T15: the live loot luck chance per kill, clamped to 0..1.</summary>
+        public static double DeedsLootLuckChance => Math.Clamp(ACE.Server.Managers.ServerConfig.deeds_loot_luck_chance.Value, 0.0, 1.0);
 
         /// <summary>T12: the attack target a Breath of Renewal roll is allowed for (see TryDeedsBreathOfRenewal).</summary>
         public bool DeedsBreathTargetOk(WorldObject attackTarget)
@@ -507,7 +560,7 @@ namespace ACE.Server.WorldObjects
         // -- commands ---------------------------------------------------------------------------------------------
 
         /// <summary>/rebuff (10k QB): every known level 8 self buff (Shield Mastery too), Impenetrability and the banes on the
-        /// equipped armor / shield at once (CastDeedsRebuff). Refused for 120 s after a monster or trap dispelled the player.</summary>
+        /// equipped armor / shield at once (CastDeedsRebuff). Refused for deeds_rebuff_lockout seconds after a monster or trap dispelled the player.</summary>
         public void HandleDeedsRebuff()
         {
             if (!DeedsEnabled)
@@ -516,9 +569,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // the tier as owed NOW (see HandleDeedsItem): never a stale "unlocks at 10,000 QB. You have 12,345." Only on a change.
+            if (OwedDeedsTier() != DeedsTier)
+                RefreshDeeds();
             if (DeedsTier < DeedsTiers.RebuffTier)
             {
-                SendMessage($"/rebuff unlocks at {DeedsTiers.RebuffTier * DeedsTiers.QbPerTier:N0} QB. You have {ReadDeedsQb():N0}.");
+                SendMessage(DeedsTierRefusal("/rebuff"));
                 return;
             }
 
@@ -590,7 +646,7 @@ namespace ACE.Server.WorldObjects
             SendMessage("You feel a surge of ultimate blessings flow through you and all your gear!");
         }
 
-        /// <summary>Seconds left on the /rebuff dispel lockout (0 when free): 120 s after a monster or trap dispelled a buff.</summary>
+        /// <summary>Seconds left on the /rebuff dispel lockout (0 when free): deeds_rebuff_lockout seconds after a monster or trap dispelled a buff.</summary>
         public int DeedsRebuffLockoutRemaining()
         {
             var elapsed = Time.GetUnixTime() - LastHostileDispelTimestamp;
@@ -604,19 +660,22 @@ namespace ACE.Server.WorldObjects
         public List<string> BuildDeedsList()
         {
             var qb = ReadDeedsQb();
-            var reached = DeedsTiers.TierFor(qb);
-            var next = reached < DeedsTiers.MaxTier
-                ? $" Next tier at {(reached + 1) * DeedsTiers.QbPerTier:N0} QB."
+            var byQb = DeedsTiers.TierFor(qb);
+            var reached = DeedsTiers.CappedTierFor(qb);
+            var next = byQb < DeedsTiers.MaxTier
+                ? $" Next tier at {(byQb + 1) * DeedsTiers.QbPerTier:N0} QB."
                 : "";
 
             var lines = new List<string>
             {
-                $"Your QB: {qb:N0} - Deeds bonuses are {(DeedsEnabled ? "ON" : "OFF")}, {reached} of {DeedsTiers.MaxTier} tiers unlocked.{next}",
+                $"Your QB: {qb:N0} - Deeds bonuses are {(DeedsEnabled ? "ON" : "OFF")}, {reached} of {DeedsTiers.MaxTier} tiers unlocked.{next}{DeedsCapNote(qb)}",
             };
 
             foreach (var tier in DeedsTiers.Tiers)
             {
-                lines.Add($"{tier.Qb} QB{(qb >= tier.Qb ? " (unlocked)" : "")}");
+                // a tier the QB reaches but the server cap (deeds_max_tier) holds back says so
+                var mark = qb < tier.Qb ? "" : tier.Number <= reached ? " (unlocked)" : " (held back by the server cap)";
+                lines.Add($"{tier.Qb} QB{mark}");
 
                 foreach (var spellId in tier.Spells)
                     lines.Add($" * {DeedsTiers.SpellName(spellId)}");
@@ -626,10 +685,30 @@ namespace ACE.Server.WorldObjects
                     lines.Add($" * {line}");
                 if (tier.Number == DeedsTiers.BreathTier)
                     lines.Add($" * ({DeedsBreathChance * 100:0.#} percent chance on each of your attacks)");
+                // the live-setting lines (deeds_damage_step, deeds_cheatdeath_immunity / _cooldown)
+                if (DeedsTiers.DamageStepTiers.Contains(tier.Number))
+                    lines.Add($" * {DeedsTiers.DamageStepLine(tier.Number)}");
+                if (tier.Number == DeedsTiers.CheatDeathTier)
+                    lines.Add($" * {DeedsTiers.CheatDeathLine()}");
             }
 
             return lines;
         }
+
+        /// <summary>The refusal below the /rebuff tier: the QB it needs, or the server cap when the QB is already there (review 11-10).</summary>
+        private string DeedsTierRefusal(string what)
+        {
+            // the cap is the reason only while it sits below the /rebuff tier (fix-delta review: a stale tier must never blame a
+            // cap of 15, and a QB below 10k under a cap of 5 must not promise that 10k unlocks it)
+            var qb = ReadDeedsQb();
+            if (DeedsTiers.ServerCap < DeedsTiers.RebuffTier)
+                return $"{what} needs Deeds tier {DeedsTiers.RebuffTier}. The server caps Deeds at tier {DeedsTiers.ServerCap} right now.";
+            return $"{what} unlocks at {DeedsTiers.RebuffTier * DeedsTiers.QbPerTier:N0} QB. You have {qb:N0}.";
+        }
+
+        /// <summary>" The server caps Deeds at tier N right now." when the cap holds this QB back, else "".</summary>
+        private static string DeedsCapNote(long qb)
+            => DeedsTiers.TierFor(qb) > DeedsTiers.ServerCap ? $" The server caps Deeds at tier {DeedsTiers.ServerCap} right now." : "";
 
         /// <summary>Sends BuildDeedsList to the player, one chat message per tier (the status line first).</summary>
         public void ShowDeedsList()

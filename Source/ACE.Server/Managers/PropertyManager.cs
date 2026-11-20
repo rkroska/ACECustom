@@ -59,6 +59,8 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly Dictionary<string, string> RenamedKeys = BuildRenamedKeys();
 
+        /// <summary>The old-name -> new-name map behind <see cref="RenamedKeys"/>: the v11_ -> zc_ endgame keys, and #595's
+        /// Prestige Coin falloff pace (same meaning under the kill cap's name).</summary>
         private static Dictionary<string, string> BuildRenamedKeys()
         {
             var d = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -73,6 +75,9 @@ namespace ACE.Server.Managers
                 "mob_dmg_taken_enabled", "mob_dmg_taken_min_variation", "mob_dmg_taken_mult", "mob_dmg_taken_boss_mult", "mob_dmg_taken_floor",
             })
                 d["v11_" + s] = "zc_" + s;
+
+            // Prestige Coin kill cap (2026-11-17): the falloff's full-rate pace from #595, same meaning under its new name
+            d["zc_pcoin_falloff_kills_per_hour"] = "zc_kill_cap_start";
             return d;
         }
 
@@ -189,6 +194,15 @@ namespace ACE.Server.Managers
                 if (_modifiedDoubleProps.ContainsKey(CanonicalKey(c.Key)) || Shadowed(c.Key)) continue;
                 SetValue(c.Key, c.Value, markModified: false);
             }
+            // the Prestige Coin kill cap (2026-11-17) replaced #595's falloff share zc_pcoin_falloff_mult (the share KEPT past the
+            // pace; 1 = no falloff) with zc_kill_cap_reduction (the share CUT at each step) - not a plain rename. A server that
+            // stored the old share keeps its meaning (1 stays "no cut"): written ONCE as 1 - share (markModified), so later loads
+            // read zc_kill_cap_reduction itself, as #539 did for the combat switch. (#595's zc_pcoin_falloff_reserve has no
+            // counterpart in the coin hour; a stored row is ignored.)
+            var legacyFalloffShare = doubles.FirstOrDefault(c => c.Key == "zc_pcoin_falloff_mult");
+            if (legacyFalloffShare != null && double.IsFinite(legacyFalloffShare.Value)
+                && !storedKeys.Contains(nameof(zc_kill_cap_reduction)) && !_modifiedDoubleProps.ContainsKey(nameof(zc_kill_cap_reduction)))
+                SetValue(nameof(zc_kill_cap_reduction), 1.0 - Math.Clamp(legacyFalloffShare.Value, 0.0, 1.0), markModified: true);
 
             foreach (ConfigPropertiesString c in strings)
             {
@@ -486,6 +500,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> fellow_kt_landblock { get; private set; } = new(false, "if TRUE, fellowship kill tasks will share with landblock range (192 distance radius, or entire dungeon)");
         public static ConfigProperty<bool> fellow_quest_bonus { get; private set; } = new(false, "if TRUE, applies EvenShare formula to fellowship quest reward XP (300% max bonus, defaults to false in retail)");
         public static ConfigProperty<bool> fellowship_additive { get; private set; } = new ConfigProperty<bool>(false, "changes the calculation of fellowship sharing");
+        public static ConfigProperty<long> fellowship_max_size { get; private set; } = new(0, "the most members a fellowship may have, auto fellowships included; 0 = no limit (owner 2026-11-05). Live: /modifylong fellowship_max_size <n>. Lowering it never removes anyone: a fellowship over the new size just takes nobody new");
         public static ConfigProperty<bool> fellowship_xp_debug_logging { get; private set; } = new(false, "if enabled, logs detailed fellowship XP distance check statistics every 10 seconds for performance monitoring");
         public static ConfigProperty<bool> fix_chest_missing_inventory_window { get; private set; } = new(false, "Very non-standard fix. This fixes an acclient bug where unlocking a chest, and then quickly opening it before the client has received the Locked=false update from server can result in the chest opening, but with the chest inventory window not displaying. Bug has a higher chance of appearing with more network latency.");
         public static ConfigProperty<bool> gateway_ties_summonable { get; private set; } = new(true, "if disabled, players cannot summon ties from gateways. defaults to enabled, as in retail");
@@ -540,6 +555,13 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> deeds_breath_chance { get; private set; } = new(0.20, "QB Deeds tier 12: the chance (0 to 1) that one of the player's attacks on a monster casts Breath of Renewal on them. One roll per swing, shot or harmful cast - extra strikes, cleave targets and projectiles never add rolls. 0 = off.");
         public static ConfigProperty<double> deeds_breath_heal_mult { get; private set; } = new(0.6, "QB Deeds tier 12: multiplier on Breath of Renewal's own 500-750 heal when the Deeds proc casts it (0.6 = 300-450). Healing ratings still apply after it. The Paragon armor gem's Breath of Renewal is not affected. 1.0 = the spell's full heal.");
         public static ConfigProperty<double> deeds_breath_life_aug_mult { get; private set; } = new(0.02, "QB Deeds tier 12: the share of the player's life augs (Luminance life augs + Triune Weave) added to a Deeds Breath of Renewal heal. 0.02 = 3,000 augs add 60. Every other heal still adds the full count. 1.0 = the full count.");
+        public static ConfigProperty<double> deeds_damage_step { get; private set; } = new(0.02, "QB Deeds damage steps: the damage added at EACH of tiers 3, 6, 9, 12 and 15 (0.02 = +2 pct per step, x1.10 at 15k QB). Every attack style against monsters, its own multiplier on top of everything else. 0 = off. Live: /modifydouble deeds_damage_step 0.03");
+        public static ConfigProperty<double> deeds_cheatdeath_immunity { get; private set; } = new(5.0, "QB Deeds tier 13 Cheat Death: seconds of immunity to all damage after a monster's killing blow leaves the player at 1 HP. Must stay BELOW deeds_cheatdeath_cooldown or the Deeds save is off. (A save from Cheat Death BOOTS uses the zone's cheatdeath_immunity instead.)");
+        public static ConfigProperty<double> deeds_cheatdeath_cooldown { get; private set; } = new(600.0, "QB Deeds tier 13 Cheat Death: seconds before it can save the player again, counted from the save. The timer is shared with Cheat Death boots. At or below deeds_cheatdeath_immunity = the Deeds save is OFF (0 = the live off switch). (A save from the boots uses the zone's cheatdeath_cooldown instead.)");
+        public static ConfigProperty<double> deeds_crit_base_mult { get; private set; } = new(1.0, "QB Deeds tier 14: how much of the attack's BASE crit chance is added again against monsters. 1.0 = the base once more (10 pct -> 20 pct, Biting Strike 25 -> 35); 0.5 = 10 pct -> 15 pct; 0 = off.");
+        public static ConfigProperty<double> deeds_loot_luck_chance { get; private set; } = new(1.0, "QB Deeds tier 15: the chance (0 to 1) that a kill's loot is rolled with luck (every quality / grade roll of that kill rolled twice, the better kept). One roll per kill. 1.0 = every kill; 0 = off.");
+        public static ConfigProperty<double> deeds_rebuff_lockout { get; private set; } = new(120.0, "QB Deeds tier 10: seconds /rebuff and the Deedkeeper's Writ are refused after a monster, trap or other player dispels one of the player's buffs. 0 = no lockout.");
+        public static ConfigProperty<long> deeds_max_tier { get; private set; } = new(15, "QB Deeds: the highest tier ANY player gets, whatever their QB (0 to 15). 15 = no cap; 10 = everyone at 10k QB or more is treated as 10k; 0 = Deeds off server-wide. Online players move to the new cap within a few seconds (heartbeat), buffs included.");
         public static ConfigProperty<string> clone_zone_reduced_drops { get; private set; } = new("30010112,300101186,3110182,3110334,19853080,3110246,3110247,3110248", "Comma-separated wcids whose create-list drops are cut in a clone zone by the area's reward multiplier (see clone_zone_variation): the drops rolled from a creature's create list at death, and the create-list items it carries or wields. Loot generated from treasure tables is not affected. Default: Thaelaryn Core, Necrolytic Extract (Thaelaryn Island); Valley Monougat, Trophy, Bewitching Bauble and the three Fallen Trophies (Valley of Death). One list for both areas. Empty = no drop is cut.");
         public static ConfigProperty<bool> override_encounter_spawn_rates { get; private set; } = new(false, "if enabled, landblock encounter spawns are overidden by double properties below.");
         public static ConfigProperty<bool> permit_corpse_all { get; private set; } = new(false, "If TRUE, /permit grants permittees access to all corpses of the permitter. Defaults to FALSE as per retail, where /permit only grants access to 1 locked corpse");
@@ -602,6 +624,12 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> pet_combat_summon_skips_shared_cooldown { get; private set; } = new(false, "If TRUE, a successful combat pet summon does not start the essence SharedCooldown; use pet_combat_essence_damage_cooldown_ring_seconds for combat pings and death (or pet_summon_cooldown_on_pet_death_only) for full essence duration.");
         public static ConfigProperty<bool> pet_device_pyreal_auto_refill_enabled { get; private set; } = new(false, "If TRUE, players with PetDevicePyrealAutoRefillEnrolled may pay pyreals to refill empty summoning essence charges when summoning.");
         public static ConfigProperty<bool> pet_charm_universal_summoning_mastery_enabled { get; private set; } = new(true, "If TRUE, players with Universal Summoning Mastery charm active may use pet devices of any SummoningMastery (Primalist / Necromancer / Naturalist). Toggle: /modifybool pet_charm_universal_summoning_mastery_enabled false");
+
+        // Universal Quiver charm (WCID 78780032, Player_UniversalQuiver.cs): bow / crossbow / atlatl swaps without ammo swaps.
+        public static ConfigProperty<bool> universal_quiver_enabled { get; private set; } = new(true, "If TRUE, a player with the Universal Quiver charm active fires the matching prismatic ammo (universal_quiver_projectiles) from any bow, crossbow or atlatl while the ammo slot is EMPTY. Ammo in the slot is always used first. Toggle: /modifybool universal_quiver_enabled false");
+        public static ConfigProperty<double> universal_quiver_look_size { get; private set; } = new(1.5, "Quiver looks (Quiver Pattern on the Universal Quiver Charm or a launcher): the creature model a shot takes is scaled to about this many meters across. Applies to every look at once, including ones already applied. Toggle: /modifydouble universal_quiver_look_size 1.5");
+        public static ConfigProperty<string> universal_quiver_look_size_overrides { get; private set; } = new("", "Quiver looks: per-creature size factors for models that come out too big or too small, as creatureWcid:factor pairs (e.g. 1234:1.5,5678:0.7). Multiplies universal_quiver_look_size; applies at once. Edit: /modifystring universal_quiver_look_size_overrides 1234:1.5");
+        public static ConfigProperty<string> universal_quiver_projectiles { get; private set; } = new("1:4395100,2:4395101,4:4395102", "Universal Quiver: the projectile weenie fired for each launcher AmmoType, as ammoType:wcid pairs. Default: Infinite Deadly Prismatic Arrow / Quarrel / Atlatl Dart, so damage matches the purchasable set exactly.");
 
         // Room Assign (RoomAssignManager): holds live in memory only - a server restart clears them. Negative counts as 0.
         public static ConfigProperty<bool> room_assign_test_tools { get; private set; } = new(false, "Dungeon TEST tools (/zonecontrol dungeon fill, clear, admin, markers, doors show): fake players that make rooms count as taken, admins counting as players, landing markers, a door preview. They change real hand-out decisions or spawn objects, so they are OFF unless this is true. Change live: /modifybool room_assign_test_tools true");
@@ -1119,11 +1147,37 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> zc_pcoin_kill_base { get; private set; } = new(0.05, "PRESTIGE COINS PER KILL: coins a T11 Zone Control kill banks for the top damager (or a pet's owner) before the tier dip - 0.05 = one coin per 20 kills. Fractions carry over on the character. 0 = off.");
         public static ConfigProperty<double> zc_pcoin_kill_tier_step { get; private set; } = new(1.20, "PRESTIGE COINS PER KILL: each zone tier above T11 is worth this much more per kill than the tier below it (1.20 = +20 pct per tier: T12 0.060, T13 0.072 at a 0.05 base).");
 
+        // PRESTIGE COIN KILL CAP (falloff 2026-11-01; steps per coin hour 2026-11-17): a character's T11+ Zone Control coin kills
+        // are counted per coin hour (60 minutes from their first coin kill; the next kill after it ends starts a new one). Of the
+        // kills in an hour, the first zc_kill_cap_start pay in full; then every zc_kill_cap_interval kills the share is cut by
+        // zc_kill_cap_reduction (each step keeps 1 - reduction of the step before), and past zc_kill_cap_max (when set) nothing is
+        // paid until the hour ends. Defaults: kills 1-375 full, then 50 pct less every 75 kills (376-450 half, 451-525 a quarter,
+        // 526-600 an eighth ...) with no stop - an hour can never pay more than 450 kills' worth (375 + 75). Prestige Coins only:
+        // XP, loot, kill tasks and bounties are untouched. Counted in full-value kills (a below-tier kill counts as its tier-dip
+        // credit), one count per character across every zone and tier. The Zone Control stats pcoin_falloff_kills_per_hour (the
+        // zone's start; stretches the interval and max with it; 0 = off there) and pcoin_falloff_mult (the share each step keeps
+        // there, 1 - reduction) re-tune it per zone or tier Default. Read live. See TierRewardScale.FalloffKill / TierRewards.
+        public static ConfigProperty<double> zc_kill_cap_start { get; private set; } = new(375.0, "PRESTIGE COIN KILL CAP: kills a character can make in a coin hour (60 minutes from their first coin kill) at the full Prestige Coin rate - a kill below their own tier counts as its tier-dip credit. Past it the share is cut by zc_kill_cap_reduction every zc_kill_cap_interval kills. 0 = no kill cap, except in a zone whose Default authors pcoin_falloff_kills_per_hour above 0 (stretched from 375). A zone or tier Default can move it with the Zone Control stat pcoin_falloff_kills_per_hour, which stretches the interval and max with it. (Was zc_pcoin_falloff_kills_per_hour; the old name still works.)");
+        public static ConfigProperty<double> zc_kill_cap_reduction { get; private set; } = new(0.5, "PRESTIGE COIN KILL CAP: how much of the share is cut at each interval past zc_kill_cap_start - each step keeps 1 minus this of the step before (0.5 = 50 pct less each time: 50, 25, 12.5 pct ...; 0.25 = 75, 56.25, 42.2 pct ...; 0 = full pay, up to zc_kill_cap_max if set; 1 = nothing past the start). (Replaces zc_pcoin_falloff_mult, the share kept: a stored value of it loads once as 1 - share.) A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_mult, the share kept (1 - this).");
+        public static ConfigProperty<double> zc_kill_cap_interval { get; private set; } = new(75.0, "PRESTIGE COIN KILL CAP: kills in each step past zc_kill_cap_start; each new step cuts the share by zc_kill_cap_reduction (75 = 50 pct less every 75 kills at a 0.5 reduction). 0 = one step: every kill past the start pays 1 - zc_kill_cap_reduction up to zc_kill_cap_max.");
+        public static ConfigProperty<double> zc_kill_cap_max { get; private set; } = new(0.0, "PRESTIGE COIN KILL CAP: optional hard stop - kills past this many in a coin hour pay no Prestige Coins until the hour ends. 0 = no stop: the steps keep falling (with the defaults an hour never pays more than 450 kills' worth either way; a stop at 750 makes it 447.66).");
+
         // KILL-TASK CREDIT ON T11+ ZONE KILLS (owner 2026-10-24, locked): only for monsters Zone Control governs at T11+ - every other kill keeps
         // the stock kill-task code. Taggers get a full kill, non-damaging fellowship / Zone Share sharers the fellowship share, everyone x their
         // own tier-dip credit; progress is decimal and saved on the character (PropertyString.KillTaskFractions). See TierRewards.
         public static ConfigProperty<bool> zc_tier_dip_xp_enabled { get; private set; } = new(false, "TIER DIP for kill XP and luminance: when TRUE each player's share of a T11+ Zone Control kill's XP and luminance (killer, fellows and Zone Share members alike) is also multiplied by their tier-dip credit. FALSE (default) = XP and luminance are never cut. Coins and kill tasks follow zc_tier_dip_enabled alone.");
         public static ConfigProperty<bool> zc_kt_decimal_credit_enabled { get; private set; } = new(true, "T11+ KILL TASKS: when TRUE a kill of a T11+ Zone Control monster gives decimal kill-task credit - full for anyone who damaged it (pets count for the owner), the fellowship share for fellows / Zone Share members who did not, everyone x their tier-dip credit; capped at the task target, shown with decimals. FALSE = the stock kill-task rules for every kill. Other kills always use the stock rules.");
+
+        // ITEM BOUNTIES (owner 2026-11-10, ItemBounties.cs; Bounty Ledger rework 2026-11-12): a bounty ITEM used on the player's
+        // Bounty Ledger (item_bounty_ledger_wcid) starts in the character's lowest free bounty slot, #1 to #item_bounty_max_active;
+        // the ledger opens as a book showing every bounty and its progress. Only that character's own kills in the bounty's tier (or,
+        // for a region bounty, in its region below T11) count; the reward is paid automatically. Confirmations are the same thing done
+        // again (the same /bounty abandon, or a second use), never a popup: custom clients may not show popups. The rework replaced item_bounty_slots
+        // ('rings,bracelets') with item_bounty_max_active.
+        public static ConfigProperty<bool> item_bounty_enabled { get; private set; } = new(true, "ITEM BOUNTIES: when TRUE a bounty item can be started (used on the Bounty Ledger; with ledgers off, double-clicked twice), bounties going count kills and pay out, and bounties drop from monsters. FALSE = starting is refused, no kill counts, nothing is paid out and no bounty drops from monsters (T11+ or regions); bounties already going are kept and resume when it is turned back on.");
+        public static ConfigProperty<long> item_bounty_max_active { get; private set; } = new(4, "ITEM BOUNTIES: how many bounties a character can have going at once (slots #1 to #N), 1 to 8. Lowering it never removes a bounty already going - it keeps counting and paying out - but no new one starts until the character is under the new cap.");
+        public static ConfigProperty<long> item_bounty_confirm_seconds { get; private set; } = new(60, "ITEM BOUNTIES: how long a confirmation stays open - typing the same /bounty abandon <#> again, and the second use that starts a bounty without a ledger, or on the ledger while standing in another tier or region. After this the request expires and nothing changes. 10 to 600.");
+        public static ConfigProperty<long> item_bounty_ledger_wcid { get; private set; } = new(98760483, "ITEM BOUNTIES: the Bounty Ledger's weenie (a Book; Database/Updates/World/2026-11-12-00-Bounty-Ledger.sql). A bounty used on the ledger starts; the ledger opens as a book with a page per bounty and its progress, and its description lists them. One is handed to any player with bounties and no ledger (when a bounty is used, and at login). 0 = no ledgers: a bounty is started with two double-clicks. Bounties a player carries switch over at their next login.");
 
         public static ConfigProperty<string> nolog_landblocks { get; private set; } = new("", "Overrides for the no-log landblock list (log out here, log back in at your lifestone). Comma-separated tokens, each [-]HEX[:base|all|<variation>] - e.g. \"016C:11, 0007:all, -0002\". A bare token or one starting '+' ADDS; one starting '-' SUPPRESSES, including entries from the built-in retail list. Variation omitted means base only; 'all' means base and every variation. Edit with /nolog rather than by hand.");
         // PERSONAL LIFESTONE (owner 2026-11-14): a carried item that raises an owner-only lifestone in front of the player for a
@@ -1185,6 +1239,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> discord_audit_level { get; private set; } = new(1, "Controls Admin Audit logs. 0=None, 1=Info (Bans/Kicks), 2=Verbose (All commands).");
         public static ConfigProperty<long> discord_broadcast_level { get; private set; } = new(1, "Controls World Broadcasts. 0=None, 1=Info (@broadcast/@event), 2=Verbose.");
         public static ConfigProperty<long> discord_performance_level { get; private set; } = new(1, "Controls Performance Alerts. 0=None, 1=Info (Overload/Queue), 2=Verbose (ActionLag/SlowSave).");
+        public static ConfigProperty<long> discord_server_status_channel { get; private set; } = new(0, "Discord channel id for server status posts: online, restart scheduled/cancelled, offline (planned or stopped on purpose), and back online after a crash. 0 = off. Use /modifylong discord_server_status_channel <channel id>.");
 
         // Network Throttle Configuration
         public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(0, "Maximum UDP packets sent to a single client per server tick. 0 = unlimited (drain the whole queue each tick, matching base ACE) and is the default. A burst of CreateObject packets on landblock entry/teleport must not be trickled out over many ticks or objects pop in slowly. Set a positive value ONLY as an emergency throttle during mass-spawn incidents. Use /modifylong net_max_packets_per_tick <value>.");

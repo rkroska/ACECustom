@@ -377,6 +377,13 @@ namespace ACE.Entity.Enum.Properties
         ItemSizeLevel = 54000,
 
         /// <summary>
+        /// Arrow Enlarging / Shrinking Stones (2026-11-11): on the Universal Quiver Charm or a bow / crossbow / atlatl, how
+        /// big its Quiver-look arrows are drawn (0.5 .. 2.0 in tenths). The launcher itself is not resized. Unset = 1.0.
+        /// See ACE.Server/Entity/QuiverLook.cs.
+        /// </summary>
+        QuiverArrowSizeLevel = 54001,
+
+        /// <summary>
         /// Spell Armor Rend, the caster weapon card (2026-10-12): the fraction (0..1) of a monster's Spell Armor LEVEL
         /// that this wand's spells ignore - effective level = level x (1 - value). Read by
         /// Creature.GetZcSpellArmorMod; the float being present IS the card (no imbue bit). Server-only. Unset = no card.
@@ -390,6 +397,25 @@ namespace ACE.Entity.Enum.Properties
         /// has not yet made a whole coin (0 .. 1). Whole coins go straight to BankedPrestigeCoins. Server-only.</summary>
         PrestigeCoinFraction = 57000,
 
+        /// <summary>RETIRED 2026-11-17 (Prestige Coin falloff, first version): the rolling-pace count, in seconds. No longer
+        /// read; TierRewards removes it from a character at their next coin kill. Kept so the id is never reused.</summary>
+        PrestigeCoinPaceDebt = 57001,
+
+        /// <summary>RETIRED 2026-11-17: when <see cref="PrestigeCoinPaceDebt"/> was written. No longer read; removed with it.
+        /// Kept so the id is never reused.</summary>
+        PrestigeCoinPaceDebtTime = 57002,
+
+        /// <summary>Prestige Coin kill cap (2026-11-17), on a CHARACTER: how much of the full-rate start (zc_kill_cap_start) their
+        /// current coin hour has used, as a share - 1 = the whole start, 1.2 = the start and 20 pct of it more. Kills are full-value
+        /// kills (a below-tier kill counts as its tier-dip credit; a kill in a zone with its own start counts 1 / its stretch).
+        /// A share, not kills, so a mid-hour change of zc_kill_cap_start keeps what each kill used. Read with
+        /// <see cref="PrestigeCoinHourStart"/>. Server-only. See TierRewardScale.FalloffCountFromSaved.</summary>
+        PrestigeCoinHourShare = 57003,
+
+        /// <summary>Prestige Coin falloff (2026-11-17), on a CHARACTER: when their current coin hour started (Unix epoch seconds).
+        /// The first coin kill 60 minutes or more after it starts a new hour. Server-only. See TierRewardScale.FalloffHour.</summary>
+        PrestigeCoinHourStart = 57004,
+
         /// <summary>Triune earning (owner 2026-11-01), on a CHARACTER: the part of a Triune Weave point earned from own-tier kills
         /// that has not yet made a whole point (0 .. 1). Whole points go straight onto TriuneWeaveCount. Server-only.</summary>
         TriuneFraction = 57010,
@@ -397,12 +423,16 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Triune earning: own-tier kills counted this week (the week in PropertyInt64.TriuneWeekStart). Server-only.</summary>
         TriuneWeekKills = 57011,
 
+        // REFLECTION BOSS ids: 59200+ (moved 2026-11-10 from 58000-58001 here and 58000-58004 in PropertyInt, which sit in
+        // the Zone loot property block 58000-58999, ZoneLootProps). Weenies set ReflectionLives / Wcid / DamageRatingStep /
+        // Pick (int), HealthStep / RewardStep (float) and NameFormat (string) under these ids; the old 580xx rows do nothing now.
+
         /// <summary>Reflection boss (2026-11-04): extra health per life, as a fraction of the weenie's own health. 0.5 makes
         /// life 1 x1.5, life 2 x2, life 3 x2.5. Unset = 0, no change.</summary>
-        ReflectionHealthStep = 58000,
+        ReflectionHealthStep = 59200,
 
         /// <summary>Reflection boss: extra XP and luminance per life, as a fraction of the weenie's own reward, the same
         /// linear way as ReflectionHealthStep. Unset = 0, no change.</summary>
-        ReflectionRewardStep = 58001,
+        ReflectionRewardStep = 59201,
     }
 }

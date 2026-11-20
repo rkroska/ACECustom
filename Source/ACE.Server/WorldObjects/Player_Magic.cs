@@ -1444,7 +1444,7 @@ namespace ACE.Server.WorldObjects
         public List<Player> GetFellowshipTargets()
         {
             if (Fellowship != null)
-                return Fellowship.GetFellowshipMembers().Values.ToList();
+                return Fellowship.SpellTargets(this);   // an area fellowship: this landblock and layer only (owner 2026-11-06)
             else
                 return new List<Player>() { this };
         }
@@ -2473,7 +2473,7 @@ namespace ACE.Server.WorldObjects
 
                         finalDamage *= damageRatingMod * damageResistRatingMod * critDamageOnTop;
 
-                        // QB Deeds (13k QB): a separate x1.10 on war / void rings against monsters, as on the projectile path
+                        // QB Deeds (3k-15k QB): the separate damage step (x1.02-x1.10) on war / void rings against monsters, as on the projectile path
                         if (spell.School == MagicSchool.WarMagic || spell.School == MagicSchool.VoidMagic)
                             finalDamage *= GetDeedsDamageMod(this, creature);
 

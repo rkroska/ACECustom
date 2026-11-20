@@ -1062,7 +1062,8 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (player != null)
                     {
-                        if (player.Fellowship != null)
+                        // an area fellowship (Auto Fellow) holds no fellowship quest stamps (owner 2026-11-06): as if in none
+                        if (player.Fellowship != null && player.Fellowship.ZoneKey == null)
                         {
                             var hasQuest = player.Fellowship.QuestManager.HasQuest(emote.Message);
                             var canSolve = player.Fellowship.QuestManager.CanSolve(emote.Message);
@@ -1905,7 +1906,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (player != null)
                     {
-                        if (player.Fellowship != null)
+                        if (player.Fellowship != null && player.Fellowship.ZoneKey == null)   // never on an area fellowship (owner 2026-11-06)
                         {
                             var questName = emote.Message;
 
@@ -2567,7 +2568,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (player != null)
                     {
-                        if (player.Fellowship != null)
+                        if (player.Fellowship != null && player.Fellowship.ZoneKey == null)   // never on an area fellowship (owner 2026-11-06)
                         {
                             var questName = emote.Message;
 
@@ -4263,7 +4264,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                 result = result.Replace("%tf", $"{(targetPlayer.Fellowship != null ? targetPlayer.Fellowship.FellowshipName : "")}");
 
-                result = result.Replace("%fqt", !string.IsNullOrWhiteSpace(quest) && targetPlayer.Fellowship != null ? targetPlayer.Fellowship.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
+                result = result.Replace("%fqt", !string.IsNullOrWhiteSpace(quest) && targetPlayer.Fellowship != null && targetPlayer.Fellowship.ZoneKey == null ? targetPlayer.Fellowship.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
                 result = result.Replace("%tqm", !string.IsNullOrWhiteSpace(quest) ? QuestManager.GetMaxSolves(questName).ToString() : "");
 

@@ -409,6 +409,10 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         GeneratorNoCorpse = 50060,
 
+        /// <summary>Player has the Universal Quiver charm active (WCID 78780032): with the ammo slot empty, a bow, crossbow or
+        /// atlatl fires the matching Infinite Deadly Prismatic ammo. See Player_UniversalQuiver.cs.</summary>
+        HasUniversalQuiverCharm = 50061,
+
         /// <summary>Zone Control (owner 2026-10-13): a player's Destructive Curse does NOT cut the damage this creature deals
         /// (it still takes the Curse's own damage). The zone stat immune_curse_cut does the same per zone / tier / rank /
         /// wcid. Server-only. Numbered in this lane's own 512xx block, away from the ids other branches add.</summary>
@@ -460,6 +464,10 @@ namespace ACE.Entity.Enum.Properties
         /// standing in that dungeon shares kill XP, kill luminance and kill-task credit as if they were all in one fellowship.
         /// Server-only - not an assessment property. Numbered beside the other Room Assign properties (50500-50502).</summary>
         RoomAssignZoneShare = 50503,
+
+        /// <summary>Auto fellowship (owner 2026-11-05): on a PLAYER, /autofellow off - they do not join the fellowship of an
+        /// Auto Fellow area they walk into (ZoneFellowshipManager). Absent / false = on, the default. Server-only.</summary>
+        AutoFellowOff = 50504,
 
         /// <summary>Salvage Bags (2026-10-02, code name Gear Essences): a Bag of Madness was used on this item; no bag works
         /// on it again. Server-only - not an assessment property.</summary>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ACE.Server.Managers.ZoneScaling;
 
 namespace ACE.Server.Managers.ZoneControl
@@ -116,6 +117,18 @@ namespace ACE.Server.Managers.ZoneControl
         public BountyEntry Find(int id) => Entries?.Find(e => e != null && e.Id == id);
 
         /// <summary>
+        /// REGION bounties only (owner 2026-11-10, item bounties): 1 in N kills in the region drops an ITEM bounty (one of the
+        /// bounty weenies whose ItemBountyRegion names the region, picked by drop weight). 0 = none drop. Independent of
+        /// Enabled and the luminance rewards above: a region can drop item bounties with its own bounty off. Set with
+        /// /zonecontrol regionbounty &lt;region&gt; itemodds &lt;N&gt;. T11+ zones use the bounty_odds stat instead.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(DefaultValueHandling = Newtonsoft.Json.DefaultValueHandling.Ignore)]   // zones never set it: no "0" in every zone's row
+        public int ItemBountyOdds { get; set; }
+
+        /// <summary>The largest ItemBountyOdds: one in a billion kills.</summary>
+        public const int MaxItemBountyOdds = 1_000_000_000;
+
+        /// <summary>
         /// A copy, made SAFE (review 2026-09-24): every reward within the edit command's bounds, IDs given to rows that have none,
         /// and a duplicated ID moved to a new one - so a zone store edited by hand cannot hand out 2 billion items, or count one
         /// kill twice through two rows sharing a progress key. The kill hook only ever reads copies made here (the zone snapshot,
@@ -128,6 +141,7 @@ namespace ACE.Server.Managers.ZoneControl
                 Enabled = Enabled,
                 NextId = NextId,
                 Entries = Entries?.ConvertAll(e => e?.Clone()) ?? new List<BountyEntry>(),
+                ItemBountyOdds = ItemBountyOdds,
             };
             copy.Sanitize();
             return copy;
@@ -138,6 +152,7 @@ namespace ACE.Server.Managers.ZoneControl
         {
             Entries ??= new List<BountyEntry>();
             Entries.RemoveAll(e => e == null);
+            ItemBountyOdds = Math.Clamp(ItemBountyOdds, 0, MaxItemBountyOdds);
 
             foreach (var e in Entries)
             {
@@ -259,6 +274,116 @@ namespace ACE.Server.Managers.ZoneControl
                 e.MinQb = int.TryParse(f[5], System.Globalization.NumberStyles.Integer, inv, out var qb) && qb >= 0
                     ? Math.Min(qb, BountyManager.MaxQb) : BountyManager.MaxQb;
             return e;
+        }
+    }
+
+    /// <summary>
+    /// ITEM BOUNTIES (owner 2026-11-10): one possible reward of a <see cref="BountyRewardTable"/> - <see cref="Amount"/> x
+    /// <see cref="Wcid"/>, chosen with chance <see cref="Weight"/> / (the table's total weight).
+    /// </summary>
+    public class BountyRewardEntry
+    {
+        /// <summary>Never reused within its table (two admins editing at once name a row by its ID, as BountyEntry does).</summary>
+        public int Id { get; set; }
+        public uint Wcid { get; set; }
+        public int Amount { get; set; } = 1;
+        public int Weight { get; set; } = 1;
+
+        /// <summary>A copy (entries are only ever read through copies).</summary>
+        public BountyRewardEntry Clone() => (BountyRewardEntry)MemberwiseClone();
+    }
+
+    /// <summary>
+    /// ITEM BOUNTIES (owner 2026-11-10): a named, weighted reward table that MYSTERY bounties roll from when they are DONE.
+    /// It lives in the Zone Control store - edited live with /zonecontrol bountytable, no weenie change, no reboot - so the
+    /// admins can re-weight or pull a reward and every mystery bounty already out there rolls against the table as it is
+    /// then ("if people are like, mystery bounties suck, then we could turn that knob"). A bounty weenie only names its
+    /// table (PropertyString.ItemBountyRewardTable); "name.t15" / "name.vod" override "name" for that place.
+    /// </summary>
+    public class BountyRewardTable
+    {
+        /// <summary>The most entries a table keeps, and the largest weight one entry may have (also the largest drop weight
+        /// /zonecontrol bountyweight takes).</summary>
+        public const int MaxEntries = 50, MaxWeight = 1_000_000;
+
+        public List<BountyRewardEntry> Entries { get; set; } = new();
+
+        /// <summary>The next entry ID; never reused (see BountyEntry IDs).</summary>
+        public int NextId { get; set; } = 1;
+
+        /// <summary>The entries that can be chosen: a WCID and a weight above 0. Not stored.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public IEnumerable<BountyRewardEntry> Valid => (Entries ?? new List<BountyRewardEntry>()).Where(e => e != null && e.Wcid != 0 && e.Weight > 0);
+
+        /// <summary>A copy, made safe the same way <see cref="Sanitize"/> does.</summary>
+        public BountyRewardTable Clone()
+        {
+            var copy = new BountyRewardTable { NextId = NextId, Entries = Entries?.ConvertAll(e => e?.Clone()) ?? new List<BountyRewardEntry>() };
+            copy.Sanitize();
+            return copy;
+        }
+
+        /// <summary>
+        /// Drops null rows, holds amounts to 1..MaxAmount and weights to 0..MaxWeight, keeps at most MaxEntries, gives every
+        /// row a unique ID and keeps NextId past them all - so a store edited by hand can't hand out 2 billion items.
+        /// </summary>
+        public void Sanitize()
+        {
+            Entries ??= new List<BountyRewardEntry>();
+            Entries.RemoveAll(e => e == null);
+            if (Entries.Count > MaxEntries) Entries.RemoveRange(MaxEntries, Entries.Count - MaxEntries);
+            var seen = new HashSet<int>();
+            foreach (var e in Entries)
+            {
+                e.Amount = Math.Clamp(e.Amount, 1, BountyManager.MaxAmount);
+                e.Weight = Math.Clamp(e.Weight, 0, MaxWeight);
+                if (e.Id <= 0 || !seen.Add(e.Id)) e.Id = 0;
+            }
+            foreach (var e in Entries)
+                if (e.Id >= NextId) NextId = e.Id + 1;
+            foreach (var e in Entries)
+                if (e.Id <= 0) e.Id = NextId++;
+        }
+    }
+
+    /// <summary>
+    /// ITEM BOUNTIES (owner 2026-11-10): one bounty weenie's live drop weights PER PLACE - a tier "t11".."t25" or a bounty
+    /// region key ("vod", "t10") - set with /zonecontrol bountyweight, no weenie change, no reboot. A place listed here
+    /// overrides the weenie's own ItemBountyDropWeight there (0 = out of that pool); a place not listed keeps the weenie's
+    /// own weight in its own places (its tier band, fixed tier or region) and nothing elsewhere. <see cref="Off"/> stops it
+    /// dropping anywhere. So one bounty can be common in T16 and rare in T15 ("heavily weighted in tier 16 ... really rare"
+    /// in tier 15).
+    /// </summary>
+    public class BountyPlaceWeights
+    {
+        /// <summary>The emergency switch: true = it drops nowhere, whatever its weights (they are kept for when it is back on).</summary>
+        public bool Off { get; set; }
+
+        /// <summary>Place key -> its weight there (0..<see cref="BountyRewardTable.MaxWeight"/>; 0 = out of that pool).</summary>
+        public Dictionary<string, int> Places { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Nothing set: not off and no place weights (the store drops such an entry).</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public bool IsEmpty => !Off && (Places == null || Places.Count == 0);
+
+        /// <summary>A deep copy (snapshots and edits only ever work on copies).</summary>
+        public BountyPlaceWeights Clone()
+            => new() { Off = Off, Places = new Dictionary<string, int>(Places ?? new Dictionary<string, int>(), StringComparer.OrdinalIgnoreCase) };
+
+        /// <summary>
+        /// Keeps only the places <paramref name="isPlace"/> accepts (lower-cased; a hand-edited store can't create a pool no
+        /// roll reads) and holds every weight to 0..MaxWeight.
+        /// </summary>
+        public void Sanitize(Func<string, bool> isPlace)
+        {
+            var clean = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in Places ?? new Dictionary<string, int>())
+            {
+                var key = (kv.Key ?? "").Trim().ToLowerInvariant();
+                if (isPlace == null || isPlace(key))
+                    clean[key] = Math.Clamp(kv.Value, 0, BountyRewardTable.MaxWeight);
+            }
+            Places = clean;
         }
     }
 

@@ -757,6 +757,10 @@ namespace ACE.Server.WorldObjects
             ForcedLogOffRequested = false;
         }
 
+        /// <summary>
+        /// The last step of a logout: per-system logout hooks (Room Assign hold, nearby health, item bounties, Universal
+        /// Quiver virtual ammo), then the character leaves the landblock and is saved.
+        /// </summary>
         private void FinalizeLogout()
         {
             // Before leaving the landblock, while Location is still where the character is saved: a player logging out
@@ -766,6 +770,13 @@ namespace ACE.Server.WorldObjects
             // nearby health: off for good once the character has left (it is refused during logout too; this also clears
             // anything that slipped in before IsLoggingOut was set) - review 2026-10-20
             NearbyHealth.Remove(this);
+
+            // item bounties: an abandon waiting to be typed again (theirs, or an admin's aimed at them) and a bounty armed for
+            // its second use go with the session
+            ItemBounties.OnLogout(this);
+
+            // Universal Quiver: the virtual ammo objects never entered the world; free their GUIDs
+            ReleaseQuiverVirtualAmmo();
 
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
