@@ -387,11 +387,15 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// The answer to the chain's question has come, for an object to run as part of the chain. True while the question is
-        /// still open (its deadline not passed) and the claims still hold the gate: from here they follow the emotes of the
-        /// object running the answer (<paramref name="chain"/>), whichever object that is. Otherwise false, and the answer
-        /// must not run: the question had closed or the gate was taken over, and the claims end as for AnswerNotTaken.
+        /// still open (its deadline not passed) and the claims still hold the gate, with no other emotes holding them: either
+        /// the asking emotes are over (parked) or the object running the answer is the one holding them. From here the claims
+        /// follow that object's emotes (<paramref name="chain"/>), so they only ever have one holder. Otherwise false, and the
+        /// answer must not run: the question had closed, the gate was taken over, or another object's asking emotes still
+        /// hold the claims (they keep them); the claims end as for AnswerNotTaken.
         /// </summary>
-        internal static bool TryTakeAnswer(IReadOnlyCollection<Claim> chainClaims, Func<ChainState> chain)
+        /// <param name="heldByAnswerer">Whether the object running the answer holds the claims already (its asking emotes
+        /// are still in flight).</param>
+        internal static bool TryTakeAnswer(IReadOnlyCollection<Claim> chainClaims, Func<ChainState> chain, bool heldByAnswerer)
         {
             ArgumentNullException.ThrowIfNull(chain);
 
@@ -402,7 +406,7 @@ namespace ACE.Server.Managers
             {
                 var now = DateTime.UtcNow;
 
-                if (!chainClaims.All(c => !c.Closed && !c.Fenced && c.AwaitingAnswerUntil > now && IsCurrent(c)))
+                if (!chainClaims.All(c => !c.Closed && !c.Fenced && c.AwaitingAnswerUntil > now && IsCurrent(c) && (heldByAnswerer || c.ParkedForAnswer)))
                 {
                     foreach (var claim in chainClaims)
                         EndUntaken(claim);

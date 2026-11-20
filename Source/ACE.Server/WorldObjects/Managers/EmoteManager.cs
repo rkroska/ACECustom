@@ -4097,7 +4097,8 @@ namespace ACE.Server.WorldObjects.Managers
         /// object busy with other emotes, or with no set for it, doesn't take it; the claims then end as they would have with
         /// no question (AccountQuestLimits.AnswerNotTaken). Nor does an answer that comes after the question has closed
         /// (AccountQuestLimits.TryTakeAnswer). Once taken, the claims follow this object's emotes, even if another object
-        /// asked (a hook's item swapped meanwhile).
+        /// asked (a hook's item swapped meanwhile), but only once that object's asking emotes are over: until then they keep
+        /// the claims, and an answer run elsewhere isn't taken.
         /// </summary>
         public void ExecuteAnswerSet(EmoteCategory category, string quest, Player player, List<AccountQuestLimits.Claim> chainClaims)
         {
@@ -4113,10 +4114,13 @@ namespace ACE.Server.WorldObjects.Managers
             if (Nested == 0)
                 ReleaseHeldAccountClaims();
 
+            // this object's own asking emotes, still in flight (OnPortal or OnDeath cleared IsBusy), already hold them
+            var heldHere = HoldsAccountClaims && chainClaims.TrueForAll(heldAccountClaims.Contains);
+
             // from here this object's emotes are in flight, so the claims hold from the moment the answer takes them on
             Nested++;
 
-            if (!AccountQuestLimits.TryTakeAnswer(chainClaims, NewClaimChain()))
+            if (!AccountQuestLimits.TryTakeAnswer(chainClaims, NewClaimChain(), heldHere))
             {
                 Nested--;
                 return;

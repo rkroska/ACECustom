@@ -509,7 +509,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual(GateHold.InProgress, AccountQuestLimits.GetGateHold(9_000_015, "TestAccountQuest"));
 
             // the answer's set takes the claims on: while it runs they hold as usual, and when it ends they're released
-            Assert.IsTrue(AccountQuestLimits.TryTakeAnswer(new[] { claim }, () => state));
+            Assert.IsTrue(AccountQuestLimits.TryTakeAnswer(new[] { claim }, () => state, heldByAnswerer: false));
             state = ChainState.Running;
             Assert.IsNull(TryClaim(9_000_015, "TestAccountQuest", Running));
 
@@ -537,7 +537,7 @@ namespace ACE.Server.Tests
             Assert.IsNotNull(TryClaim(9_000_016, "TestAccountQuest", Running));
             Assert.IsTrue(AccountQuestLimits.IsTakenOver(claim));
 
-            Assert.IsFalse(AccountQuestLimits.TryTakeAnswer(new[] { claim }, Running));
+            Assert.IsFalse(AccountQuestLimits.TryTakeAnswer(new[] { claim }, Running, heldByAnswerer: false));
             Assert.IsFalse(AccountQuestLimits.TryAct(new[] { claim }));
         }
 
@@ -587,7 +587,7 @@ namespace ACE.Server.Tests
             Assert.IsNotNull(TryClaim(9_000_019, "TestAccountQuest", Running));
             Assert.IsTrue(AccountQuestLimits.IsTakenOver(claim));
 
-            Assert.IsFalse(AccountQuestLimits.TryTakeAnswer(new[] { claim }, Running));
+            Assert.IsFalse(AccountQuestLimits.TryTakeAnswer(new[] { claim }, Running, heldByAnswerer: false));
             Assert.IsFalse(AccountQuestLimits.TryAct(new[] { claim }));
         }
 
@@ -602,7 +602,7 @@ namespace ACE.Server.Tests
             AccountQuestLimits.Release(claim);
             AccountQuestLimits.AwaitAnswer(new[] { claim }, TimeSpan.Zero);   // the question's time is up
 
-            Assert.IsFalse(AccountQuestLimits.TryTakeAnswer(new[] { claim }, Running));
+            Assert.IsFalse(AccountQuestLimits.TryTakeAnswer(new[] { claim }, Running, heldByAnswerer: false));
             Assert.IsTrue(AccountQuestLimits.IsTakenOver(claim));
             Assert.IsNotNull(TryClaim(9_000_020, "TestAccountQuest", Running));
 
@@ -612,7 +612,7 @@ namespace ACE.Server.Tests
             AccountQuestLimits.AwaitAnswer(new[] { closed }, TimeSpan.FromMinutes(5));
             AccountQuestLimits.Abandon(new[] { closed });
 
-            Assert.IsFalse(AccountQuestLimits.TryTakeAnswer(new[] { closed }, Running));
+            Assert.IsFalse(AccountQuestLimits.TryTakeAnswer(new[] { closed }, Running, heldByAnswerer: true));
             Assert.AreEqual(GateHold.ClosedUntilRestart, AccountQuestLimits.GetGateHold(9_000_022, "TestAccountQuest"));
         }
 
@@ -629,7 +629,7 @@ namespace ACE.Server.Tests
             AccountQuestLimits.Release(claim);
 
             var answerer = ChainState.Running;
-            Assert.IsTrue(AccountQuestLimits.TryTakeAnswer(new[] { claim }, () => answerer));
+            Assert.IsTrue(AccountQuestLimits.TryTakeAnswer(new[] { claim }, () => answerer, heldByAnswerer: false));
             Assert.IsNull(TryClaim(9_000_021, "TestAccountQuest", Running));
             Assert.AreEqual(GateHold.InProgress, AccountQuestLimits.GetGateHold(9_000_021, "TestAccountQuest"));
 
@@ -637,6 +637,34 @@ namespace ACE.Server.Tests
             AccountQuestLimits.Release(claim);
             Assert.IsNotNull(TryClaim(9_000_021, "TestAccountQuest", Running));
             Assert.IsFalse(AccountQuestLimits.IsTakenOver(claim));
+        }
+
+        [TestMethod]
+        public void Claim_AnswerElsewhereWhileTheAskingEmotesRun_IsNotTaken()
+        {
+            // another object runs the answer (a hook's item swapped) while the asking emotes are still in flight: it isn't
+            // taken, so the claim never has two holders, and the asking emotes keep it until they end
+            var asker = ChainState.Running;
+            var claim = TryClaim(9_000_023, "TestAccountQuest", () => asker);
+            Assert.IsTrue(AccountQuestLimits.TryAct(new[] { claim }));
+            AccountQuestLimits.AwaitAnswer(new[] { claim }, TimeSpan.FromMinutes(5));
+
+            Assert.IsFalse(AccountQuestLimits.TryTakeAnswer(new[] { claim }, Running, heldByAnswerer: false));
+            Assert.IsNull(TryClaim(9_000_023, "TestAccountQuest", Running));
+            Assert.IsFalse(AccountQuestLimits.IsTakenOver(claim));
+
+            asker = ChainState.Finished;
+            AccountQuestLimits.Release(claim);
+            Assert.IsNotNull(TryClaim(9_000_023, "TestAccountQuest", Running));
+
+            // the asking object itself runs the answer while its emotes are still in flight (OnPortal cleared IsBusy): taken
+            var self = ChainState.Running;
+            var own = TryClaim(9_000_024, "TestAccountQuest", () => self);
+            Assert.IsTrue(AccountQuestLimits.TryAct(new[] { own }));
+            AccountQuestLimits.AwaitAnswer(new[] { own }, TimeSpan.FromMinutes(5));
+
+            Assert.IsTrue(AccountQuestLimits.TryTakeAnswer(new[] { own }, () => self, heldByAnswerer: true));
+            Assert.IsNull(TryClaim(9_000_024, "TestAccountQuest", Running));
         }
     }
 }
