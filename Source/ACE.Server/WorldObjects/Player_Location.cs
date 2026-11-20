@@ -961,6 +961,15 @@ namespace ACE.Server.WorldObjects
         /// (a rift) is not - and -1 / -2 would otherwise read as the base / all scope keys (PR #616).</summary>
         public static bool IsListableNoLogLayer(int? variation) => !variation.HasValue || variation.Value >= 0;
 
+        /// <summary>
+        /// /nolog and /plstone add|remove: the refusal for a scope no token can name, or null when it is fine. A rift layer
+        /// (any negative layer) needs an explicit scope - 'here' there would otherwise act on base (-1) or all (-2). PR #616.
+        /// </summary>
+        public static string UnlistableNoLogScopeError(int variationKey, string scopeArg, int? rawVariation)
+            => !IsListableNoLogScope(variationKey) || (string.IsNullOrWhiteSpace(scopeArg) && !IsListableNoLogLayer(rawVariation))
+                ? "You are in a rift layer - those are temporary and cannot be listed. Add a scope: base, all, or a variation number."
+                : null;
+
         /// <summary>The token an override entry is written as - the inverse of TryParseNoLogToken.</summary>
         public static string NoLogTokenFor(ushort landblock, int variationKey, bool suppress)
         {

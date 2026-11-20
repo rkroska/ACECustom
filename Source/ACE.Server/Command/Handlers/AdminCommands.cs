@@ -7683,6 +7683,8 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
             }
+            var scopeError = Player.UnlistableNoLogScopeError(variationKey, scopeArg, rawVariation);
+            if (scopeError != null) { Msg(scopeError); return; }
 
             var adding = sub == "add";
             var original = ServerConfig.nolog_landblocks?.Value ?? "";
@@ -7977,11 +7979,8 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
             }
-            if (!Player.IsListableNoLogScope(variationKey) || (string.IsNullOrWhiteSpace(scopeArg) && !Player.IsListableNoLogLayer(rawVariation)))
-            {
-                Msg("You are in a rift layer - those are temporary and cannot be listed. Add a scope: base, all, or a variation number.");
-                return;
-            }
+            var scopeError = Player.UnlistableNoLogScopeError(variationKey, scopeArg, rawVariation);
+            if (scopeError != null) { Msg(scopeError); return; }
 
             var adding = sub == "add";
             var original = ServerConfig.personal_lifestone_excluded_landblocks?.Value ?? "";
