@@ -208,6 +208,11 @@ namespace ACE.Server.Managers.ZoneControl
             if (!CommonOrder(before, after).SequenceEqual(CommonOrder(after, before)))
                 return true;
             var afterSet = new HashSet<string>(after, StringComparer.OrdinalIgnoreCase);
+            var removed = before.Where(n => !afterSet.Contains(n)).ToList();
+            // two or more removed (from anywhere, or all of them): Revert all puts them back one at a time, in key order, so their own
+            // order must be recorded (review 2026-11-19); one zone removed from the very end comes back in place by itself
+            if (removed.Count >= 2)
+                return true;
             var lastKept = before.FindLastIndex(afterSet.Contains);
             return before.Select((n, i) => (n, i)).Any(x => !afterSet.Contains(x.n) && x.i < lastKept);
         }
@@ -447,16 +452,21 @@ namespace ACE.Server.Managers.ZoneControl
             var old = change.OldJson == null ? null : JToken.Parse(change.OldJson);
             if (change.Section == SectionZoneOrder)
             {
-                // the zones the old order names go back into that order; any zone it does not name keeps its place after them
+                // the zones the old order names are put back into that order IN THE SLOTS THEY HOLD NOW; every zone it does not name
+                // (one added since, at the front or anywhere) keeps its exact position (review 2026-11-19)
                 var areas = AreasIn(root);
                 var all = areas.OfType<JObject>().ToList();
                 var wanted = NamesOf(change.OldJson);
-                var ordered = wanted
+                var named = new HashSet<string>(wanted, StringComparer.OrdinalIgnoreCase);
+                var slots = all.Select((a, i) => (a, i)).Where(x => NameOf(x.a) is { } n && named.Contains(n)).Select(x => x.i).ToList();
+                var inOldOrder = wanted
                     .Select(n => all.FirstOrDefault(a => string.Equals(NameOf(a), n, StringComparison.OrdinalIgnoreCase)))
                     .Where(a => a != null).Distinct().ToList();
-                ordered.AddRange(all.Where(a => !ordered.Contains(a)));
+                var result = all.ToArray();
+                for (var k = 0; k < slots.Count && k < inOldOrder.Count; k++)
+                    result[slots[k]] = inOldOrder[k];
                 areas.Clear();
-                foreach (var a in ordered)
+                foreach (var a in result)
                     areas.Add(a);
                 return null;
             }

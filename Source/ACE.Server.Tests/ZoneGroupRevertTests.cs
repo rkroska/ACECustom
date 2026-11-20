@@ -193,6 +193,35 @@ namespace ACE.Server.Tests
             Assert.IsFalse(ZoneControlManager.ZoneOrderMatters(abc, new List<string> { "A", "B" }), "the last zone removed");
             Assert.IsTrue(ZoneControlManager.ZoneOrderMatters(abc, new List<string> { "B", "C" }), "a zone removed from the front");
             Assert.IsTrue(ZoneControlManager.ZoneOrderMatters(abc, new List<string> { "C", "B", "A" }), "an import in another order");
+            Assert.IsTrue(ZoneControlManager.ZoneOrderMatters(abc, new List<string> { "A" }), "two zones removed from the end");
+            Assert.IsTrue(ZoneControlManager.ZoneOrderMatters(abc, new List<string>()), "every zone removed");
+        }
+
+        // B and C removed from the end in one save: Revert all brings them back in key order (C first), then the order row fixes it
+        [TestMethod]
+        public void Plan_RestoresSeveralTrailingZones_InTheirOldOrder()
+        {
+            var root = Store(Zone(true, 3, "A"));
+            var order = Order(1, new[] { "A", "B", "C" }, new[] { "A" }, "imp");
+            var b = Part(2, Zone(true, 3, "B"), null, section: "zone:b");
+            var c = Part(3, Zone(true, 3, "C"), null, section: "zone:c");
+            b.BatchId = c.BatchId = "imp";
+
+            var plan = ZoneControlRevert.Plan(NewestFirst(order, b, c), root);
+
+            Assert.AreEqual(3, plan.Revert.Count, string.Join("; ", plan.Skipped.Select(s => s.Why)));
+            CollectionAssert.AreEqual(new[] { "A", "B", "C" }, ((JArray)root["Areas"]).Select(a => (string)a["Name"]).ToArray());
+        }
+
+        // a zone added at the front after an import reordered A and B keeps the front when the reorder is undone
+        [TestMethod]
+        public void ZoneOrderRevert_KeepsAZoneAddedSince_WhereItIs()
+        {
+            var root = Store(Zone(true, 3, "X"), Zone(true, 3, "B"), Zone(true, 3, "A"));
+            var plan = ZoneControlRevert.Plan(NewestFirst(Order(1, new[] { "A", "B" }, new[] { "B", "A" }, null)), root);
+
+            Assert.AreEqual(1, plan.Revert.Count);
+            CollectionAssert.AreEqual(new[] { "X", "A", "B" }, ((JArray)root["Areas"]).Select(a => (string)a["Name"]).ToArray());
         }
 
         private static ZoneControlChange Order(long id, string[] from, string[] to, string batch) => new ZoneControlChange

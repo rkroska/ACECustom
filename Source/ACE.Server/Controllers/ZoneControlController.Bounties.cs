@@ -458,9 +458,18 @@ namespace ACE.Server.Web.Controllers
                 {
                     // a whole new list in ONE store write (copying a list): every row is checked first, and a list that exists already
                     // is left alone, so payouts never come from half a copy (review 2026-11-19)
-                    var newRows = request.Rows ?? new List<RewardRowRequest>();
+                    var sent = request.Rows ?? new List<RewardRowRequest>();
+                    // a row with share 0 can sit in a stored list (it never pays out), but a new row can't have 0: the copy leaves those
+                    // rows out and says which, instead of failing whole (review 2026-11-19)
+                    var leftOut = sent.Where(r => r.Weight <= 0).ToList();
+                    var newRows = sent.Where(r => r.Weight > 0).ToList();
                     if (newRows.Count == 0 || newRows.Count > BountyRewardTable.MaxEntries)
-                        return BadRequest(new { Message = $"A new list needs 1 to {BountyRewardTable.MaxEntries} rewards." });
+                        return BadRequest(new
+                        {
+                            Message = leftOut.Count > 0 && newRows.Count == 0
+                                ? $"Every reward in that list has share 0 (none pays out), so there is nothing to copy. Nothing was created."
+                                : $"A new list needs 1 to {BountyRewardTable.MaxEntries} rewards.",
+                        });
                     foreach (var r in newRows)
                         if (BountyEdits.CheckRewardRow(r.Wcid, r.Amount, r.Weight) is { } bad)
                             return BadRequest(new { Message = $"Bounty reward table '{name}': {bad} Nothing was created." });
@@ -476,7 +485,9 @@ namespace ACE.Server.Web.Controllers
                         return Conflict(new { Message = $"Bounty reward table '{name}': {createRefused}" });
                     var madeRows = (made?.Entries ?? new List<BountyRewardEntry>()).Select(e => $"#{e.Id} {BountyEdits.RewardRowText(e)}").ToList();
                     PlayerManager.BroadcastToAuditChannel(null, $"[portal] {actor.Name} bountytable {name} create with {madeRows.Count} reward(s){reasonText}");
-                    return Ok(new { Message = $"Bounty reward table '{name}' created with {madeRows.Count} reward(s)." });
+                    var skippedText = leftOut.Count == 0 ? ""
+                        : $" Left out {leftOut.Count} with share 0 (they never paid out): {string.Join(", ", leftOut.Select(r => $"{RoomAssignManager.ItemName(r.Wcid)} ({r.Wcid})"))}.";
+                    return Ok(new { Message = $"Bounty reward table '{name}' created with {madeRows.Count} reward(s).{skippedText}" });
                 }
 
                 if (op is "add" or "set")

@@ -748,7 +748,8 @@ const ZoneControl = () => {
               start={scope}
               helpByStat={helpByStat}
               onClose={() => setShowCompare(false)}
-              onOpen={(target, stat, openRank) => { selectScope(target); setRank(openRank); setSearch(stat) }}
+              // opening a result shows that stat, so the Stats view (History may have been open) - review 2026-11-19
+              onOpen={(target, stat, openRank) => { selectScope(target); setRank(openRank); setSearch(stat); setView('stats') }}
             />
           ) : !scope ? (
             <div className="flex-1 flex items-center justify-center p-8 text-sm text-neutral-500">

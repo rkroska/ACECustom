@@ -233,11 +233,17 @@ const BountiesPanel = ({ mode, onClose, notify, onOpenStat, onOpenHistory }: {
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // reloads can overlap (a save and "Re-read now"): only the newest one may set the data or the error (review 2026-11-19)
+  const loadSeq = useRef(0)
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current
     try {
-      setData(await api.get<BountyData>('/api/zonecontrol/bounties'))
+      const fresh = await api.get<BountyData>('/api/zonecontrol/bounties')
+      if (seq !== loadSeq.current) return
+      setData(fresh)
       setLoadError(null)
     } catch (err) {
+      if (seq !== loadSeq.current) return
       setLoadError(err instanceof Error ? err.message : 'Could not load the bounties.')
     }
   }, [])
