@@ -31,8 +31,9 @@ namespace ACE.Server.Managers
     /// vendor, handing an NPC an item it deals with through the bank (<see cref="UsesBank"/>), the Paragon Collector, an
     /// enlightenment gate fee the pack's coins can't cover, and a transfer TO a locked character (refused before anything
     /// leaves the sender's bank; the sender is not told why).</item>
-    /// <item>An emote set with a step on a banked currency left to run stops before its next step for a locked player
-    /// (EmoteManager.DoEnqueue, <see cref="HasBankStep"/>): the rest of the set never runs around a refused bank step.</item>
+    /// <item>An emote set that can still reach a step on a banked currency - its own, or a set it continues in - stops before
+    /// its next step for a locked player (EmoteManager.DoEnqueue, <see cref="ReachesBankStep"/>), and the stop is logged
+    /// (<see cref="NoteStoppedSet"/>): nothing runs around a refused bank step.</item>
     /// </list>
     /// Income nobody hands anything over for is not paid while the bank is locked, and says so: kill and quest luminance
     /// ("was not banked"), Zone Control Prestige Coins, Powerball winnings (the log says what to credit by hand), refunds.
@@ -149,24 +150,50 @@ namespace ACE.Server.Managers
         // ---- emotes ---------------------------------------------------------------------------------------------------
 
         /// <summary>
-        /// True when step <paramref name="fromIndex"/> or a later one of this set is an Int64 stat step (increment, decrement
-        /// or set) on a banked currency - the lum token NPCs, and NPCs that charge or pay a banked currency by hand. For a
-        /// locked player the set stops there (EmoteManager.DoEnqueue): the bank would refuse the step while the rest of the
-        /// set ran on, handing over a reward whose price was never taken, or taking an item for a credit never made.
+        /// True when step <paramref name="fromIndex"/> or a later one of this set - or of any set those steps can continue in
+        /// (Goto, the Inq tests, UpdateQuest: <see cref="BranchTargets"/>) - is an Int64 stat step (increment, decrement or set)
+        /// on a banked currency: the lum token NPCs, and NPCs that charge or pay a banked currency by hand. For a locked player
+        /// the set stops before its next step (EmoteManager.DoEnqueue). The bank would refuse that step while the chain ran on:
+        /// a continuation is queued and runs after the steps that follow it, so a "Goto Pay, Give" set would hand over the item
+        /// with the price never taken. A branch that may not be taken counts too - a locked player is stopped rather than paid
+        /// around the bank.
         /// </summary>
-        public static bool HasBankStep(PropertiesEmote emoteSet, int fromIndex = 0)
+        /// <param name="emoteSet">The set about to run its step <paramref name="fromIndex"/></param>
+        /// <param name="fromIndex">The step about to run</param>
+        /// <param name="allSets">All the NPC's emote sets (its Biota.PropertiesEmote), where its branches continue</param>
+        public static bool ReachesBankStep(PropertiesEmote emoteSet, int fromIndex, IEnumerable<PropertiesEmote> allSets)
         {
-            var actions = emoteSet?.PropertiesEmoteAction;
-            if (actions == null)
+            if (emoteSet?.PropertiesEmoteAction == null)
                 return false;
 
-            for (var i = Math.Max(0, fromIndex); i < actions.Count; i++)
-            {
-                if (IsBankStep(actions[i]))
-                    return true;
-            }
+            return new EmoteWalk(allSets).Outcome(emoteSet, fromIndex, 0).ReachesBankStep;
+        }
 
-            return false;
+        /// <summary>
+        /// True when a locked player should keep an item rather than hand it to an NPC with this Give or Refuse emote set,
+        /// because the NPC deals with it through the bank. The set is followed into every set its steps can continue in, and the
+        /// hand-in is kept back when some run of the chain could
+        /// <list type="bullet">
+        /// <item>reach a step on a banked currency (<see cref="ReachesBankStep"/>: the chain would stop, after the item was
+        /// taken), or</item>
+        /// <item>pay luminance and nothing else (every luminance award is banked, Player_Luminance.AddLuminance - so it would pay
+        /// nothing at all).</item>
+        /// </list>
+        /// Which way a test goes is not known in advance, so every outcome counts, and so does an outcome that runs no set (none
+        /// is defined, or none is sure to be picked: it pays nothing). A chain that always pays something besides luminance - an
+        /// item, XP, a skill, a spell, a stat, a teleport (<see cref="IsOtherReward"/>), in its own steps or in every set a
+        /// continuation can run - goes ahead, and only its luminance is not paid. Quest stamps and chat are bookkeeping, not a
+        /// reward.
+        /// </summary>
+        /// <param name="emoteSet">The Give or Refuse set the hand-in would run</param>
+        /// <param name="allSets">All the NPC's emote sets (its Biota.PropertiesEmote), where its branches continue</param>
+        public static bool UsesBank(PropertiesEmote emoteSet, IEnumerable<PropertiesEmote> allSets)
+        {
+            if (emoteSet?.PropertiesEmoteAction == null)
+                return false;
+
+            var outcome = new EmoteWalk(allSets).Outcome(emoteSet, 0, 0);
+            return outcome.ReachesBankStep || outcome.CanPayOnlyLuminance;
         }
 
         private static bool IsBankStep(PropertiesEmoteAction action)
@@ -186,115 +213,203 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// True when a locked player should keep an item rather than hand it to an NPC with this Give or Refuse emote set,
-        /// because the NPC deals with it through the bank. The set is followed into every set its branches can continue in
-        /// (Goto, the Inq tests, UpdateQuest: the sets of the NPC, <paramref name="allSets"/>, whose Quest is the step's
-        /// Message), and the hand-in is kept back when some run of the chain could
-        /// <list type="bullet">
-        /// <item>reach a step on a banked currency (<see cref="HasBankStep"/>: that set would stop, after the item was taken), or</item>
-        /// <item>pay luminance and nothing else (every luminance award is banked, Player_Luminance.AddLuminance - so it would pay
-        /// nothing at all).</item>
-        /// </list>
-        /// Which way a test goes is not known in advance, so every branch counts, and so does a test outcome with no set of its
-        /// own (it pays nothing). A chain that always pays something besides luminance - an item, XP, a skill, a spell, a stat,
-        /// a teleport (<see cref="IsOtherReward"/>) - goes ahead, and only its luminance is not paid. Quest stamps and chat are
-        /// bookkeeping, not a reward.
+        /// Where each branching step continues, as EmoteManager.ExecuteEmote dispatches it (and Confirmation_YesNo for InqYesNo):
+        /// the set of one of these categories whose Quest is the step's Message. InqNumCharacterTitles is disabled there, so it
+        /// continues nowhere.
         /// </summary>
-        /// <param name="emoteSet">The Give or Refuse set the hand-in would run</param>
-        /// <param name="allSets">All the NPC's emote sets (its Biota.PropertiesEmote), where its branches continue</param>
-        public static bool UsesBank(PropertiesEmote emoteSet, IEnumerable<PropertiesEmote> allSets)
+        private static readonly Dictionary<EmoteType, EmoteCategory[]> BranchTargets = BuildBranchTargets();
+
+        private static Dictionary<EmoteType, EmoteCategory[]> BuildBranchTargets()
         {
-            if (emoteSet?.PropertiesEmoteAction == null)
-                return false;
+            var quest = new[] { EmoteCategory.QuestSuccess, EmoteCategory.QuestFailure };
+            var fellowQuest = new[] { EmoteCategory.QuestSuccess, EmoteCategory.QuestFailure, EmoteCategory.QuestNoFellow };
+            var statTest = new[] { EmoteCategory.TestSuccess, EmoteCategory.TestFailure, EmoteCategory.TestNoQuality };
+            var test = new[] { EmoteCategory.TestSuccess, EmoteCategory.TestFailure };
 
-            var sets = allSets?.Where(s => s?.PropertiesEmoteAction != null).ToList() ?? new List<PropertiesEmote>();
-            var walked = new Dictionary<PropertiesEmote, (bool, bool)>(ReferenceEqualityComparer.Instance);
-            var onPath = new HashSet<PropertiesEmote>(ReferenceEqualityComparer.Instance);
-            var (reachesBankStep, canPayOnlyLuminance) = Walk(emoteSet, sets, walked, onPath, 0);
+            var targets = new Dictionary<EmoteType, EmoteCategory[]>
+            {
+                [EmoteType.Goto] = new[] { EmoteCategory.GotoSet },
+                [EmoteType.InqEvent] = new[] { EmoteCategory.EventSuccess, EmoteCategory.EventFailure },
+                [EmoteType.InqFellowNum] = new[] { EmoteCategory.NumFellowsSuccess, EmoteCategory.NumFellowsFailure, EmoteCategory.TestNoFellow },
+                [EmoteType.InqFellowQuest] = fellowQuest,
+                [EmoteType.UpdateFellowQuest] = fellowQuest,
+                [EmoteType.InqNumCharacterTitles] = Array.Empty<EmoteCategory>(),
+            };
 
-            return reachesBankStep || canPayOnlyLuminance;
+            foreach (var type in new[] { EmoteType.InqQuest, EmoteType.InqMyQuest, EmoteType.InqQuestSolves, EmoteType.InqMyQuestSolves,
+                EmoteType.InqServerQuestSolves, EmoteType.InqQuestBitsOn, EmoteType.InqQuestBitsOff, EmoteType.InqMyQuestBitsOn,
+                EmoteType.InqMyQuestBitsOff, EmoteType.UpdateQuest, EmoteType.UpdateMyQuest, EmoteType.InqPetRegistryCount,
+                EmoteType.InqPetRegistryCreatureType })
+                targets[type] = quest;
+
+            foreach (var type in new[] { EmoteType.InqBoolStat, EmoteType.InqIntStat, EmoteType.InqInt64Stat, EmoteType.InqFloatStat,
+                EmoteType.InqStringStat, EmoteType.InqAttributeStat, EmoteType.InqRawAttributeStat, EmoteType.InqSecondaryAttributeStat,
+                EmoteType.InqRawSecondaryAttributeStat, EmoteType.InqSkillStat, EmoteType.InqRawSkillStat, EmoteType.InqSkillTrained,
+                EmoteType.InqSkillSpecialized, EmoteType.QuestCompletionCount })
+                targets[type] = statTest;
+
+            foreach (var type in new[] { EmoteType.InqOwnsItems, EmoteType.InqPackSpace, EmoteType.InqContractsFull, EmoteType.InqYesNo })
+                targets[type] = test;
+
+            return targets;
         }
 
-        /// <summary>Deeper than any real emote chain; a deeper one is cut off there (as EmoteManager cuts off its own loops).</summary>
-        private const int MaxBranchDepth = 16;
-
-        /// <summary>
-        /// The categories a branching step continues in: whichever the test reached, among the sets with the step's Message as
-        /// their Quest (EmoteManager.ExecuteEmoteSet(category, emote.Message, ...)).
-        /// </summary>
-        private static readonly HashSet<EmoteCategory> BranchCategories = new HashSet<EmoteCategory>
+        /// <summary>A branching step the table above does not know (a newer custom Inq test): every outcome category, to be safe.</summary>
+        private static readonly EmoteCategory[] UnknownBranchTargets =
         {
-            EmoteCategory.QuestSuccess, EmoteCategory.QuestFailure,
-            EmoteCategory.TestSuccess, EmoteCategory.TestFailure, EmoteCategory.TestNoQuality,
+            EmoteCategory.QuestSuccess, EmoteCategory.QuestFailure, EmoteCategory.QuestNoFellow,
+            EmoteCategory.TestSuccess, EmoteCategory.TestFailure, EmoteCategory.TestNoQuality, EmoteCategory.TestNoFellow,
             EmoteCategory.EventSuccess, EmoteCategory.EventFailure,
-            EmoteCategory.QuestNoFellow, EmoteCategory.TestNoFellow,
             EmoteCategory.NumFellowsSuccess, EmoteCategory.NumFellowsFailure,
             EmoteCategory.NumCharacterTitlesSuccess, EmoteCategory.NumCharacterTitlesFailure,
-            EmoteCategory.GotoSet,
         };
 
-        /// <summary>
-        /// One emote set and every set it can branch into: whether some run reaches a bank step, and whether some run pays
-        /// luminance and nothing else. A set runs all its own steps, and each branching step adds one of the sets it can
-        /// continue in - or none, when the outcome reached has no set. So a run pays only luminance when the set's own steps
-        /// pay nothing else, and the luminance comes from its own steps or from a branch that can itself pay only luminance.
-        /// Each set is worked out once (<paramref name="walked"/>), so sets that several branches share cost nothing more.
-        /// </summary>
-        private static (bool ReachesBankStep, bool CanPayOnlyLuminance) Walk(PropertiesEmote set, List<PropertiesEmote> allSets,
-            Dictionary<PropertiesEmote, (bool, bool)> walked, HashSet<PropertiesEmote> onPath, int depth)
+        /// <summary>The categories this step continues in, or null when it does not branch.</summary>
+        private static EmoteCategory[] ContinuesIn(PropertiesEmoteAction action)
         {
-            if (walked.TryGetValue(set, out var known))
-                return known;
+            var type = (EmoteType)action.Type;
+            if (BranchTargets.TryGetValue(type, out var categories))
+                return categories;
 
-            // a branch back into a set already being followed, or a chain deeper than any real one: count it as paying nothing more
-            if (depth > MaxBranchDepth || !onPath.Add(set))
-                return (false, false);
+            if (EmoteManager.EmoteIsBranchingType(action) || type.ToString().StartsWith("Inq", StringComparison.Ordinal))
+                return UnknownBranchTargets;
 
-            try
+            return null;
+        }
+
+        /// <summary>What the runs of an emote chain can come to (<see cref="EmoteWalk"/>).</summary>
+        /// <param name="ReachesBankStep">Some run reaches a step on a banked currency</param>
+        /// <param name="CanPayNoOtherReward">Some run pays no reward besides luminance (or nothing at all)</param>
+        /// <param name="CanPayOnlyLuminance">Some run pays luminance and no other reward</param>
+        private readonly record struct ChainOutcome(bool ReachesBankStep, bool CanPayNoOtherReward, bool CanPayOnlyLuminance);
+
+        /// <summary>
+        /// Follows one emote set and every set its steps can continue in, for one question. A set runs all its own steps, and each
+        /// branching step adds one run of the sets it can continue in - or none, when the outcome reached has no set, or no set
+        /// there is sure to be picked. Each set is worked out once from its first step (memoized), and a branch back into a set
+        /// already being followed adds nothing (that set's own steps are counted where it was entered).
+        /// </summary>
+        private sealed class EmoteWalk
+        {
+            /// <summary>The emote engine aborts a chain nested past 100 (EmoteManager.Enqueue); a walk that deep assumes the worst.</summary>
+            private const int MaxBranchDepth = 100;
+
+            private readonly List<PropertiesEmote> allSets;
+            private readonly Dictionary<PropertiesEmote, ChainOutcome> walked = new Dictionary<PropertiesEmote, ChainOutcome>(ReferenceEqualityComparer.Instance);
+            private readonly HashSet<PropertiesEmote> onPath = new HashSet<PropertiesEmote>(ReferenceEqualityComparer.Instance);
+
+            public EmoteWalk(IEnumerable<PropertiesEmote> allSets)
             {
-                var reachesBankStep = false;
-                var ownLuminance = false;
-                var ownOtherReward = false;
-                var branchCanPayOnlyLuminance = false;
+                this.allSets = allSets?.Where(s => s?.PropertiesEmoteAction != null).ToList() ?? new List<PropertiesEmote>();
+            }
 
-                foreach (var action in set.PropertiesEmoteAction)
+            public ChainOutcome Outcome(PropertiesEmote set, int fromIndex, int depth)
+            {
+                var memoize = fromIndex <= 0;
+                if (memoize && walked.TryGetValue(set, out var known))
+                    return known;
+
+                // past the engine's own limit nothing more is known about the chain: it may reach the bank, and pay nothing else
+                if (depth > MaxBranchDepth)
+                    return new ChainOutcome(true, true, true);
+
+                // a branch back into a set already being followed
+                if (!onPath.Add(set))
+                    return new ChainOutcome(false, true, false);
+
+                try
                 {
-                    if (action == null)
-                        continue;
+                    var reachesBankStep = false;
+                    var ownLuminance = false;
+                    var ownOtherReward = false;
+                    var everyBranchCanPayNoOther = true;
+                    var someBranchCanPayOnlyLuminance = false;
 
-                    var type = (EmoteType)action.Type;
-
-                    if (IsBankStep(action))
-                        reachesBankStep = true;
-                    else if (type == EmoteType.AwardLuminance)
-                        ownLuminance = true;
-                    else if (EmoteManager.EmoteIsBranchingType(action) || type.ToString().StartsWith("Inq", StringComparison.Ordinal))
+                    var actions = set.PropertiesEmoteAction;
+                    for (var i = Math.Max(0, fromIndex); i < actions.Count; i++)
                     {
-                        // (every Inq step tests and branches - the custom ones EmoteIsBranchingType does not list too)
-                        if (string.IsNullOrEmpty(action.Message))
+                        var action = actions[i];
+                        if (action == null)
                             continue;
 
-                        foreach (var next in allSets)
+                        if (IsBankStep(action))
                         {
-                            if (!BranchCategories.Contains(next.Category) || !string.Equals(next.Quest, action.Message, StringComparison.OrdinalIgnoreCase))
-                                continue;
-
-                            var branch = Walk(next, allSets, walked, onPath, depth + 1);
-                            reachesBankStep |= branch.ReachesBankStep;
-                            branchCanPayOnlyLuminance |= branch.CanPayOnlyLuminance;
+                            reachesBankStep = true;
+                            continue;
                         }
+
+                        if ((EmoteType)action.Type == EmoteType.AwardLuminance)
+                        {
+                            ownLuminance = true;
+                            continue;
+                        }
+
+                        var categories = ContinuesIn(action);
+                        if (categories != null)
+                        {
+                            // a test that continues nowhere (InqNumCharacterTitles) runs nothing more
+                            if (categories.Length > 0)
+                            {
+                                var branch = Branch(categories, action.Message, depth);
+                                reachesBankStep |= branch.ReachesBankStep;
+                                everyBranchCanPayNoOther &= branch.CanPayNoOtherReward;
+                                someBranchCanPayOnlyLuminance |= branch.CanPayOnlyLuminance;
+                            }
+                            continue;
+                        }
+
+                        if (IsOtherReward(action))
+                            ownOtherReward = true;
                     }
-                    else if (IsOtherReward(action))
-                        ownOtherReward = true;
+
+                    var canPayNoOther = !ownOtherReward && everyBranchCanPayNoOther;
+                    var outcome = new ChainOutcome(reachesBankStep, canPayNoOther, canPayNoOther && (ownLuminance || someBranchCanPayOnlyLuminance));
+                    if (memoize)
+                        walked[set] = outcome;
+                    return outcome;
+                }
+                finally
+                {
+                    onPath.Remove(set);
+                }
+            }
+
+            /// <summary>
+            /// One branching step, as EmoteManager.GetEmoteSet picks its continuation: among the sets of the outcome's category
+            /// whose Quest is the step's Message (any Quest when the Message is null), the one with the lowest Probability above a
+            /// roll in [0, 1). So every such set with a Probability above 0 can run, and an outcome category with no set at 1 or
+            /// above can run nothing.
+            /// </summary>
+            private ChainOutcome Branch(EmoteCategory[] categories, string quest, int depth)
+            {
+                var reachesBankStep = false;
+                var canPayNoOther = false;
+                var canPayOnlyLuminance = false;
+
+                foreach (var category in categories)
+                {
+                    var highestProbability = 0f;
+
+                    foreach (var next in allSets)
+                    {
+                        if (next.Category != category || next.Probability <= 0)
+                            continue;
+                        if (quest != null && (next.Quest == null || !next.Quest.Equals(quest, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+
+                        highestProbability = Math.Max(highestProbability, next.Probability);
+
+                        var run = Outcome(next, 0, depth + 1);
+                        reachesBankStep |= run.ReachesBankStep;
+                        canPayNoOther |= run.CanPayNoOtherReward;
+                        canPayOnlyLuminance |= run.CanPayOnlyLuminance;
+                    }
+
+                    if (highestProbability < 1f)
+                        canPayNoOther = true;
                 }
 
-                var outcome = (reachesBankStep, !ownOtherReward && (ownLuminance || branchCanPayOnlyLuminance));
-                walked[set] = outcome;
-                return outcome;
-            }
-            finally
-            {
-                onPath.Remove(set);
+                return new ChainOutcome(reachesBankStep, canPayNoOther, canPayOnlyLuminance);
             }
         }
 
@@ -302,16 +417,19 @@ namespace ACE.Server.Managers
         /// A step that pays the player something besides luminance, making a hand-in worth doing without it: an item, XP, a
         /// skill, credits, a spell or an augmentation, a title, treasure, a contract, a stat of the character, a random quest
         /// stamp (its account bonus), a pet skin, a creature or object made, or a teleport. Not one: chat and motions, plain
-        /// quest stamps and their bookkeeping, taking items, luminance (that is what is being looked for) and the branching
-        /// steps (followed instead).
+        /// quest stamps and their bookkeeping, taking items, an XP step that takes XP (a negative amount), luminance (that is
+        /// what is being looked for) and the branching steps (followed instead).
         /// </summary>
         private static bool IsOtherReward(PropertiesEmoteAction action)
         {
             switch ((EmoteType)action.Type)
             {
-                case EmoteType.Give:
+                // a negative amount spends XP (ExecuteEmote: SpendXP), which is no reward
                 case EmoteType.AwardXP:
                 case EmoteType.AwardNoShareXP:
+                    return (action.Amount64 ?? action.Amount ?? 0) > 0;
+
+                case EmoteType.Give:
                 case EmoteType.AwardLevelProportionalXP:
                 case EmoteType.AwardLevelProportionalSkillXP:
                 case EmoteType.AwardSkillXP:
@@ -347,6 +465,44 @@ namespace ACE.Server.Managers
                 default:
                     return false;
             }
+        }
+
+        private static readonly ConcurrentDictionary<(uint Character, uint Source), DateTime> lastStopLogged = new ConcurrentDictionary<(uint Character, uint Source), DateTime>();
+
+        /// <summary>
+        /// Logs an emote set stopped for a locked player (EmoteManager.DoEnqueue), at most once a minute per character and NPC.
+        /// When a hand-in was begun before the lock, its item is already gone, so this line is what lets staff pay the credit by
+        /// hand: it names the NPC, the set, and the bank steps left unrun in that set.
+        /// </summary>
+        public static void NoteStoppedSet(IPlayer character, WorldObject source, PropertiesEmote emoteSet, int fromIndex)
+        {
+            var key = (character.Guid.Full, source.Guid.Full);
+            var now = DateTime.UtcNow;
+            if (lastStopLogged.TryGetValue(key, out var last) && now - last < TimeSpan.FromMinutes(1))
+                return;
+            lastStopLogged[key] = now;
+
+            var steps = new List<string>();
+            var actions = emoteSet.PropertiesEmoteAction;
+            for (var i = Math.Max(0, fromIndex); i < actions.Count; i++)
+            {
+                var action = actions[i];
+                if (!IsBankStep(action))
+                    continue;
+
+                var amount = action.Amount64 ?? action.Amount ?? 0;
+                var how = (EmoteType)action.Type switch
+                {
+                    EmoteType.IncrementInt64Stat => $"+{amount:N0}",
+                    EmoteType.DecrementInt64Stat => $"-{amount:N0}",
+                    _ => $"set to {amount:N0}",
+                };
+                steps.Add($"{(PropertyInt64)action.Stat.Value} {how}");
+            }
+
+            var where = string.IsNullOrEmpty(emoteSet.Quest) ? emoteSet.Category.ToString() : $"{emoteSet.Category} {emoteSet.Quest}";
+            var what = steps.Count > 0 ? string.Join(", ", steps) : "in a set it continues in";
+            log.Warn($"[BankLock] {character.Name} (0x{character.Guid.Full:X8}): {source.Name} (wcid {source.WeenieClassId}) stopped its {where} set at step {fromIndex} - the bank is locked. Bank steps not run: {what}. If an item was handed in for a credit, pay it by hand after /bankunlock.");
         }
 
         // ---- staff commands -------------------------------------------------------------------------------------------

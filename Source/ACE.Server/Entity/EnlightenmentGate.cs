@@ -144,9 +144,10 @@ namespace ACE.Server.Entity
                 return;
             }
 
-            if (!player.TryPayEnlightenmentGateFee(fee, gateLevel, out var shortfall))
+            if (!player.TryPayEnlightenmentGateFee(fee, gateLevel, out var shortfall, out var partKept))
             {
-                player.SendMessage($"The gate fee of {fee} was not paid: you are short {JoinList(shortfall)}. You were not charged.", ChatMessageType.Broadcast);
+                // a payment that failed part way on a locked bank kept what it took (and says so), so it was not "not charged"
+                player.SendMessage($"The gate fee of {fee} was not paid: you are short {JoinList(shortfall)}.{(partKept ? string.Empty : " You were not charged.")}", ChatMessageType.Broadcast);
                 return;
             }
 

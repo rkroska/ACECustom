@@ -400,7 +400,7 @@ namespace ACE.Server.Managers
             if (summary.NetWon <= 0) return;
 
             // bank lock (/banklock): a locked bank takes nothing in - the win is not paid, and the log says what to credit by hand
-            void LogNotPaid(string where) => log.Warn($"[Powerball] {summary.Name} (ID {charId}, {where}) won {FormatLum(summary.NetWon)}, but the bank is locked - not paid. Credit it by hand after /bankunlock if it is owed.");
+            void LogNotPaid(string where) => log.Warn($"[Powerball] {summary.Name} (ID {charId}, {where}) won {summary.NetWon:N0} luminance ({FormatLum(summary.NetWon)}), but the bank is locked - not paid. Credit exactly {summary.NetWon:N0} by hand after /bankunlock if it is owed.");
 
             var online = PlayerManager.GetOnlinePlayer(charId);
             if (online != null)

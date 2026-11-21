@@ -4050,12 +4050,15 @@ namespace ACE.Server.WorldObjects.Managers
             }
 
             // Bank lock (/banklock): a step on a banked currency would be refused by the locked bank (BankLock.cs) while the
-            // rest of this set ran on - a reward handed over with its price never taken, or an item taken for a credit never
-            // made. So a set with such a step still to come stops here, before its next step, for a locked player. Like the
-            // scan-ahead below, it returns without the shared AbortEmoteChain flag, which would leak to a sibling nested chain.
-            if (targetObject is Player bankLockedPlayer && bankLockedPlayer.IsBankLocked && BankLock.HasBankStep(emoteSet, emoteIdx))
+            // chain ran on - a reward handed over with its price never taken, or an item taken for a credit never made. A set
+            // continued in (Goto, an Inq test) is queued and runs after the steps that follow, so the sets this one can still
+            // reach count too: a set that can reach such a step stops here, before its next step, for a locked player, and the
+            // stop is logged for staff (BankLock.NoteStoppedSet). Like the scan-ahead below, it returns without the shared
+            // AbortEmoteChain flag, which would leak to a sibling nested chain.
+            if (targetObject is Player bankLockedPlayer && bankLockedPlayer.IsBankLocked && BankLock.ReachesBankStep(emoteSet, emoteIdx, WorldObject.Biota.PropertiesEmote))
             {
                 bankLockedPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your bank is locked, so {WorldObject.Name} can't do that.", ChatMessageType.Broadcast));
+                BankLock.NoteStoppedSet(bankLockedPlayer, WorldObject, emoteSet, emoteIdx);
                 Nested--;
                 if (Nested == 0)
                     IsBusy = false;

@@ -107,7 +107,11 @@ namespace ACE.Server.Tests
             Assert.IsFalse(BankLock.UsesBank(root, new[] { root, success }));
         }
 
-        /// <summary>Goto is followed too, and so is a custom Inq test that EmoteManager.EmoteIsBranchingType does not list.</summary>
+        /// <summary>
+        /// Goto is followed too, and so are the custom tests EmoteManager.EmoteIsBranchingType does not list, into the
+        /// categories EmoteManager.ExecuteEmote sends them to: InqPetRegistryCount to QuestSuccess / QuestFailure,
+        /// QuestCompletionCount to TestSuccess / TestFailure / TestNoQuality.
+        /// </summary>
         [TestMethod]
         public void UsesBank_FollowsGotoAndCustomInqSteps()
         {
@@ -116,8 +120,69 @@ namespace ACE.Server.Tests
             Assert.IsTrue(BankLock.UsesBank(viaGoto, new[] { viaGoto, pay }));
 
             var viaPetTest = Set(Step(EmoteType.InqPetRegistryCount, message: "Pets"));
-            var pets = Branch(EmoteCategory.TestSuccess, "Pets", Step(EmoteType.AwardLuminance));
+            var pets = Branch(EmoteCategory.QuestSuccess, "Pets", Step(EmoteType.AwardLuminance));
             Assert.IsTrue(BankLock.UsesBank(viaPetTest, new[] { viaPetTest, pets }));
+
+            var notWherePetTestsGo = Branch(EmoteCategory.TestSuccess, "Pets", Step(EmoteType.IncrementInt64Stat, PropertyInt64.BankedLuminance));
+            Assert.IsFalse(BankLock.UsesBank(Set(Step(EmoteType.Give), Step(EmoteType.InqPetRegistryCount, message: "Pets")), new[] { notWherePetTestsGo }));
+
+            var viaCompletions = Set(Step(EmoteType.QuestCompletionCount, message: "Count"));
+            var counted = Branch(EmoteCategory.TestNoQuality, "Count", Step(EmoteType.DecrementInt64Stat, PropertyInt64.BankedPyreals));
+            Assert.IsTrue(BankLock.UsesBank(viaCompletions, new[] { viaCompletions, counted }));
+        }
+
+        /// <summary>Goto continues only in GotoSet sets: a quest outcome set with the same name is not where it goes.</summary>
+        [TestMethod]
+        public void UsesBank_GotoFollowsOnlyGotoSets()
+        {
+            var root = Set(Step(EmoteType.Give), Step(EmoteType.Goto, message: "Reward"));
+            var questOutcome = Branch(EmoteCategory.QuestSuccess, "Reward", Step(EmoteType.IncrementInt64Stat, PropertyInt64.BankedLuminance));
+            Assert.IsFalse(BankLock.UsesBank(root, new[] { root, questOutcome }));
+
+            // a Goto with no Message continues in any GotoSet set (EmoteManager.GetEmoteSet filters on the quest only when given one)
+            var anyName = Set(Step(EmoteType.Give), Step(EmoteType.Goto, message: null));
+            var someGotoSet = Branch(EmoteCategory.GotoSet, "Anything", Step(EmoteType.IncrementInt64Stat, PropertyInt64.BankedLuminance));
+            Assert.IsTrue(BankLock.UsesBank(anyName, new[] { anyName, someGotoSet }));
+        }
+
+        /// <summary>
+        /// A reward a continuation always pays counts: luminance with a Goto to a sure XP set is a mixed reward. Not when the
+        /// set may not be picked (a Probability under 1) or does not exist - then the run may pay luminance alone.
+        /// </summary>
+        [TestMethod]
+        public void UsesBank_CountsRewardsAContinuationAlwaysPays()
+        {
+            var root = Set(Step(EmoteType.AwardLuminance), Step(EmoteType.Goto, message: "Xp"));
+            var sureXp = Branch(EmoteCategory.GotoSet, "Xp", Step(EmoteType.AwardXP));
+            Assert.IsFalse(BankLock.UsesBank(root, new[] { root, sureXp }));
+
+            var maybeXp = Chance(Branch(EmoteCategory.GotoSet, "Xp", Step(EmoteType.AwardXP)), 0.5f);
+            Assert.IsTrue(BankLock.UsesBank(root, new[] { root, maybeXp }));
+
+            Assert.IsTrue(BankLock.UsesBank(root, new[] { root }));
+        }
+
+        /// <summary>An AwardXP step with a negative amount takes XP (ExecuteEmote: SpendXP), so it is no reward beside luminance.</summary>
+        [TestMethod]
+        public void UsesBank_XpTakenIsNoReward()
+        {
+            Assert.IsTrue(BankLock.UsesBank(Set(Step(EmoteType.AwardLuminance), Step(EmoteType.AwardXP, amount: -1000)), null));
+            Assert.IsTrue(BankLock.UsesBank(Set(Step(EmoteType.AwardLuminance), Step(EmoteType.AwardNoShareXP, amount: 0)), null));
+            Assert.IsFalse(BankLock.UsesBank(Set(Step(EmoteType.AwardLuminance), Step(EmoteType.AwardXP, amount: 1000)), null));
+        }
+
+        /// <summary>A chain deeper than the emote engine goes (it aborts past 100 nested sets) is assumed to reach the bank.</summary>
+        [TestMethod]
+        public void UsesBank_AChainPastTheEngineLimitIsAssumedToReachTheBank()
+        {
+            var sets = Enumerable.Range(0, 110)
+                .Select(i => Branch(EmoteCategory.GotoSet, $"Step{i}", Step(EmoteType.Goto, message: $"Step{i + 1}")))
+                .ToList();
+            var root = Set(Step(EmoteType.Give), Step(EmoteType.Goto, message: "Step0"));
+            sets.Add(root);
+
+            Assert.IsTrue(BankLock.UsesBank(root, sets));
+            Assert.IsTrue(BankLock.ReachesBankStep(root, 0, sets));
         }
 
         /// <summary>Only the categories a branch continues in count, and a chain that loops back on itself ends.</summary>
@@ -152,15 +217,29 @@ namespace ACE.Server.Tests
 
         /// <summary>An emote set stops for a locked player before its next step while a bank step is still to come.</summary>
         [TestMethod]
-        public void HasBankStep_FromTheGivenStepOn()
+        public void ReachesBankStep_FromTheGivenStepOn()
         {
             var set = Set(Step(EmoteType.Give), Step(EmoteType.DecrementInt64Stat, PropertyInt64.BankedPyreals), Step(EmoteType.Tell));
 
-            Assert.IsTrue(BankLock.HasBankStep(set));
-            Assert.IsTrue(BankLock.HasBankStep(set, 1));
-            Assert.IsFalse(BankLock.HasBankStep(set, 2));
-            Assert.IsFalse(BankLock.HasBankStep(Set(Step(EmoteType.IncrementInt64Stat, PropertyInt64.AvailableLuminance))));
-            Assert.IsFalse(BankLock.HasBankStep(null));
+            Assert.IsTrue(BankLock.ReachesBankStep(set, 0, null));
+            Assert.IsTrue(BankLock.ReachesBankStep(set, 1, null));
+            Assert.IsFalse(BankLock.ReachesBankStep(set, 2, null));
+            Assert.IsFalse(BankLock.ReachesBankStep(Set(Step(EmoteType.IncrementInt64Stat, PropertyInt64.AvailableLuminance)), 0, null));
+            Assert.IsFalse(BankLock.ReachesBankStep(null, 0, null));
+        }
+
+        /// <summary>
+        /// A set the chain continues in counts: "Goto Pay, then Give" queues the Pay set and hands over the item first, so the
+        /// parent must stop when Pay holds a bank step - not just the Pay set.
+        /// </summary>
+        [TestMethod]
+        public void ReachesBankStep_ThroughASetTheChainContinuesIn()
+        {
+            var use = Branch(EmoteCategory.Use, "", Step(EmoteType.Goto, message: "Pay"), Step(EmoteType.Give));
+            var pay = Branch(EmoteCategory.GotoSet, "Pay", Step(EmoteType.DecrementInt64Stat, PropertyInt64.BankedLuminance));
+
+            Assert.IsTrue(BankLock.ReachesBankStep(use, 0, new[] { use, pay }));
+            Assert.IsFalse(BankLock.ReachesBankStep(use, 0, new[] { use }));
         }
 
         /// <summary>The lock read off a character, and the setters' rule: a write is refused only for a balance of a locked bank, outside a staff write.</summary>
@@ -299,7 +378,14 @@ namespace ACE.Server.Tests
             return set;
         }
 
-        private static PropertiesEmoteAction Step(EmoteType type, PropertyInt64? stat = null, string message = "")
+        /// <summary>The same set with another Probability (EmoteManager.GetEmoteSet picks by it).</summary>
+        private static PropertiesEmote Chance(PropertiesEmote set, float probability)
+        {
+            set.Probability = probability;
+            return set;
+        }
+
+        private static PropertiesEmoteAction Step(EmoteType type, PropertyInt64? stat = null, string message = "", long amount = 1)
         {
             return new PropertiesEmoteAction
             {
@@ -309,7 +395,7 @@ namespace ACE.Server.Tests
                 Message = message,
                 TestString = "",
                 Stat = stat.HasValue ? (int?)(int)stat.Value : null,
-                Amount64 = 1,
+                Amount64 = amount,
             };
         }
     }

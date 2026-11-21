@@ -759,6 +759,15 @@ namespace ACE.Server.WorldObjects
             // lands, so unless this thread owns the player's landblock the bank write runs on the world queue.
             LandblockManager.RunOnThreadFor(player, ActionType.CreatureDeath_BankCorpseCoins, () =>
             {
+                // bank lock (/banklock) set after the check above, while this credit waited for the player's thread: the coins
+                // are already off the corpse, so the player is told and the log says what to credit by hand
+                if (player.IsBankLocked)
+                {
+                    log.Warn($"[BankLock] {player.Name} (0x{player.Guid.Full:X8}): {total:N0} kill pyreals from {Name} not banked - the bank was locked while the credit was queued. Credit it by hand after /bankunlock.");
+                    player.SendMessage($"Your bank is locked, so {total:N0} pyreals from {Name} were not banked.", ChatMessageType.Broadcast);
+                    return;
+                }
+
                 // pyreal ledger: a labeled gain (Loot, this creature), never an unexplained one
                 using (PyrealLedger.BeginFor(PyrealLedger.SrcLoot, this, player))
                     player.BankedPyreals = (player.BankedPyreals ?? 0) + total;

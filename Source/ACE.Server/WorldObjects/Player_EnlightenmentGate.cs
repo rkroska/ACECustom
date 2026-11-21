@@ -67,12 +67,16 @@ namespace ACE.Server.WorldObjects
         /// Takes the whole fee, or nothing when the player is short of any part of it (<paramref name="shortfall"/> says what).
         /// If a pack item fails to leave the pack part way through, everything already taken goes back to the bank
         /// (as banked currency, not as the original items) and false is returned, so the gate is never stamped on a
-        /// partial payment.
+        /// partial payment. A locked bank (/banklock) takes nothing back: then <paramref name="partKept"/> is true, and the
+        /// log says what to credit by hand.
         /// </summary>
-        public bool TryPayEnlightenmentGateFee(EnlightenmentGate.Fee fee, int gateLevel, out List<string> shortfall)
+        public bool TryPayEnlightenmentGateFee(EnlightenmentGate.Fee fee, int gateLevel, out List<string> shortfall, out bool partKept)
         {
             lock (balanceLock)
             {
+                // true only when the payment failed part way and what was taken could not be given back (a locked bank)
+                partKept = false;
+
                 shortfall = GetEnlightenmentGateShortfall(fee);
                 if (shortfall.Count > 0)
                     return false;
@@ -92,6 +96,7 @@ namespace ACE.Server.WorldObjects
                 {
                     log.Error($"[ENL_GATE] {Name}: gate {gateLevel} fee failed part way ({pyrealsTaken:N0}/{fee.Pyreals:N0} pyreals, {enlightenedCoinsTaken:N0}/{fee.EnlightenedCoins:N0} EC, {prestigeCoinsTaken:N0}/{fee.PrestigeCoins:N0} PC); NOT refunded - the bank is locked. Credit it by hand after /bankunlock.");
                     shortfall.Add("a successful payment (an item could not be taken, and what was taken could not be returned: your bank is locked)");
+                    partKept = true;
                     return false;
                 }
 
