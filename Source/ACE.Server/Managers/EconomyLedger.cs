@@ -1193,8 +1193,28 @@ namespace ACE.Server.Managers
                 cmd.ExecuteNonQuery();
             }
 
-            // a second snapshot on the same day replaces the day's holdings: an account that has since emptied its
-            // balance must not keep the earlier row
+            tx.Commit();
+
+            // the per-account rows only feed the page's activity filter: if they cannot be written, the day's supply
+            // (which the flow checks depend on) is already saved and stays valid
+            try
+            {
+                SaveHoldings(con, day, holdings);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[EconomyLedger] Saving per-account holdings for {day:yyyy-MM-dd} failed (the supply snapshot itself was saved): {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Replaces the day's per-account holdings in one transaction (a second snapshot on the same day must not leave
+        /// rows for an account that has since emptied its balance).
+        /// </summary>
+        private static void SaveHoldings(DbConnection con, DateTime day, List<AccountHolding> holdings)
+        {
+            using var tx = con.BeginTransaction();
+
             using (var del = NewCommand(con))
             {
                 del.Transaction = tx;

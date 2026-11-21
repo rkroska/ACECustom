@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Activity, RefreshCw, Trophy } from 'lucide-react'
 import { api } from '../services/api'
@@ -191,18 +191,36 @@ export default function Leaderboards() {
     return groups
   }, [catalog])
 
+  /** Only the newest request may update the table: a slow answer for an earlier board or window is dropped. */
+  const requestSeq = useRef(0)
+
   const loadBoard = useCallback(async (id: string, days: number | null) => {
+    const seq = ++requestSeq.current
+    const fetchBoard = (d: number | null) =>
+      api.get<BoardPayload>(`/api/leaderboard/${encodeURIComponent(id)}${d === null ? '' : `?days=${d}`}`)
     try {
       setLoadingBoard(true)
       setError(null)
-      const q = days === null ? '' : `?days=${days}`
-      const res = await api.get<BoardPayload>(`/api/leaderboard/${encodeURIComponent(id)}${q}`)
-      if (res) setPayload(res)
+      let res: BoardPayload | null | undefined
+      try {
+        res = await fetchBoard(days)
+      } catch (e) {
+        // the window may no longer be offered (staff changed leaderboard_active_days while the page was open):
+        // ask for the server default once and take the current choices from that answer
+        if (days === null) throw e
+        res = await fetchBoard(null)
+        if (seq === requestSeq.current && res) {
+          setActiveOptions(res.activeDayOptions ?? [])
+          setActiveDays(res.activeDays)
+        }
+      }
+      if (seq === requestSeq.current && res) setPayload(res)
     } catch (e) {
+      if (seq !== requestSeq.current) return
       setPayload(null)
       setError(e instanceof Error ? e.message : 'Failed to load this board.')
     } finally {
-      setLoadingBoard(false)
+      if (seq === requestSeq.current) setLoadingBoard(false)
     }
   }, [])
 

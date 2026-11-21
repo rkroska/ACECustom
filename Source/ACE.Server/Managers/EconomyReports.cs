@@ -726,6 +726,8 @@ namespace ACE.Server.Managers
             foreach (var player in players)
             {
                 var accountId = player.Account?.AccountId ?? 0;
+                if (accountId == 0)
+                    continue;
                 var login = player is Player ? now : player.GetProperty(PropertyFloat.LoginTimestamp) ?? 0;
                 if (!accountLogin.TryGetValue(accountId, out var known) || login > known)
                     accountLogin[accountId] = login;
@@ -746,11 +748,18 @@ namespace ACE.Server.Managers
                     continue;
 
                 var accountId = player.Account?.AccountId ?? 0;
-                accountLogin.TryGetValue(accountId, out var accountLast);
+                var login = player.GetProperty(PropertyFloat.LoginTimestamp);
+
+                // a character with no account record has nobody to share activity with: it goes by its own login
+                double accountLast;
+                if (accountId == 0)
+                    accountLast = player is Player ? now : login ?? 0;
+                else
+                    accountLogin.TryGetValue(accountId, out accountLast);
+
                 if (accountLast < cutoff)
                     continue;
 
-                var login = player.GetProperty(PropertyFloat.LoginTimestamp);
                 rows.Add(new HolderRow
                 {
                     CharId = player.Guid.Full, CharName = player.Name, AccountId = accountId, Banked = banked,

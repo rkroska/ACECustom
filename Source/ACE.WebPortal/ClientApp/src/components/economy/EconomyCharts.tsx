@@ -2,16 +2,22 @@ import { useMemo } from 'react'
 import type { EconomyFlowPoint, EconomySeriesPoint } from '../../types/economy'
 import { dayLabel, formatCompact, formatFull } from './economyUtils'
 
+const hasFiltered = (p: EconomySeriesPoint) => p.filteredTotal !== null && p.filteredTotal !== undefined
+
 /**
- * Total supply over time, plus the part held by the accounts the activity filter keeps. Days from before per-account
- * data was saved fall back to the stored active-player figure. Plain SVG line chart.
+ * Total supply over time, plus the part held by the accounts the activity filter keeps. Once any day has per-account
+ * data the second line runs through those days only, so it never joins the older per-character figure (a different
+ * measure) to the filtered one. With no per-account data at all it shows the stored active-player figure. Plain SVG.
  */
 export function SupplyChart({ series, filterLabel = 'Active players' }: { series: EconomySeriesPoint[]; filterLabel?: string }) {
-  const second = (p: EconomySeriesPoint) => p.filteredTotal ?? p.activeSupply
-  const anyFiltered = series.some(p => p.filteredTotal !== null && p.filteredTotal !== undefined)
+  const anyFiltered = series.some(hasFiltered)
   const geo = useMemo(() => {
     if (series.length < 2) return null
-    const all = series.flatMap(p => [p.total, second(p)])
+    const filtered = series.some(hasFiltered)
+    const secondPoints = series
+      .map((p, i) => ({ i, v: filtered ? p.filteredTotal : p.activeSupply }))
+      .filter((pt): pt is { i: number; v: number } => pt.v !== null && pt.v !== undefined)
+    const all = [...series.map(p => p.total), ...secondPoints.map(pt => pt.v)]
     const min = Math.min(...all)
     const max = Math.max(...all)
     const span = max - min || 1
@@ -25,7 +31,7 @@ export function SupplyChart({ series, filterLabel = 'Active players' }: { series
       min,
       max,
       total: series.map((p, i) => `${x(i).toFixed(1)},${y(p.total).toFixed(1)}`).join(' '),
-      active: series.map((p, i) => `${x(i).toFixed(1)},${y(second(p)).toFixed(1)}`).join(' '),
+      active: secondPoints.map(pt => `${x(pt.i).toFixed(1)},${y(pt.v).toFixed(1)}`).join(' '),
       x,
     }
   }, [series])
