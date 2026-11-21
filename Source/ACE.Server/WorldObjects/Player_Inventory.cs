@@ -4044,6 +4044,14 @@ namespace ACE.Server.WorldObjects
             if (target.GetProperty(PropertyBool.ParagonCollector) == true)
             {
                 Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+
+                // bank lock (/banklock): the collector pays into the bank, which takes nothing in while locked
+                if (IsBankLocked)
+                {
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} pays into your bank, and your bank is locked.", ChatMessageType.Broadcast));
+                    return;
+                }
+
                 ACE.Server.Entity.ParagonCollectorService.HandleGive(this, target, item, itemWasEquipped);
                 return;
             }
@@ -4054,6 +4062,16 @@ namespace ACE.Server.WorldObjects
             {
                 if (acceptAll || (emoteResult.Category == EmoteCategory.Give && target.AllowGive))
                 {
+                    // bank lock (/banklock): an NPC that deals with this item through the bank would take it for nothing
+                    // while the bank is locked, so the player keeps it (BankLock.UsesBank follows the set and its branches).
+                    // An accept-everything NPC with no Give set for the item has no emote to look at (UsesBank(null) is false).
+                    if (IsBankLocked && BankLock.UsesBank(emoteResult, target.Biota.PropertiesEmote))
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} uses your bank for that, and your bank is locked.", ChatMessageType.Broadcast));
+                        Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                        return;
+                    }
+
                     // Pre-removal gate: verify the player can carry the rewards BEFORE consuming the
                     // turn-in. The reward emote chain runs asynchronously, but the turn-in is removed
                     // and Destroy()-ed synchronously below — so without this check a full inventory
@@ -4116,6 +4134,15 @@ namespace ACE.Server.WorldObjects
                 }
                 else if (emoteResult.Category == EmoteCategory.Refuse)
                 {
+                    // bank lock (/banklock): a Refuse set can still take the item (TakeItems) and pay for it - kept back, as a
+                    // Give set is, when the NPC deals with it through the bank (BankLock.UsesBank)
+                    if (IsBankLocked && BankLock.UsesBank(emoteResult, target.Biota.PropertiesEmote))
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} uses your bank for that, and your bank is locked.", ChatMessageType.Broadcast));
+                        Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                        return;
+                    }
+
                     // Item rejected by npc
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"You allow {target.Name} to examine your {item.NameWithMaterial}.", ChatMessageType.Broadcast));
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full, WeenieError.TradeAiRefuseEmote));

@@ -795,6 +795,13 @@ namespace ACE.Server.WorldObjects
         {
             void Tell(string text) => Session?.Network.EnqueueSend(new GameMessageSystemChat(text, ChatMessageType.Broadcast));
 
+            // bank lock (/banklock): the token would be used up and nothing banked, so the player keeps it
+            if (IsBankLocked)
+            {
+                Tell($"Your bank is locked, so the {item.Name} can't be banked.");
+                return;
+            }
+
             var value = LumTokenValue(item.WeenieClassId);
             if (value <= 0)
             {
@@ -2168,6 +2175,21 @@ namespace ACE.Server.WorldObjects
             return PlayerManager.FindByName(name);
         }
 
+        /// <summary>
+        /// Bank lock (/banklock): a locked bank takes nothing in, so a transfer to one is refused here, before anything leaves
+        /// this bank. True when it was refused. The sender is not told why: a lock is a staff action, not other players'
+        /// business. The transfer log says it.
+        /// </summary>
+        private bool RefuseLockedRecipient(IPlayer tarplayer, string operation, string currencyType, long amount, string destination)
+        {
+            if (!BankLock.IsLocked(tarplayer))
+                return false;
+
+            LogTransfer(operation, currencyType, amount, destination, false, "Target bank locked");
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"{tarplayer.Name} can't receive bank transfers right now.", ChatMessageType.System));
+            return true;
+        }
+
         public bool TransferPyreals(long Amount, string CharacterDestination)
         {
             LogAndPrint($"[BANK_DEBUG] Player: {Name} | Starting TransferPyreals operation | Amount: {Amount:N0} | Target: {CharacterDestination} | Current BankedPyreals: {BankedPyreals:N0}");
@@ -2195,6 +2217,10 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
             
+            // bank lock (/banklock): a locked bank takes nothing in, so refuse before anything leaves this one
+            if (RefuseLockedRecipient(tarplayer, "TransferPyreals", "Pyreals", Amount, CharacterDestination))
+                return false;
+
             if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
             {
                 LogTransfer("TransferPyreals", "Pyreals", Amount, CharacterDestination, false, "Self-transfer attempted");
@@ -2338,6 +2364,10 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
             
+            // bank lock (/banklock): a locked bank takes nothing in, so refuse before anything leaves this one
+            if (RefuseLockedRecipient(tarplayer, "TransferLegendaryKeys", "Legendary Keys", Amount, CharacterDestination))
+                return false;
+
             if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
@@ -2425,6 +2455,10 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
             
+            // bank lock (/banklock): a locked bank takes nothing in, so refuse before anything leaves this one
+            if (RefuseLockedRecipient(tarplayer, "TransferMythicalKeys", "Mythical Keys", Amount, CharacterDestination))
+                return false;
+
             if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
@@ -2522,6 +2556,10 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
             
+            // bank lock (/banklock): a locked bank takes nothing in, so refuse before anything leaves this one
+            if (RefuseLockedRecipient(tarplayer, "TransferLuminance", "Luminance", Amount, CharacterDestination))
+                return false;
+
             if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
@@ -2631,6 +2669,10 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
             
+            // bank lock (/banklock): a locked bank takes nothing in, so refuse before anything leaves this one
+            if (RefuseLockedRecipient(tarplayer, "TransferEnlightenedCoins", "Enlightened Coins", Amount, CharacterDestination))
+                return false;
+
             if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
@@ -2727,6 +2769,10 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
             
+            // bank lock (/banklock): a locked bank takes nothing in, so refuse before anything leaves this one
+            if (RefuseLockedRecipient(tarplayer, "TransferWeaklyEnlightenedCoins", "Weakly Enlightened Coins", Amount, CharacterDestination))
+                return false;
+
             if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
@@ -2801,9 +2847,15 @@ namespace ACE.Server.WorldObjects
                 return true;
             }
         }
+        /// <summary>
+        /// Staff locked this character's bank (/banklock). Then every balance below reads 0, so no "can you pay" test counts
+        /// the bank, and the property writers refuse any change to it (BankLock.cs). Staff commands read the stored values.
+        /// </summary>
+        public bool IsBankLocked => GetProperty(PropertyBool.BankLocked) ?? false;
+
         public long? BankedLuminance
         {
-            get => GetProperty(PropertyInt64.BankedLuminance) ?? 0;
+            get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedLuminance) ?? 0);
             set
             {
                 if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLuminance); else SetProperty(PropertyInt64.BankedLuminance, value.Value);
@@ -2819,38 +2871,38 @@ namespace ACE.Server.WorldObjects
 
         public long? BankedPyreals
         {
-            get => GetProperty(PropertyInt64.BankedPyreals) ?? 0;
+            get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedPyreals) ?? 0);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPyreals); else SetProperty(PropertyInt64.BankedPyreals, value.Value); }
         }
 
         public long? BankedLegendaryKeys
         {
-            get => GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0;
+            get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLegendaryKeys); else SetProperty(PropertyInt64.BankedLegendaryKeys, value.Value); }
         }
         public long? BankedEnlightenedCoins
         {
-            get => GetProperty(PropertyInt64.BankedEnlightenedCoins) ?? 0;
+            get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedEnlightenedCoins) ?? 0);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenedCoins); else SetProperty(PropertyInt64.BankedEnlightenedCoins, value.Value); }
         }
         public long? BankedWeaklyEnlightenedCoins
         {
-            get => GetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins) ?? 0;
+            get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins) ?? 0);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedWeaklyEnlightenedCoins); else SetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins, value.Value); }
         }
         public long? BankedPrestigeCoins
         {
-            get => GetProperty(PropertyInt64.BankedPrestigeCoins) ?? 0;
+            get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedPrestigeCoins) ?? 0);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPrestigeCoins); else SetProperty(PropertyInt64.BankedPrestigeCoins, value.Value); }
         }
         public long? BankedEnlightenmentTokens
         {
-            get => GetProperty(PropertyInt64.BankedEnlightenmentTokens) ?? 0;
+            get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedEnlightenmentTokens) ?? 0);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenmentTokens); else SetProperty(PropertyInt64.BankedEnlightenmentTokens, value.Value); }
         }
         public long? BankedMythicalKeys
         {
-            get => GetProperty(PropertyInt64.BankedMythicalKeys) ?? 0;
+            get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedMythicalKeys) ?? 0);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedMythicalKeys); else SetProperty(PropertyInt64.BankedMythicalKeys, value.Value); }
         }
     }

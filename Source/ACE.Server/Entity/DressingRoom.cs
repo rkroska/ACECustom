@@ -394,9 +394,14 @@ namespace ACE.Server.Entity
                     player.RemoveProperty(PropertyString.DressingRoomLook);
                 else
                     player.SetProperty(PropertyString.DressingRoomLook, before);
-                player.BankedPyreals = (player.BankedPyreals ?? 0) + plan.Total;
-                player.RefreshCoinValueAfterBankChange();
-                log.Error($"{Tag} {player.Name} (0x{player.Guid.Full:X8}): the look could not be written; the fee of {plan.Total} was refunded to the bank and the look left as it was: {ex}");
+                // bank lock (/banklock): a locked bank takes nothing in, so the fee is not refunded - and nobody is told it was
+                var refunded = !player.IsBankLocked;
+                if (refunded)
+                {
+                    player.BankedPyreals = (player.BankedPyreals ?? 0) + plan.Total;
+                    player.RefreshCoinValueAfterBankChange();
+                }
+                log.Error($"{Tag} {player.Name} (0x{player.Guid.Full:X8}): the look could not be written; the fee of {plan.Total} was {(refunded ? "refunded to the bank" : "NOT refunded (the bank is locked)")} and the look left as it was: {ex}");
                 // any pack coins the fee took are already gone from the database, so store the bank credit now too
                 try
                 {
@@ -406,9 +411,11 @@ namespace ACE.Server.Entity
                 {
                     log.Error($"{Tag} {player.Name} (0x{player.Guid.Full:X8}): the refund of {plan.Total} could not be saved at once (the next ordinary save will store it): {saveEx}");
                 }
-                Say(player, attendant, plan.Total > 0
-                    ? "Something went wrong, so I changed nothing. Your pyreals are back in your bank."
-                    : "Something went wrong, so I changed nothing.");
+                Say(player, attendant, plan.Total <= 0
+                    ? "Something went wrong, so I changed nothing."
+                    : refunded
+                        ? "Something went wrong, so I changed nothing. Your pyreals are back in your bank."
+                        : "Something went wrong, so I changed nothing. Your bank is locked, so your pyreals could not be returned.");
                 return;
             }
 

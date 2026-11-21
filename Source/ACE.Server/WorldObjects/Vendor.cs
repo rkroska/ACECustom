@@ -561,6 +561,11 @@ namespace ACE.Server.WorldObjects
             // verify player has enough currency
             if (AlternateCurrency == null)
             {
+                // bank lock (/banklock): CoinValue is a cached total that counts banked pyreals, and it can predate the lock -
+                // a locked buyer is measured again, against the coins they carry, before anything is sold to them
+                if (player.IsBankLocked)
+                    player.RefreshCoinValueAfterBankChange();
+
                 if (player.CoinValue < totalPrice)
                 {
                     CleanupCreatedItems(defaultItems);

@@ -32,6 +32,17 @@ namespace ACE.Server.WorldObjects
             return total;
         }
 
+        /// <summary>
+        /// Bank lock (/banklock): true when the whole fee can be paid from the pack without the bank - pyreal coins (a trade
+        /// note is never broken, as its change would go to the bank), Enlightened Coins and Prestige Coins.
+        /// </summary>
+        public bool CanPayEnlightenmentGateFeeFromPack(EnlightenmentGate.Fee fee)
+        {
+            return GetNumInventoryItemsOfWCID(coinStackWcid) >= fee.Pyreals
+                && GetNumInventoryItemsOfWCID(ENLIGHTENED_COIN_WCID) >= fee.EnlightenedCoins
+                && GetNumInventoryItemsOfWCID(PRESTIGE_COIN_WCID) >= fee.PrestigeCoins;
+        }
+
         /// <summary>What the player is short of the fee, pack and bank together, e.g. "1,500 Enlightened Coins". Empty when they can pay.</summary>
         public List<string> GetEnlightenmentGateShortfall(EnlightenmentGate.Fee fee)
         {
@@ -106,7 +117,8 @@ namespace ACE.Server.WorldObjects
             if (taken < fromPack)
                 return taken;
 
-            SetProperty(bankProperty, (GetProperty(bankProperty) ?? 0) - (amount - taken));
+            if (amount > taken)
+                SetProperty(bankProperty, (GetProperty(bankProperty) ?? 0) - (amount - taken));
             return amount;
         }
 

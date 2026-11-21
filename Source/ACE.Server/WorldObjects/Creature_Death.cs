@@ -731,9 +731,10 @@ namespace ACE.Server.WorldObjects
                 return;
 
             // A player who is logging out still counts as online until the final save returns, and a bank write after
-            // that save was issued would never be stored: leave the coins on the corpse instead.
+            // that save was issued would never be stored: leave the coins on the corpse instead. The same for a locked bank
+            // (/banklock), which takes nothing in: the coins stay on the corpse rather than being destroyed for nothing.
             var player = PlayerManager.GetOnlinePlayer(killerGuid);
-            if (player == null || player.IsLoggingOut)
+            if (player == null || player.IsLoggingOut || player.IsBankLocked)
                 return;
 
             var coinStacks = corpse.Inventory.Values.Where(i => i.WeenieClassId == (uint)ACE.Entity.Enum.WeenieClassName.W_COINSTACK_CLASS).ToList();

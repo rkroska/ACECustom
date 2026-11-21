@@ -149,6 +149,10 @@ namespace ACE.Server.Entity
         }
         public void SetProperty(PropertyInt64 property, long value)
         {
+            // bank lock (/banklock): a locked bank's currencies never change, whatever the code path (BankLock.cs)
+            if (BankLock.RefusesWrite(this, property))
+                return;
+
             if (PyrealLedger.Tracks(property))
             {
                 SetTrackedProperty(property, value);
@@ -227,6 +231,10 @@ namespace ACE.Server.Entity
         }
         public void RemoveProperty(PropertyInt64 property)
         {
+            // bank lock (/banklock): a locked bank's currencies never change, whatever the code path (BankLock.cs)
+            if (BankLock.RefusesWrite(this, property))
+                return;
+
             if (PyrealLedger.Tracks(property))
             {
                 RemoveTrackedProperty(property);

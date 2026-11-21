@@ -603,8 +603,9 @@ namespace ACE.Server.WorldObjects.Managers
                         current -= emote.Amount64 ?? 1;
                         targetObject.SetProperty(int64Property, current);
 
+                        // what was stored: a locked bank (/banklock) refuses the write, and the client must not show it as made
                         if (player != null)
-                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, current));
+                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, targetObject.GetProperty(int64Property) ?? 0));
 
                         // a lower unassigned XP balance: top it up from its overflow bank (Player_Xp)
                         if (targetObject is Player bankTarget && IsXpBalanceProperty(int64Property))
@@ -802,8 +803,9 @@ namespace ACE.Server.WorldObjects.Managers
                         current += emote.Amount64 ?? 1;
                         targetObject.SetProperty(int64Property, current);
 
+                        // what was stored: a locked bank (/banklock) refuses the write, and the client must not show it as made
                         if (player != null)
-                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, current));
+                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, targetObject.GetProperty(int64Property) ?? 0));
 
                         if (targetObject is Player bankTarget && IsXpBalanceProperty(int64Property))
                             bankTarget.RefillAvailableXpFromOverflow();
@@ -1100,6 +1102,10 @@ namespace ACE.Server.WorldObjects.Managers
                     if (targetObject != null)
                     {
                         var stat = targetObject.GetProperty((PropertyInt64)emote.Stat);
+
+                        // bank lock (/banklock): a locked bank reads as empty, so an NPC never takes payment it can't collect
+                        if (targetObject is Player inqBankPlayer && BankLock.IsBankProperty((PropertyInt64)emote.Stat) && inqBankPlayer.IsBankLocked)
+                            stat = 0;
 
                         if (stat == null && HasValidTestNoQuality(emote.Message))
                             ExecuteEmoteSet(EmoteCategory.TestNoQuality, emote.Message, targetObject, true);
@@ -4043,6 +4049,19 @@ namespace ACE.Server.WorldObjects.Managers
                 return;
             }
 
+            // Bank lock (/banklock): a step on a banked currency would be refused by the locked bank (BankLock.cs) while the
+            // rest of this set ran on - a reward handed over with its price never taken, or an item taken for a credit never
+            // made. So a set with such a step still to come stops here, before its next step, for a locked player. Like the
+            // scan-ahead below, it returns without the shared AbortEmoteChain flag, which would leak to a sibling nested chain.
+            if (targetObject is Player bankLockedPlayer && bankLockedPlayer.IsBankLocked && BankLock.HasBankStep(emoteSet, emoteIdx))
+            {
+                bankLockedPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your bank is locked, so {WorldObject.Name} can't do that.", ChatMessageType.Broadcast));
+                Nested--;
+                if (Nested == 0)
+                    IsBusy = false;
+                return;
+            }
+
             if (Debug)
                 Console.Write($"{(EmoteType)emote.Type}");
 
@@ -4121,7 +4140,7 @@ namespace ACE.Server.WorldObjects.Managers
             }
         }
 
-        private static bool EmoteIsBranchingType(PropertiesEmoteAction emote)
+        internal static bool EmoteIsBranchingType(PropertiesEmoteAction emote)
         {
             if (emote == null)
                 return false;

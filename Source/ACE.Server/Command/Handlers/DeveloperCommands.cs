@@ -576,13 +576,66 @@ namespace ACE.Server.Command.Handlers
         // World Object Properties
         // ==================================
 
-        [CommandHandler("propertydump", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Lists all properties for the last world object you examined, or the named online player.", "[player name or id]")]
+        [CommandHandler("propertydump", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Lists all properties for the last world object you examined, or the named player, online or offline.", "[player name or id]")]
         public static void HandlePropertyDump(Session session, params string[] parameters)
         {
-            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 0);   // the last appraised one, or a named player
+            // the last appraised one, or a named player - online, or offline (its stored record, 2026-11-20)
+            if (!CommandHandlerHelper.TryGetCommandTargetOrOffline(session, parameters, 0, out var target, out var offlineTarget))
+                return;
 
-            if (target != null)
-                session.Network.EnqueueSend(new GameMessageSystemChat($"\n{target.DebugOutputString(target)}", ChatMessageType.System));
+            if (offlineTarget != null)
+            {
+                foreach (var section in OfflinePropertyDumpSections(offlineTarget))
+                    session.Network.EnqueueSend(new GameMessageSystemChat(section, ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"\n{target.DebugOutputString(target)}", ChatMessageType.System));
+        }
+
+        /// <summary>
+        /// /propertydump of an offline character (2026-11-20): there is no live object to reflect over, so this lists its stored
+        /// record - every property, one chat message per property type, in number order.
+        /// </summary>
+        /// <param name="target">The offline character</param>
+        /// <returns>The chat messages to send</returns>
+        private static List<string> OfflinePropertyDumpSections(OfflinePlayer target)
+        {
+            var biota = target.Biota;
+            var sections = new List<string> { $"\nOffline character {target.Name} (0x{target.Guid.Full:X8}{(target.IsPendingDeletion ? ", pending deletion" : "")}) - stored properties:" };
+
+            target.BiotaDatabaseLock.EnterReadLock();
+            try
+            {
+                AppendOfflinePropertySection(sections, "PropertyBool", biota.PropertiesBool);
+                AppendOfflinePropertySection(sections, "PropertyDataId", biota.PropertiesDID);
+                AppendOfflinePropertySection(sections, "PropertyFloat", biota.PropertiesFloat);
+                AppendOfflinePropertySection(sections, "PropertyInstanceId", biota.PropertiesIID);
+                AppendOfflinePropertySection(sections, "PropertyInt", biota.PropertiesInt);
+                AppendOfflinePropertySection(sections, "PropertyInt64", biota.PropertiesInt64);
+                AppendOfflinePropertySection(sections, "PropertyString", biota.PropertiesString);
+            }
+            finally
+            {
+                target.BiotaDatabaseLock.ExitReadLock();
+            }
+
+            return sections;
+        }
+
+        /// <summary>Adds one property type of an offline character's record as a chat message ("PropertyInt64.BankedPyreals (9004) = 1234" lines).</summary>
+        private static void AppendOfflinePropertySection<TProperty, TValue>(List<string> sections, string typeName, IDictionary<TProperty, TValue> properties)
+            where TProperty : struct, System.Enum
+        {
+            if (properties == null || properties.Count == 0)
+                return;
+
+            var sb = new System.Text.StringBuilder();
+            foreach (var entry in properties.OrderBy(p => Convert.ToInt64(p.Key)))
+                sb.Append($"{typeName}.{entry.Key} ({Convert.ToInt64(entry.Key)}) = {entry.Value}\n");
+
+            // the client draws a bare carriage return as a music note
+            sections.Add(sb.ToString().Replace("\r", "").TrimEnd());
         }
 
 
@@ -888,6 +941,13 @@ namespace ACE.Server.Command.Handlers
                     {
                         var amount = aceParams[1].AsLong;
                         var player = aceParams[0].AsPlayer;
+
+                        // bank lock (/banklock): every luminance award is banked, and a locked bank takes nothing in
+                        if (player.IsBankLocked)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Nothing granted: {player.Name}'s bank is locked, and luminance is paid into the bank. /bankunlock first.", ChatMessageType.Broadcast));
+                            return;
+                        }
 
                         player.GrantLuminance(amount, XpType.Admin, ShareType.None);
                         if (player.Session != null)
@@ -2120,14 +2180,15 @@ namespace ACE.Server.Command.Handlers
         /// <summary>
         /// Gets a property for the last appraised object, or the target named by player name or id (CommandHandlerHelper.GetCommandTarget)
         /// </summary>
-        [CommandHandler("getproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Gets a property for the last appraised object, or the named / numbered object (an online player anywhere)", "<property> [player name, or object id: decimal or 0x hex]")]
+        [CommandHandler("getproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Gets a property for the last appraised object, or the named / numbered object (a player online anywhere, or offline)", "<property> [player name, or object id: decimal or 0x hex]")]
         public static void HandleGetProperty(Session session, params string[] parameters)
         {
             if (parameters.Length < 1)
                 return;
 
-            var obj = CommandHandlerHelper.GetCommandTarget(session, parameters, 1);   // the last appraised one, or a named player
-            if (obj == null) return;
+            // the last appraised one, or a named player - online, or offline (its stored record, 2026-11-20)
+            if (!CommandHandlerHelper.TryGetCommandTargetOrOffline(session, parameters, 1, out var obj, out var offlineObj))
+                return;
 
             var prop = parameters[0];
 
@@ -2170,7 +2231,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             var value = "";
-            if (propType.Equals("PropertyInt", StringComparison.OrdinalIgnoreCase))
+            if (offlineObj != null)
+                value = OfflinePropertyText(offlineObj, propType, result);
+            else if (propType.Equals("PropertyInt", StringComparison.OrdinalIgnoreCase))
                 value = Convert.ToString(obj.GetProperty((PropertyInt)result));
             else if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase))
                 value = Convert.ToString(obj.GetProperty((PropertyInt64)result));
@@ -2185,14 +2248,35 @@ namespace ACE.Server.Command.Handlers
             else if (propType.Equals("PropertyDataId", StringComparison.OrdinalIgnoreCase))
                 value = Convert.ToString(obj.GetProperty((PropertyDataId)result));
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"{obj.Name} (0x{obj.Guid.Full:X8}): {prop} = {value}", ChatMessageType.Broadcast));
+            var who = offlineObj != null ? $"{offlineObj.Name} (0x{offlineObj.Guid.Full:X8}, {CommandHandlerHelper.OfflineLabel(offlineObj)})" : $"{obj.Name} (0x{obj.Guid.Full:X8})";
+            session.Network.EnqueueSend(new GameMessageSystemChat($"{who}: {prop} = {value}", ChatMessageType.Broadcast));
+        }
+
+        /// <summary>/getproperty on an offline character (2026-11-20): the value in its stored record, as text.</summary>
+        private static string OfflinePropertyText(OfflinePlayer target, string propType, object property)
+        {
+            if (propType.Equals("PropertyInt", StringComparison.OrdinalIgnoreCase))
+                return Convert.ToString(target.GetProperty((PropertyInt)property));
+            if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase))
+                return Convert.ToString(target.GetProperty((PropertyInt64)property));
+            if (propType.Equals("PropertyBool", StringComparison.OrdinalIgnoreCase))
+                return Convert.ToString(target.GetProperty((PropertyBool)property));
+            if (propType.Equals("PropertyFloat", StringComparison.OrdinalIgnoreCase))
+                return Convert.ToString(target.GetProperty((PropertyFloat)property));
+            if (propType.Equals("PropertyString", StringComparison.OrdinalIgnoreCase))
+                return Convert.ToString(target.GetProperty((PropertyString)property));
+            if (propType.Equals("PropertyInstanceId", StringComparison.OrdinalIgnoreCase))
+                return Convert.ToString(target.GetProperty((PropertyInstanceId)property));
+            if (propType.Equals("PropertyDataId", StringComparison.OrdinalIgnoreCase))
+                return Convert.ToString(target.GetProperty((PropertyDataId)property));
+            return "";
         }
 
         /// <summary>
         /// Sets a property for the last appraised object, or the target named by player name or id (CommandHandlerHelper.GetCommandTarget);
         /// for text properties the target is named by id only
         /// </summary>
-        [CommandHandler("setproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2, "Sets a property for the last appraised object, or the named / numbered object (an online player anywhere)", "<property> <value> [player name, or object id: decimal or 0x hex]")]
+        [CommandHandler("setproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2, "Sets a property for the last appraised object, or the named / numbered object (a player online anywhere, or offline)", "<property> <value> [player name, or object id: decimal or 0x hex]")]
         public static void HandleSetProperty(Session session, params string[] parameters)
         {
             if (parameters.Length < 2)
@@ -2208,9 +2292,10 @@ namespace ACE.Server.Command.Handlers
             }
 
             // a name or id given: that target or nothing - never the last appraised one, which would put the value on
-            // whatever was clicked last (CommandHandlerHelper.GetCommandTarget says so when it is not found)
-            var target = CommandHandlerHelper.GetCommandTarget(session, parameters, 2);
-            if (target == null) return;
+            // whatever was clicked last (CommandHandlerHelper says so when it is not found). An offline character is found
+            // too (2026-11-20): its stored record is changed and saved at once.
+            if (!CommandHandlerHelper.TryGetCommandTargetOrOffline(session, parameters, 2, out var target, out var offlineTarget))
+                return;
 
             var prop = parameters[0];
             var value = parameters[1];
@@ -2279,6 +2364,15 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
             }
+
+            if (offlineTarget != null)
+            {
+                SetOfflineProperty(session, offlineTarget, prop, propType, result, value);
+                return;
+            }
+
+            // a staff write: it reaches a bank locked with /banklock (BankLock.cs)
+            using var bankWrite = BankLock.AdminWrite();
 
             if (value == "null")
             {
@@ -2357,6 +2451,12 @@ namespace ACE.Server.Command.Handlers
                 // target's own client is told directly (commands run on the world thread, between landblock ticks)
                 SendOwnPropertyUpdate(targetPlayer, propType, result);
 
+                // the bank lock or the banked pyreals changed by hand: CoinValue is a cached total that counts banked pyreals
+                // (none while locked), and vendors check purchases against it - so it is worked out again now
+                if ((propType.Equals("PropertyBool", StringComparison.OrdinalIgnoreCase) && (PropertyBool)result == PropertyBool.BankLocked)
+                    || (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase) && (PropertyInt64)result == PropertyInt64.BankedPyreals))
+                    targetPlayer.RefreshCoinValueAfterBankChange();
+
                 // a change to the unassigned XP or its saved overflow: move what fits from the bank at once, so the client
                 // is not left showing a low balance with XP saved behind it - and say what the balance and bank are now
                 if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase)
@@ -2369,6 +2469,79 @@ namespace ACE.Server.Command.Handlers
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} (0x{target.Guid.Full:X8}): {prop} = {value}{xpNow}", ChatMessageType.Broadcast));
             PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed a property for {target.Name} ({target.Guid}): {prop} = {value}{xpNow}");
+        }
+
+        /// <summary>
+        /// /setproperty on an offline character (2026-11-20): the value is parsed as for an online one, written to the
+        /// character's stored record and saved at once, so it is there when they next log in. Reported, and posted to the
+        /// audit channel, like the online case with "offline" added. A staff write: it reaches a bank locked with /banklock.
+        /// </summary>
+        /// <param name="session">The admin's session</param>
+        /// <param name="target">The offline character</param>
+        /// <param name="prop">The property as typed, for the messages</param>
+        /// <param name="propType">Its type name (PropertyInt, PropertyInt64, ...)</param>
+        /// <param name="property">The property, as the matching enum value</param>
+        /// <param name="value">The value as typed, or "null" to remove the property</param>
+        private static void SetOfflineProperty(Session session, OfflinePlayer target, string prop, string propType, object property, string value)
+        {
+            var fromBase = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10;
+
+            using (BankLock.AdminWrite())
+            {
+                try
+                {
+                    if (value == "null")
+                    {
+                        if (propType.Equals("PropertyInt", StringComparison.OrdinalIgnoreCase))
+                            target.RemoveProperty((PropertyInt)property);
+                        else if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase))
+                            target.RemoveProperty((PropertyInt64)property);
+                        else if (propType.Equals("PropertyBool", StringComparison.OrdinalIgnoreCase))
+                            target.RemoveProperty((PropertyBool)property);
+                        else if (propType.Equals("PropertyFloat", StringComparison.OrdinalIgnoreCase))
+                            target.RemoveProperty((PropertyFloat)property);
+                        else if (propType.Equals("PropertyString", StringComparison.OrdinalIgnoreCase))
+                            target.RemoveProperty((PropertyString)property);
+                        else if (propType.Equals("PropertyInstanceId", StringComparison.OrdinalIgnoreCase))
+                            target.RemoveProperty((PropertyInstanceId)property);
+                        else if (propType.Equals("PropertyDataId", StringComparison.OrdinalIgnoreCase))
+                            target.RemoveProperty((PropertyDataId)property);
+                    }
+                    else if (propType.Equals("PropertyInt", StringComparison.OrdinalIgnoreCase))
+                        target.SetProperty((PropertyInt)property, Convert.ToInt32(value, fromBase));
+                    else if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase))
+                        target.SetProperty((PropertyInt64)property, Convert.ToInt64(value, fromBase));
+                    else if (propType.Equals("PropertyBool", StringComparison.OrdinalIgnoreCase))
+                        target.SetProperty((PropertyBool)property, Convert.ToBoolean(value));
+                    else if (propType.Equals("PropertyFloat", StringComparison.OrdinalIgnoreCase))
+                        target.SetProperty((PropertyFloat)property, Convert.ToDouble(value));
+                    else if (propType.Equals("PropertyString", StringComparison.OrdinalIgnoreCase))
+                        target.SetProperty((PropertyString)property, value);
+                    else if (propType.Equals("PropertyInstanceId", StringComparison.OrdinalIgnoreCase))
+                        target.SetProperty((PropertyInstanceId)property, Convert.ToUInt32(value, fromBase));
+                    else if (propType.Equals("PropertyDataId", StringComparison.OrdinalIgnoreCase))
+                        target.SetProperty((PropertyDataId)property, Convert.ToUInt32(value, fromBase));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Could not set {prop} to {value}: {e.Message} - nothing changed", ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+
+            PlayerManager.SaveOfflinePlayerNow(target);   // a failed save is retried with the next offline save cycle
+
+            // the online path tops up the unassigned XP from its saved overflow at once; offline that happens the next time the
+            // character spends XP (Player_Xp.RefillAvailableXpFromOverflow), so say so
+            var xpNote = propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase)
+                && ((PropertyInt64)property == PropertyInt64.AvailableExperience || (PropertyInt64)property == PropertyInt64.OverflowExperience)
+                ? " (saved XP tops up their unassigned XP the next time they spend XP)"
+                : "";
+
+            var label = CommandHandlerHelper.OfflineLabel(target);
+            session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} (0x{target.Guid.Full:X8}, {label}): {prop} = {value}{xpNote}", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed a property for {target.Name} ({target.Guid}, {label}): {prop} = {value}{xpNote}");
         }
 
         /// <summary>

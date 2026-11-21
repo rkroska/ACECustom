@@ -136,6 +136,14 @@ namespace ACE.Server.Entity
             var gateLevel = EnlightenmentTierManager.GetGateLevel(flag) ?? tier.MinTargetEnl - 1;
             var fee = GetFee(flag);
 
+            // bank lock (/banklock): the bank can't pay any of it, and a broken trade note's change would go to the bank - so
+            // a locked player pays from the coins in their pack, or not at all
+            if (player.IsBankLocked && !player.CanPayEnlightenmentGateFeeFromPack(fee))
+            {
+                player.SendMessage($"The gate fee of {fee} was not paid: your bank is locked, so it must come from pyreal coins, Enlightened Coins and Prestige Coins in your pack (not trade notes). You were not charged.", ChatMessageType.Broadcast);
+                return;
+            }
+
             if (!player.TryPayEnlightenmentGateFee(fee, gateLevel, out var shortfall))
             {
                 player.SendMessage($"The gate fee of {fee} was not paid: you are short {JoinList(shortfall)}. You were not charged.", ChatMessageType.Broadcast);
