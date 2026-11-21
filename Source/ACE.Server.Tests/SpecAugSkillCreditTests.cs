@@ -28,11 +28,28 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void FewerAugsThanCreditsPaidOwesNothingAndTakesNothingBack()
+        public void FewerAugsThanCreditsPaidOwesNothing()
         {
-            // an admin lowering the count does not take credits away
+            // the credits paid over a lower count are SpecAugSkillCreditsOver, which /testchar set augs takes back
             Assert.AreEqual(0, Player.SpecAugSkillCreditsOwed(100, 266));
             Assert.AreEqual(0, Player.SpecAugSkillCreditsOwed(-5, 0));
+        }
+
+        [TestMethod]
+        public void CreditsPaidOverTheAugCountAreTheOnesTakenBack()
+        {
+            Assert.AreEqual(166, Player.SpecAugSkillCreditsOver(100, 266));
+            Assert.AreEqual(266, Player.SpecAugSkillCreditsOver(0, 266));
+            Assert.AreEqual(0, Player.SpecAugSkillCreditsOver(266, 266));
+            Assert.AreEqual(0, Player.SpecAugSkillCreditsOver(276, 266));
+        }
+
+        [TestMethod]
+        public void NegativeCountsAreTreatedAsZeroWhenTakingBack()
+        {
+            Assert.AreEqual(3, Player.SpecAugSkillCreditsOver(-5, 3));
+            Assert.AreEqual(0, Player.SpecAugSkillCreditsOver(5, -10));
+            Assert.AreEqual(int.MaxValue, Player.SpecAugSkillCreditsOver(0, long.MaxValue));
         }
 
         [TestMethod]

@@ -647,6 +647,17 @@ namespace ACE.Server.WorldObjects
             return owed <= 0 ? 0 : (int)Math.Min(owed, int.MaxValue);
         }
 
+        /// <summary>
+        /// The skill credits given for Specialized Skill Augmentations the character no longer has: credits given minus augs,
+        /// never negative. Only /testchar set augs lowers the count without rebuilding the skill credit pool, and takes these back.
+        /// </summary>
+        internal static int SpecAugSkillCreditsOver(long specAugCount, long creditsGranted)
+        {
+            var over = Math.Max(0, creditsGranted) - Math.Max(0, specAugCount);
+
+            return over <= 0 ? 0 : (int)Math.Min(over, int.MaxValue);
+        }
+
         public bool IsSkillSpecializedViaAugmentation(Skill skill, out bool playerHasAugmentation)
         {
             playerHasAugmentation = false;

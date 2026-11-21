@@ -357,9 +357,16 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>Set all 10 luminance augs at once (plugin order: creature, item, life,
-        /// war, void, duration, specialize, summon, melee, missile).</summary>
-        internal static void SetChLumAugs(Player player, uint[] v)
+        /// war, void, duration, specialize, summon, melee, missile). Returns null when set, or why nothing was set.</summary>
+        internal static string SetChLumAugs(Player player, uint[] v)
         {
+            // Specialized Skill Augmentations give a skill credit each: a lower count takes back the credits given for the
+            // augs removed, from the unspent ones. Too few unspent and nothing is set, so the credits never go below zero.
+            var takeBack = Player.SpecAugSkillCreditsOver(v[6], player.SpecAugSkillCreditsGranted ?? 0);
+            var unspent = player.AvailableSkillCredits ?? 0;
+            if (takeBack > 0 && takeBack > unspent)
+                return $"REFUSED, nothing set - specialize {v[6]} takes back {takeBack:N0} skill credits given for Specialized Skill Augmentations, and only {unspent:N0} are unspent. Untrain skills first, or /testchar T0.";
+
             player.LuminanceAugmentCreatureCount = v[0];
             player.LuminanceAugmentItemCount = v[1];
             player.LuminanceAugmentLifeCount = v[2];
@@ -382,9 +389,26 @@ namespace ACE.Server.Command.Handlers
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.LumAugMeleeCount, player.LuminanceAugmentMeleeCount ?? 0));
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.LumAugMissileCount, player.LuminanceAugmentMissileCount ?? 0));
 
-            // a skill credit for each Specialized Skill Augmentation not paid yet
-            if (player.GrantSpecAugSkillCredits() > 0)
+            // a skill credit for each Specialized Skill Augmentation: take back the ones given for augs removed (checked
+            // above), or give the ones not paid yet
+            bool creditsChanged;
+            if (takeBack > 0)
+            {
+                player.AvailableSkillCredits = unspent - takeBack;
+                player.TotalSkillCredits = Math.Max(0, (player.TotalSkillCredits ?? 0) - takeBack);
+                player.SpecAugSkillCreditsGranted = v[6];
+                creditsChanged = true;
+            }
+            else
+                creditsChanged = player.GrantSpecAugSkillCredits() > 0;
+
+            if (creditsChanged)
+            {
                 player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.TotalSkillCredits, player.TotalSkillCredits ?? 0));
+            }
+
+            return null;
         }
 
         /// <summary>/testchar set|apply|save — the Admin > Character tab's Apply batch
@@ -657,8 +681,8 @@ namespace ACE.Server.Command.Handlers
                         Msg("set augs: need 10 csv values (creature,item,life,war,void,duration,specialize,summon,melee,missile)");
                         return;
                     }
-                    SetChLumAugs(player, v);
-                    Msg("set augs: " + arg);
+                    var refused = SetChLumAugs(player, v);
+                    Msg("set augs: " + (refused ?? arg));
                     return;
                 }
                 case "charms":
