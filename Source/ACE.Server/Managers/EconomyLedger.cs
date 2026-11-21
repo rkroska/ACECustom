@@ -986,6 +986,7 @@ namespace ACE.Server.Managers
             var activeSince = DateTimeOffset.UtcNow.AddDays(-ActiveDays).ToUnixTimeSeconds();
             var takenUnix = new DateTimeOffset(DateTime.SpecifyKind(takenUtc, DateTimeKind.Utc)).ToUnixTimeSeconds();
             var players = PlayerManager.GetAllPlayers();
+            var lastLogins = LoadCharacterLogins();
 
             // char -> (admin, active)
             var info = new Dictionary<uint, (bool admin, bool active)>(players.Count);
@@ -999,7 +1000,7 @@ namespace ACE.Server.Managers
             {
                 var charId = player.Guid.Full;
                 var admin = (player.Account?.AccessLevel ?? 0) > 0;
-                var login = player.GetProperty(PropertyFloat.LoginTimestamp) ?? 0;
+                lastLogins.TryGetValue(charId, out var login);
                 var active = player is Player || login >= activeSince;
                 info[charId] = (admin, active);
 
@@ -1055,6 +1056,21 @@ namespace ACE.Server.Managers
         /// Kept apart from EconomyLedger's own static fields (whose setup reads the world database), so it can be unit
         /// tested on its own.
         /// </summary>
+        /// <summary>
+        /// Every non-deleted character's last game login (character.last_Login_Timestamp, unix seconds): the same column
+        /// the leaderboards' activity window reads, so the Economy page and the leaderboards always agree on who is
+        /// active. The login float on the biota is saved separately and can lag behind it.
+        /// </summary>
+        internal static Dictionary<uint, double> LoadCharacterLogins()
+        {
+            using var ctx = new ShardDbContext();
+            return ctx.Character
+                .AsNoTracking()
+                .Where(c => !c.IsDeleted)
+                .Select(c => new { c.Id, c.LastLoginTimestamp })
+                .ToDictionary(c => c.Id, c => c.LastLoginTimestamp);
+        }
+
         /// <summary>The stamp of the last saved snapshot (supply taken_utc = holdings snapshot_utc), so the next is always later.</summary>
         private static DateTime? lastSavedStamp;
 

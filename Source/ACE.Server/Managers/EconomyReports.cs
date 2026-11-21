@@ -775,15 +775,18 @@ namespace ACE.Server.Managers
             var rows = new List<HolderRow>();
             var players = PlayerManager.GetAllPlayers();
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            // the character table's last login, as the leaderboards and the snapshot use (online counts as now)
+            var lastLogins = EconomyLedger.LoadCharacterLogins();
+            double LoginOf(ACE.Server.Entity.IPlayer p) => p is Player ? now : lastLogins.TryGetValue(p.Guid.Full, out var t) ? t : 0;
 
-            // account -> newest game login of any of its characters (online counts as now)
+            // account -> newest game login of any of its characters
             var accountLogin = new Dictionary<uint, double>();
             foreach (var player in players)
             {
                 var accountId = player.Account?.AccountId ?? 0;
                 if (accountId == 0)
                     continue;
-                var login = player is Player ? now : player.GetProperty(PropertyFloat.LoginTimestamp) ?? 0;
+                var login = LoginOf(player);
                 if (!accountLogin.TryGetValue(accountId, out var known) || login > known)
                     accountLogin[accountId] = login;
             }
@@ -803,12 +806,13 @@ namespace ACE.Server.Managers
                     continue;
 
                 var accountId = player.Account?.AccountId ?? 0;
-                var login = player.GetProperty(PropertyFloat.LoginTimestamp);
+                lastLogins.TryGetValue(player.Guid.Full, out var stored);
+                double? login = stored > 0 ? stored : null;
 
                 // a character with no account record has nobody to share activity with: it goes by its own login
                 double accountLast;
                 if (accountId == 0)
-                    accountLast = player is Player ? now : login ?? 0;
+                    accountLast = LoginOf(player);
                 else
                     accountLogin.TryGetValue(accountId, out accountLast);
 
