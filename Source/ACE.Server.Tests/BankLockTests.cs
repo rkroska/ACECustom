@@ -163,18 +163,7 @@ namespace ACE.Server.Tests
             Assert.IsFalse(BankLock.HasBankStep(null));
         }
 
-        /// <summary>A write is refused only for a banked currency, in a locked bank, outside a staff write.</summary>
-        [TestMethod]
-        public void Refuses_OnlyABalanceOfALockedBankOutsideAStaffWrite()
-        {
-            Assert.IsTrue(BankLock.Refuses(false, true, PropertyInt64.BankedPyreals));
-            Assert.IsTrue(BankLock.Refuses(false, true, PropertyInt64.BankedEnlightenmentTokens));
-            Assert.IsFalse(BankLock.Refuses(true, true, PropertyInt64.BankedPyreals));            // /setproperty, /bankwipe
-            Assert.IsFalse(BankLock.Refuses(false, false, PropertyInt64.BankedPyreals));          // not locked
-            Assert.IsFalse(BankLock.Refuses(false, true, PropertyInt64.AvailableExperience));     // not the bank
-        }
-
-        /// <summary>The lock read off a character, and the setters' test on it: refused only for a locked bank's balances outside a staff write.</summary>
+        /// <summary>The lock read off a character, and the setters' rule: a write is refused only for a balance of a locked bank, outside a staff write.</summary>
         [TestMethod]
         public void RefusesWrite_ALockedCharactersBalances()
         {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
@@ -203,7 +204,8 @@ namespace ACE.Server.Command.Handlers
             if (!previews.TryGetValue(staff, out var preview) || preview.Character != character || nowUtc > preview.Until)
                 return false;
 
-            return previews.TryRemove(staff, out _);
+            // removed only if it is still that same preview, so one preview is never used twice
+            return previews.TryRemove(new KeyValuePair<uint, (uint Character, DateTime Until)>(staff, preview));
         }
     }
 }

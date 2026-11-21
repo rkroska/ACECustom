@@ -531,7 +531,7 @@ namespace ACE.Server.Command.Handlers
             // bank lock (/banklock): staff froze this bank - every /bank and /b command is refused, the balances too
             if (session.Player.IsBankLocked)
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Your bank is locked.", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Your bank is locked.", ChatMessageType.Broadcast));
                 return;
             }
 
@@ -1071,7 +1071,7 @@ namespace ACE.Server.Command.Handlers
             // bank lock (/banklock): /clap pays into the bank, which takes nothing in while locked - keep the materials
             if (session.Player.IsBankLocked)
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Your bank is locked.", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Your bank is locked.", ChatMessageType.Broadcast));
                 return;
             }
 

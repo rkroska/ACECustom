@@ -56,7 +56,7 @@ namespace ACE.Server.Managers
             (PropertyInt64.BankedEnlightenmentTokens, "Enlightenment Tokens"),
         };
 
-        /// <summary>True for the eight banked currencies.</summary>
+        /// <summary>True for the eight banked currencies - the same eight as <see cref="Currencies"/> (BankLockTests checks both).</summary>
         public static bool IsBankProperty(PropertyInt64 property)
         {
             switch (property)
@@ -87,7 +87,9 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Opens a staff write: until it is disposed, writes on this thread reach a locked bank. /setproperty and /bankwipe
-        /// write inside one, so staff can still set or clear a locked balance. Use it in a using statement.
+        /// write inside one, so staff can still set or clear a locked balance. Use it in a using statement, and write absolute
+        /// values with SetProperty / RemoveProperty: the Player balance properties still read 0 for a locked bank, so a
+        /// read-modify-write through them (BankedPyreals += x) would replace the real balance.
         /// </summary>
         public static IDisposable AdminWrite()
         {
@@ -121,16 +123,13 @@ namespace ACE.Server.Managers
         /// </summary>
         public static bool RefusesWrite(IPlayer character, PropertyInt64 property)
         {
-            if (!IsBankProperty(property) || !Refuses(adminWriteDepth > 0, IsLocked(character), property))
+            // cheapest first: most writes are not to the bank, and a staff write needs no property lookup
+            if (!IsBankProperty(property) || adminWriteDepth > 0 || !IsLocked(character))
                 return false;
 
             NoteRefused(character, property);
             return true;
         }
-
-        /// <summary>The rule RefusesWrite applies: a banked currency, in a locked bank, outside a staff write.</summary>
-        internal static bool Refuses(bool adminWriteOpen, bool locked, PropertyInt64 property)
-            => IsBankProperty(property) && locked && !adminWriteOpen;
 
         private static readonly ConcurrentDictionary<uint, DateTime> lastRefusalLogged = new ConcurrentDictionary<uint, DateTime>();
 

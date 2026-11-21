@@ -401,7 +401,7 @@ namespace ACE.Server.Entity
                     player.BankedPyreals = (player.BankedPyreals ?? 0) + plan.Total;
                     player.RefreshCoinValueAfterBankChange();
                 }
-                log.Error($"{Tag} {player.Name} (0x{player.Guid.Full:X8}): the look could not be written; the fee of {plan.Total} was {(refunded ? "refunded to the bank" : "NOT refunded (the bank is locked)")} and the look left as it was: {ex}");
+                log.Error($"{Tag} {player.Name} (0x{player.Guid.Full:X8}): the look could not be written; the fee of {plan.Total} was {(refunded ? "refunded to the bank" : "NOT refunded (the bank is locked - credit it by hand after /bankunlock if it is owed)")} and the look left as it was: {ex}");
                 // any pack coins the fee took are already gone from the database, so store the bank credit now too
                 try
                 {
@@ -409,7 +409,7 @@ namespace ACE.Server.Entity
                 }
                 catch (Exception saveEx)
                 {
-                    log.Error($"{Tag} {player.Name} (0x{player.Guid.Full:X8}): the refund of {plan.Total} could not be saved at once (the next ordinary save will store it): {saveEx}");
+                    log.Error($"{Tag} {player.Name} (0x{player.Guid.Full:X8}): {(refunded ? $"the refund of {plan.Total}" : "the restored look")} could not be saved at once (the next ordinary save will store it): {saveEx}");
                 }
                 Say(player, attendant, plan.Total <= 0
                     ? "Something went wrong, so I changed nothing."

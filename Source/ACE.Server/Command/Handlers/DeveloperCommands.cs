@@ -2514,7 +2514,7 @@ namespace ACE.Server.Command.Handlers
                     else if (propType.Equals("PropertyBool", StringComparison.OrdinalIgnoreCase))
                         target.SetProperty((PropertyBool)property, Convert.ToBoolean(value));
                     else if (propType.Equals("PropertyFloat", StringComparison.OrdinalIgnoreCase))
-                        target.SetProperty((PropertyFloat)property, Convert.ToDouble(value));
+                        target.SetProperty((PropertyFloat)property, Convert.ToDouble(value, CultureInfo.InvariantCulture));
                     else if (propType.Equals("PropertyString", StringComparison.OrdinalIgnoreCase))
                         target.SetProperty((PropertyString)property, value);
                     else if (propType.Equals("PropertyInstanceId", StringComparison.OrdinalIgnoreCase))
@@ -2524,7 +2524,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine(e);
+                    log.Warn($"/setproperty {prop} {value} on offline {target.Name} (0x{target.Guid.Full:X8}) failed: {e.Message}");
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Could not set {prop} to {value}: {e.Message} - nothing changed", ChatMessageType.Broadcast));
                     return;
                 }

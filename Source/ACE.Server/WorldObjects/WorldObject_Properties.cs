@@ -191,7 +191,7 @@ namespace ACE.Server.WorldObjects
         public void SetProperty(PropertyInt64 property, long value)
         {
             // bank lock (/banklock): a locked bank's currencies never change, whatever the code path (BankLock.cs)
-            if (BankLock.IsBankProperty(property) && this is Player bankLockPlayer && BankLock.RefusesWrite(bankLockPlayer, property))
+            if (this is Player bankLockPlayer && BankLock.RefusesWrite(bankLockPlayer, property))
                 return;
 
             if (PyrealLedger.Tracks(property))
@@ -344,7 +344,7 @@ namespace ACE.Server.WorldObjects
         public void RemoveProperty(PropertyInt64 property)
         {
             // bank lock (/banklock): a locked bank's currencies never change, whatever the code path (BankLock.cs)
-            if (BankLock.IsBankProperty(property) && this is Player bankLockPlayer && BankLock.RefusesWrite(bankLockPlayer, property))
+            if (this is Player bankLockPlayer && BankLock.RefusesWrite(bankLockPlayer, property))
                 return;
 
             if (PyrealLedger.Tracks(property))

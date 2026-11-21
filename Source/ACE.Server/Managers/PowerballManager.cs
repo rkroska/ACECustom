@@ -399,14 +399,15 @@ namespace ACE.Server.Managers
         {
             if (summary.NetWon <= 0) return;
 
+            // bank lock (/banklock): a locked bank takes nothing in - the win is not paid, and the log says what to credit by hand
+            void LogNotPaid(string where) => log.Warn($"[Powerball] {summary.Name} (ID {charId}, {where}) won {FormatLum(summary.NetWon)}, but the bank is locked - not paid. Credit it by hand after /bankunlock if it is owed.");
+
             var online = PlayerManager.GetOnlinePlayer(charId);
             if (online != null)
             {
-                // bank lock (/banklock): a locked bank takes nothing in - the win is not paid, the player is told so, and the
-                // log says what to credit by hand
                 if (online.IsBankLocked)
                 {
-                    log.Warn($"[Powerball] {summary.Name} (ID {charId}) won {FormatLum(summary.NetWon)}, but the bank is locked - not paid. Credit it by hand after /bankunlock if it is owed.");
+                    LogNotPaid("online");
                     online.Session?.Network.EnqueueSend(new GameMessageSystemChat($"[Powerball] You won {FormatLum(summary.NetWon)}, but your bank is locked, so it could not be banked.", ChatMessageType.Broadcast));
                     return;
                 }
@@ -423,7 +424,7 @@ namespace ACE.Server.Managers
                 {
                     if (BankLock.IsLocked(offline))
                     {
-                        log.Warn($"[Powerball] {summary.Name} (ID {charId}) won {FormatLum(summary.NetWon)}, but the bank is locked - not paid. Credit it by hand after /bankunlock if it is owed.");
+                        LogNotPaid("offline");
                         return;
                     }
 

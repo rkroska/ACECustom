@@ -86,6 +86,15 @@ namespace ACE.Server.WorldObjects
                 if (pyrealsTaken == fee.Pyreals && enlightenedCoinsTaken == fee.EnlightenedCoins && prestigeCoinsTaken == fee.PrestigeCoins)
                     return true;
 
+                // bank lock (/banklock): a locked player paid from the pack only, and a locked bank takes nothing back - so the log
+                // says what to credit by hand, and the player is told it was not returned
+                if (IsBankLocked)
+                {
+                    log.Error($"[ENL_GATE] {Name}: gate {gateLevel} fee failed part way ({pyrealsTaken:N0}/{fee.Pyreals:N0} pyreals, {enlightenedCoinsTaken:N0}/{fee.EnlightenedCoins:N0} EC, {prestigeCoinsTaken:N0}/{fee.PrestigeCoins:N0} PC); NOT refunded - the bank is locked. Credit it by hand after /bankunlock.");
+                    shortfall.Add("a successful payment (an item could not be taken, and what was taken could not be returned: your bank is locked)");
+                    return false;
+                }
+
                 // refund what was taken; the pack items are gone, so it is returned to the bank
                 log.Error($"[ENL_GATE] {Name}: gate {gateLevel} fee failed part way ({pyrealsTaken:N0}/{fee.Pyreals:N0} pyreals, {enlightenedCoinsTaken:N0}/{fee.EnlightenedCoins:N0} EC, {prestigeCoinsTaken:N0}/{fee.PrestigeCoins:N0} PC); refunding to the bank.");
                 BankedPyreals = (BankedPyreals ?? 0) + pyrealsTaken;
