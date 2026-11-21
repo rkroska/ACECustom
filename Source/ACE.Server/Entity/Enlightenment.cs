@@ -548,6 +548,15 @@ namespace ACE.Server.Entity
                     return;
                 }
 
+                // the Yes agreed to the cap in the box: when enl_keeps_level_up_to changed while it was open, nothing is used
+                // up and the box comes back with the new cap
+                if (ServerConfig.enl_keeps_level_up_to.Value != keepUpTo)
+                {
+                    player.SendMessage("The level a Level Retention Stone keeps up to changed while you were deciding. Nothing was used up. Please answer again.", ChatMessageType.Broadcast);
+                    UseLevelRetentionStone(player);
+                    return;
+                }
+
                 // TryConsumeFromInventoryWithNetworking(wcid, ...) reports success when there is nothing to consume: count first
                 if (player.GetNumInventoryItemsOfWCID(LevelRetentionStoneWcid) < 1 || !player.TryConsumeFromInventoryWithNetworking(LevelRetentionStoneWcid, 1))
                 {
@@ -557,8 +566,7 @@ namespace ACE.Server.Entity
 
                 player.LevelRetentionPending = true;
 
-                var keepUpToNow = ServerConfig.enl_keeps_level_up_to.Value;
-                player.SendMessage($"Your next enlightenment will keep your level{(keepUpToNow > 0 ? $" (up to level {keepUpToNow})" : "")}. Your skills will still reset.", ChatMessageType.Broadcast);
+                player.SendMessage($"Your next enlightenment will keep your level{(keepUpTo > 0 ? $" (up to level {keepUpTo})" : "")}. Your skills will still reset.", ChatMessageType.Broadcast);
             }
 
             if (!player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, onResponse), msg))
