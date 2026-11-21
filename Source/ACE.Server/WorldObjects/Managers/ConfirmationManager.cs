@@ -19,6 +19,9 @@ namespace ACE.Server.WorldObjects.Managers
 
         private static readonly double confirmationTimeout = 30;
 
+        /// <summary>Seconds a confirmation stays open when EnqueueSend isn't given its own timeout.</summary>
+        public static double DefaultTimeoutSeconds => confirmationTimeout;
+
         private UIntSequence contextSequence = new UIntSequence();
 
         public ConfirmationManager(Player player)

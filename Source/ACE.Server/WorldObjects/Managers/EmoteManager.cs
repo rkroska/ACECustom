@@ -43,9 +43,91 @@ namespace ACE.Server.WorldObjects.Managers
         private WorldObject _proxy;
 
         /// <summary>
-        /// Returns TRUE if this WorldObject is currently busy processing other emotes
+        /// Returns TRUE if this WorldObject is currently busy processing other emotes. Going idle with no emotes left in
+        /// flight (Nested 0) also ends the InqAccountQuest claims this object took (AccountQuestLimits.Claim): its emotes,
+        /// reward and stamp included, are done. OnDeath and OnPortal clear IsBusy while emotes may still be in flight, so
+        /// the claims stay until those have finished.
         /// </summary>
-        public bool IsBusy { get; set; }
+        public bool IsBusy
+        {
+            get => isBusy;
+            set
+            {
+                isBusy = value;
+
+                if (!value && Nested == 0)
+                    ReleaseHeldAccountClaims();
+            }
+        }
+
+        private bool isBusy;
+
+        /// <summary>ILT: InqAccountQuest claims this object holds until its emotes have finished (created on first use).</summary>
+        private List<AccountQuestLimits.Claim> heldAccountClaims;
+
+        /// <summary>ILT: true while this object holds InqAccountQuest claims for the emotes it has in flight.</summary>
+        private bool HoldsAccountClaims => heldAccountClaims != null && heldAccountClaims.Count > 0;
+
+        /// <summary>ILT: ends the InqAccountQuest claims this object holds: the emotes that took them are over.</summary>
+        private void ReleaseHeldAccountClaims()
+        {
+            if (!HoldsAccountClaims)
+                return;
+
+            foreach (var claim in heldAccountClaims)
+                AccountQuestLimits.Release(claim);
+
+            heldAccountClaims.Clear();
+        }
+
+        /// <summary>
+        /// ILT: the InqAccountQuest claims of the emote chain whose step is running right now (null if it has none). An
+        /// InqAccountQuest step adds its claim here, and the sets the step defers (EnqueueNestedSet) carry it on, so each
+        /// chain acts only on its own claims: another emote set on the object (a ReceiveDamage, say) has none.
+        /// </summary>
+        private List<AccountQuestLimits.Claim> executingClaims;
+
+        /// <summary>
+        /// ILT: before each step of a chain holding InqAccountQuest claims. False when the chain must stop: a claim was
+        /// taken over (its object left the world before the chain acted), or the chain's target has left the world to log
+        /// out (Player.HasLeftWorldToLogOut, a normal logout or a forced logoff), so a stamp would no longer be saved
+        /// (AccountQuestLimits.Abandon: released if the chain never acted, otherwise closed). Otherwise the claims can't be
+        /// taken over from then on (AccountQuestLimits.TryAct), so what the step queues (a Give, a CastSpell) is covered too.
+        /// </summary>
+        private bool TryActOnChainClaims(List<AccountQuestLimits.Claim> chainClaims, WorldObject targetObject)
+        {
+            if (chainClaims == null || chainClaims.Count == 0)
+                return true;
+
+            if (targetObject is Player target && target.HasLeftWorldToLogOut)
+            {
+                AccountQuestLimits.Abandon(chainClaims);
+                heldAccountClaims?.RemoveAll(chainClaims.Contains);
+                return false;
+            }
+
+            return AccountQuestLimits.TryAct(chainClaims);
+        }
+
+        /// <summary>
+        /// ILT: where this object's emotes stand, for a claim to follow (AccountQuestLimits.Claim.Chain), through a weak
+        /// reference, so a claim left behind doesn't keep a destroyed object alive.
+        /// </summary>
+        private Func<AccountQuestLimits.ChainState> NewClaimChain()
+        {
+            var self = new WeakReference<EmoteManager>(this);
+            return () => self.TryGetTarget(out var manager) ? manager.AccountClaimChain() : AccountQuestLimits.ChainState.Gone;
+        }
+
+        /// <summary>ILT: where this object's emotes stand, for the InqAccountQuest claims it takes (AccountQuestLimits.Claim).</summary>
+        private AccountQuestLimits.ChainState AccountClaimChain()
+        {
+            if (Nested == 0)
+                return AccountQuestLimits.ChainState.Finished;
+
+            return WorldObject.IsDestroyed ? AccountQuestLimits.ChainState.Gone : AccountQuestLimits.ChainState.Running;
+        }
+
         public int Nested { get; set; }
 
         /// <summary>
@@ -762,11 +844,7 @@ namespace ACE.Server.WorldObjects.Managers
                     // TODO: revisit if nested chains need to back-propagate timers
                     var gotoSet = GetEmoteSet(EmoteCategory.GotoSet, emote.Message);
                     if (gotoSet != null)
-                    {
-                        var actionChain = new ActionChain();
-                        actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => ExecuteEmoteSet(gotoSet, targetObject, true));
-                        actionChain.EnqueueChain();
-                    }
+                        EnqueueNestedSet(gotoSet, targetObject);
                     break;
 
                 /* increments a PropertyInt stat by some amount */
@@ -1198,6 +1276,37 @@ namespace ACE.Server.WorldObjects.Managers
 
                     break;
 
+                case EmoteType.InqAccountQuest:
+
+                    // ILT custom: InqQuest counted across every character on the player's account, so any content gated on
+                    // InqQuest can be account-locked by switching that step to this one (docs/ACCOUNT_LOCKED_CONTENT_GUIDE.md).
+                    // QuestSuccess = a character on the account has the quest and the account can't solve it yet
+                    // (max solves reached across the account, or the newest completion's timer still running), or another
+                    // use on the account holds the quest's gate. Letting the character through takes the account's claim on
+                    // the gate, held until this object's emotes have all finished, so it covers the reward and the stamp.
+                    if (player != null)
+                    {
+                        // the claim holds while this object still has emotes in flight (Nested, which OnDeath and OnPortal
+                        // leave alone when they clear IsBusy) and is still in the world (AccountClaimChain). It refers to
+                        // this object weakly, so a claim left behind doesn't keep a destroyed object alive (one that is
+                        // gone reads as Gone).
+                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message, NewClaimChain(), out var accountClaim);
+
+                        if (accountClaim != null)
+                        {
+                            (heldAccountClaims ??= new List<AccountQuestLimits.Claim>()).Add(accountClaim);
+
+                            // the outcome set and what it goes on to run are this claim's chain
+                            (executingClaims ??= new List<AccountQuestLimits.Claim>()).Add(accountClaim);
+                        }
+
+                        // runs on the next tick, as for InqQuest; with a claim held, this object stays busy until then
+                        // (EnqueueNestedSet)
+                        ExecuteEmoteSet(accountQuestDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+
+                    break;
+
                 case EmoteType.InqMyQuestBitsOff:
                 case EmoteType.InqQuestBitsOff:
 
@@ -1448,9 +1557,20 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (player != null)
                     {
-                        if (!player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(WorldObject.Guid, player.Guid, emote.Message), Replace(emote.TestString, WorldObject, targetObject, emoteSet.Quest)))
+                        // ILT: the answer runs as a new emote set. A chain holding InqAccountQuest claims hands them to it,
+                        // and they stay held while the question is open (at most the confirmation's timeout), so the account's
+                        // gate stays closed until the answer has run (ExecuteAnswerSet). A copy: the answer carries on the
+                        // claims the chain holds as it asks
+                        var answerClaims = executingClaims != null && executingClaims.Count > 0 ? new List<AccountQuestLimits.Claim>(executingClaims) : null;
+
+                        if (!player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(WorldObject.Guid, player.Guid, emote.Message) { ChainClaims = answerClaims }, Replace(emote.TestString, WorldObject, targetObject, emoteSet.Quest)))
                         {
                             ExecuteEmoteSet(EmoteCategory.TestFailure, emote.Message, player);
+                        }
+                        else if (answerClaims != null)
+                        {
+                            // a few seconds past the timeout, for the abort that ends an unanswered question to run
+                            AccountQuestLimits.AwaitAnswer(answerClaims, TimeSpan.FromSeconds(ConfirmationManager.DefaultTimeoutSeconds + 5));
                         }
                     }
                     break;
@@ -3923,9 +4043,7 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (nested)
             {
-                var actionChain = new ActionChain();
-                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => ExecuteEmoteSet(emoteSet, targetObject, true));
-                actionChain.EnqueueChain();
+                EnqueueNestedSet(emoteSet, targetObject);
             }
             else
             {
@@ -3942,12 +4060,90 @@ namespace ACE.Server.WorldObjects.Managers
         }
 
         /// <summary>
+        /// Runs a nested set on the next tick: a branch's QuestSuccess or QuestFailure (and the like), or a Goto. ILT: the
+        /// set carries on the InqAccountQuest claims of the chain that defers it, and while there are any, this object also
+        /// stays busy until the set has started (Nested is held), so the claims last through every branch of the chain.
+        /// Otherwise Nested can reach 0 in between (the branching set ends first) and end them before the reward and the
+        /// stamp.
+        /// </summary>
+        private void EnqueueNestedSet(PropertiesEmote emoteSet, WorldObject targetObject)
+        {
+            var chainClaims = executingClaims;
+            var holdForClaims = chainClaims != null && chainClaims.Count > 0;
+
+            // held until the set has started (it counts itself in Nested while it runs)
+            if (holdForClaims)
+                Nested++;
+
+            var actionChain = new ActionChain();
+            actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () =>
+            {
+                ExecuteEmoteSet(emoteSet, targetObject, true, chainClaims);
+
+                if (holdForClaims)
+                {
+                    Nested--;
+
+                    if (Nested == 0)
+                        IsBusy = false;
+                }
+            });
+            actionChain.EnqueueChain();
+        }
+
+        /// <summary>
+        /// ILT: runs the set for the answer to a yes/no question (Confirmation_YesNo) as part of the chain that asked, with that
+        /// chain's InqAccountQuest claims, which stayed held while the question was open (InqYesNo). As for any answer, an
+        /// object busy with other emotes, or with no set for it, doesn't take it; the claims then end as they would have with
+        /// no question (AccountQuestLimits.AnswerNotTaken). Nor does an answer that comes after the question has closed
+        /// (AccountQuestLimits.TryTakeAnswer). Once taken, the claims follow this object's emotes, even if another object
+        /// asked (a hook's item swapped meanwhile), but only once that object's asking emotes are over: until then they keep
+        /// the claims, and an answer run elsewhere isn't taken.
+        /// </summary>
+        public void ExecuteAnswerSet(EmoteCategory category, string quest, Player player, List<AccountQuestLimits.Claim> chainClaims)
+        {
+            var emoteSet = GetEmoteSet(category, quest);
+
+            if (emoteSet == null || IsBusy)
+            {
+                AccountQuestLimits.AnswerNotTaken(chainClaims);
+                return;
+            }
+
+            // claims still listed from emotes that are over go first, as at the start of any chain
+            if (Nested == 0)
+                ReleaseHeldAccountClaims();
+
+            // this object's own asking emotes, still in flight (OnPortal or OnDeath cleared IsBusy), already hold them
+            var heldHere = HoldsAccountClaims && chainClaims.TrueForAll(heldAccountClaims.Contains);
+
+            // from here this object's emotes are in flight, so the claims hold from the moment the answer takes them on
+            Nested++;
+
+            if (!AccountQuestLimits.TryTakeAnswer(chainClaims, NewClaimChain(), heldHere))
+            {
+                Nested--;
+                return;
+            }
+
+            heldAccountClaims ??= new List<AccountQuestLimits.Claim>();
+            foreach (var claim in chainClaims)
+            {
+                if (!heldAccountClaims.Contains(claim))
+                    heldAccountClaims.Add(claim);
+            }
+
+            Enqueue(emoteSet, player, chainClaims: chainClaims);
+        }
+
+        /// <summary>
         /// Executes a set of emotes to run with delays
         /// </summary>
         /// <param name="emoteSet">A list of emotes to execute</param>
         /// <param name="targetObject">An optional target, usually player</param>
         /// <param name="actionChain">For adding delays between emotes</param>
-        public bool ExecuteEmoteSet(PropertiesEmote emoteSet, WorldObject targetObject = null, bool nested = false)
+        /// <param name="chainClaims">ILT: the InqAccountQuest claims of the chain this set belongs to (EnqueueNestedSet).</param>
+        public bool ExecuteEmoteSet(PropertiesEmote emoteSet, WorldObject targetObject = null, bool nested = false, List<AccountQuestLimits.Claim> chainClaims = null)
         {
             //if (Debug) Console.WriteLine($"{WorldObject.Name}.EmoteManager.ExecuteEmoteSet({emoteSet}, {targetObject}, {nested})");
 
@@ -3956,14 +4152,18 @@ namespace ACE.Server.WorldObjects.Managers
             // there are some categories that shouldn't be queued, like heartbeats...
             if (IsBusy && !nested) return false;
 
+            // ILT: with nothing in flight, any InqAccountQuest claims still listed belong to emotes that are over
+            if (Nested == 0)
+                ReleaseHeldAccountClaims();
+
             // start action chain
             Nested++;
-            Enqueue(emoteSet, targetObject);
+            Enqueue(emoteSet, targetObject, chainClaims: chainClaims);
 
             return true;
         }
 
-        public void Enqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx = 0, float delay = 0.0f)
+        public void Enqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx = 0, float delay = 0.0f, List<AccountQuestLimits.Claim> chainClaims = null)
         {
             //if (Debug) Console.WriteLine($"{WorldObject.Name}.EmoteManager.Enqueue({emoteSet}, {targetObject}, {emoteIdx}, {delay})");
 
@@ -4017,20 +4217,31 @@ namespace ACE.Server.WorldObjects.Managers
                 // emote.Delay = pre-delay for current emote
                 actionChain.AddDelaySeconds(delay + emote.Delay);
 
-                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => DoEnqueue(emoteSet, targetObject, emoteIdx, emote));
+                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => DoEnqueue(emoteSet, targetObject, emoteIdx, emote, chainClaims));
                 actionChain.EnqueueChain();
             }
             else
             {
-                DoEnqueue(emoteSet, targetObject, emoteIdx, emote);
+                DoEnqueue(emoteSet, targetObject, emoteIdx, emote, chainClaims);
             }
         }
 
         /// <summary>
         /// This should only be called by Enqueue
         /// </summary>
-        private void DoEnqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx, PropertiesEmoteAction emote)
+        private void DoEnqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx, PropertiesEmoteAction emote, List<AccountQuestLimits.Claim> chainClaims = null)
         {
+            // ILT: a chain whose InqAccountQuest claim was taken over, or whose target left the world to log out, stops
+            // here, even for a step queued before then; otherwise its claims can't be taken over from here on
+            // (TryActOnChainClaims)
+            if (!TryActOnChainClaims(chainClaims, targetObject))
+            {
+                Nested--;
+                if (Nested == 0)
+                    IsBusy = false;
+                return;
+            }
+
             // If a previous emote in this chain (e.g. a failed Give) requested an abort,
             // stop here before firing this action. This prevents StampQuest from running
             // after a Give that failed due to full inventory or over-burden.
@@ -4086,14 +4297,28 @@ namespace ACE.Server.WorldObjects.Managers
             }
             // ────────────────────────────────────────────────────────────────────────
 
-            var nextDelay = ExecuteEmote(emoteSet, emote, targetObject);
+            // ILT: the claims of this chain, for an InqAccountQuest step and the sets this step defers (executingClaims)
+            var previousClaims = executingClaims;
+            executingClaims = chainClaims;
+
+            float nextDelay;
+            try
+            {
+                nextDelay = ExecuteEmote(emoteSet, emote, targetObject);
+            }
+            finally
+            {
+                // an InqAccountQuest step can start this chain's claims: the rest of this set goes on with them too
+                chainClaims = executingClaims;
+                executingClaims = previousClaims;
+            }
 
 
             if (Debug)
                 Console.WriteLine($" - {nextDelay}");
 
             if (emoteIdx < emoteSet.PropertiesEmoteAction.Count - 1)
-                Enqueue(emoteSet, targetObject, emoteIdx + 1, nextDelay);
+                Enqueue(emoteSet, targetObject, emoteIdx + 1, nextDelay, chainClaims);
             else
             {
                 if (nextDelay > 0)
@@ -4132,6 +4357,7 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 case EmoteType.UpdateQuest:
                 case EmoteType.InqQuest:
+                case EmoteType.InqAccountQuest:
                 case EmoteType.InqQuestSolves:
                 case EmoteType.InqServerQuestSolves:
                 case EmoteType.InqBoolStat:
@@ -4202,6 +4428,18 @@ namespace ACE.Server.WorldObjects.Managers
             return _worldObject.Biota.PropertiesEmote.Where(x => x.Category == emoteCategory);
         }
 
+        /// <summary>
+        /// ILT: %aqt. While another use's reward is on its way (its claim holds the gate, no stamp yet), "a moment"; when a
+        /// chain that acted can't finish and the gate stays closed until a restart, says so; otherwise the account's time
+        /// until it can solve the quest again, as %tqt shows a character's.
+        /// </summary>
+        private static string AccountTimeText(AccountQuestLimits.AccountStatus status) => status.Hold switch
+        {
+            AccountQuestLimits.GateHold.InProgress => "a moment",
+            AccountQuestLimits.GateHold.ClosedUntilRestart => "a while (after the next server restart)",
+            _ => status.NextSolveTime.GetFriendlyString(),
+        };
+
         public string Replace(string message, WorldObject source, WorldObject target, string quest)
         {
             var result = message;
@@ -4256,30 +4494,51 @@ namespace ACE.Server.WorldObjects.Managers
             if (result.Contains("%CDtime"))
                 result = result.Replace($"{questName}@", "", StringComparison.OrdinalIgnoreCase);
 
+            // ILT: each quest lookup below runs only when the text uses its token, so a Tell that doesn't (one with only
+            // %aqt, say) reads no quest data, and a world database outage can't break it
             if (target is Player targetPlayer)
             {
-                result = result.Replace("%tqt", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
+                if (result.Contains("%tqt"))
+                    result = result.Replace("%tqt", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
-                result = result.Replace("%CDtime", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
+                if (result.Contains("%CDtime"))
+                    result = result.Replace("%CDtime", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
                 result = result.Replace("%tf", $"{(targetPlayer.Fellowship != null ? targetPlayer.Fellowship.FellowshipName : "")}");
 
-                result = result.Replace("%fqt", !string.IsNullOrWhiteSpace(quest) && targetPlayer.Fellowship != null && targetPlayer.Fellowship.ZoneKey == null ? targetPlayer.Fellowship.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
+                if (result.Contains("%fqt"))
+                    result = result.Replace("%fqt", !string.IsNullOrWhiteSpace(quest) && targetPlayer.Fellowship != null && targetPlayer.Fellowship.ZoneKey == null ? targetPlayer.Fellowship.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
-                result = result.Replace("%tqm", !string.IsNullOrWhiteSpace(quest) ? QuestManager.GetMaxSolves(questName).ToString() : "");
+                if (result.Contains("%tqm"))
+                    result = result.Replace("%tqm", !string.IsNullOrWhiteSpace(quest) ? QuestManager.GetMaxSolves(questName).ToString() : "");
 
-                result = result.Replace("%tqc", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetCurrentSolves(questName).ToString() : "");
+                if (result.Contains("%tqc"))
+                    result = result.Replace("%tqc", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetCurrentSolves(questName).ToString() : "");
+
+                // ILT custom: %tqt and %tqc for the whole account (InqAccountQuest content). Only read when the text uses them.
+                // When a claim holds the gate before any stamp, %aqt says so instead of "negative time" (AccountTimeText).
+                if (result.Contains("%aqt") || result.Contains("%aqc"))
+                {
+                    var account = !string.IsNullOrWhiteSpace(quest) ? AccountQuestLimits.GetStatus(targetPlayer, questName) : null;
+
+                    result = result.Replace("%aqt", account.HasValue ? AccountTimeText(account.Value) : "");
+
+                    result = result.Replace("%aqc", account.HasValue ? account.Value.Completions.ToString() : "");
+                }
             }
 
             if (source is Creature sourceCreature)
             {
-                result = result.Replace("%mqt", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
+                if (result.Contains("%mqt"))
+                    result = result.Replace("%mqt", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
-                result = result.Replace("%mxqt", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyLongString() : "");
+                if (result.Contains("%mxqt"))
+                    result = result.Replace("%mxqt", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyLongString() : "");
 
                 //result = result.Replace("%CDtime", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
-                result = result.Replace("%mqc", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetCurrentSolves(questName).ToString() : "");
+                if (result.Contains("%mqc"))
+                    result = result.Replace("%mqc", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetCurrentSolves(questName).ToString() : "");
             }
 
             return result;

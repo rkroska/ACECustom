@@ -621,6 +621,13 @@ namespace ACE.Server.WorldObjects
         public bool IsLoggingOut;
 
         /// <summary>
+        /// ILT: set when the character leaves the world for good to log out (FinalizeLogout, also reached by ForceLogoff),
+        /// just before its logout save is taken: anything that changes it from then on is not saved. An InqAccountQuest
+        /// chain aimed at it stops (EmoteManager.TryActOnChainClaims).
+        /// </summary>
+        public bool HasLeftWorldToLogOut { get; private set; }
+
+        /// <summary>
         /// Do the player log out work.<para />
         /// If you want to force a player to logout, use Session.LogOffPlayer().
         /// </summary>
@@ -785,6 +792,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void FinalizeLogout()
         {
+            HasLeftWorldToLogOut = true;
+
             // Before leaving the landblock, while Location is still where the character is saved: a player logging out
             // inside a Room Assign room keeps it for the logout hold (server setting room_assign_logout_hold_minutes).
             RoomAssignManager.OnLogout(this);
