@@ -1165,6 +1165,12 @@ namespace ACE.Server.Managers
 
         private static void SaveSupply(DateTime day, List<SupplyRow> rows, List<AccountHolding> holdings)
         {
+            // one stamp for the supply rows and the holdings written for them (whole seconds, as the datetime columns
+            // store it): the reports only use holdings whose stamp matches the day's supply row, so rows left over from
+            // an earlier same-day snapshot are ignored even if replacing them fails
+            var savedAt = DateTime.UtcNow;
+            savedAt = savedAt.AddTicks(-(savedAt.Ticks % TimeSpan.TicksPerSecond));
+
             using var ctx = new ShardDbContext();
             var con = OpenConnection(ctx);
             using var tx = con.BeginTransaction();
@@ -1192,7 +1198,7 @@ namespace ACE.Server.Managers
                 AddParam(cmd, "@l", row.LargestHolder);
                 AddParam(cmd, "@ad", row.AdminSupply);
                 AddParam(cmd, "@fn", row.FlowNet);
-                AddParam(cmd, "@u", DateTime.UtcNow);
+                AddParam(cmd, "@u", savedAt);
                 cmd.ExecuteNonQuery();
             }
 
@@ -1202,7 +1208,7 @@ namespace ACE.Server.Managers
             // (which the flow checks depend on) is already saved and stays valid
             try
             {
-                SaveHoldings(con, day, holdings);
+                SaveHoldings(con, day, savedAt, holdings);
             }
             catch (Exception ex)
             {
@@ -1229,7 +1235,7 @@ namespace ACE.Server.Managers
         /// Replaces the day's per-account holdings in one transaction (a second snapshot on the same day must not leave
         /// rows for an account that has since emptied its balance).
         /// </summary>
-        private static void SaveHoldings(DbConnection con, DateTime day, List<AccountHolding> holdings)
+        private static void SaveHoldings(DbConnection con, DateTime day, DateTime savedAt, List<AccountHolding> holdings)
         {
             using var tx = con.BeginTransaction();
 
@@ -1246,12 +1252,13 @@ namespace ACE.Server.Managers
             {
                 using var cmd = NewCommand(con);
                 cmd.Transaction = tx;
-                var sb = new StringBuilder("INSERT INTO `economy_holdings_daily` (`day_utc`,`currency`,`account_id`,`banked`,`items`,`idle_seconds`) VALUES ");
+                var sb = new StringBuilder("INSERT INTO `economy_holdings_daily` (`day_utc`,`currency`,`account_id`,`banked`,`items`,`idle_seconds`,`snapshot_utc`) VALUES ");
                 AddParam(cmd, "@d", day);
+                AddParam(cmd, "@t", savedAt);
                 for (var i = 0; i < batch.Length; i++)
                 {
                     if (i > 0) sb.Append(',');
-                    sb.Append($"(@d,@c{i},@a{i},@b{i},@i{i},@s{i})");
+                    sb.Append($"(@d,@c{i},@a{i},@b{i},@i{i},@s{i},@t)");
                     AddParam(cmd, $"@c{i}", batch[i].Currency);
                     AddParam(cmd, $"@a{i}", batch[i].AccountId);
                     AddParam(cmd, $"@b{i}", batch[i].Banked);
@@ -1520,6 +1527,7 @@ CREATE TABLE IF NOT EXISTS `economy_holdings_daily` (
   `banked`        bigint        NOT NULL DEFAULT 0,
   `items`         bigint        NOT NULL DEFAULT 0,
   `idle_seconds`  bigint        NULL,
+  `snapshot_utc`  datetime      NOT NULL,
   PRIMARY KEY (`day_utc`, `currency`, `account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 

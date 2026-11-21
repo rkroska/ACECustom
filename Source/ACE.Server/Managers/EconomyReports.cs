@@ -417,32 +417,70 @@ namespace ACE.Server.Managers
         private static readonly Dictionary<(int days, int activeDays), (DateTime at, Dictionary<string, Dictionary<DateTime, AccountView>> data)> accountCache = new();
 
         /// <summary>
+        /// Bumped by <see cref="InvalidateCaches"/>. A load that started before a snapshot and finished after it must not
+        /// be cached (it would put the old figures back), so loads compare the generation before storing.
+        /// </summary>
+        private static long cacheGeneration;
+
+        /// <summary>
         /// Per currency and snapshot day: the supply of accounts active within <paramref name="activeDays"/> days of that
         /// snapshot (0 = every account), with the richest 1% and largest holder among them. Worked out in MySQL from
         /// economy_holdings_daily; cached for a minute per window.
         /// </summary>
         private static Dictionary<string, Dictionary<DateTime, AccountView>> LoadAccountViews(int days, int activeDays)
         {
-            lock (cacheLock)
+            for (var attempt = 0; ; attempt++)
             {
-                if (accountCache.TryGetValue((days, activeDays), out var hit) && (DateTime.UtcNow - hit.at).TotalSeconds < CacheSeconds)
-                    return hit.data;
-            }
+                long generation;
+                lock (cacheLock)
+                {
+                    if (accountCache.TryGetValue((days, activeDays), out var hit) && (DateTime.UtcNow - hit.at).TotalSeconds < CacheSeconds)
+                        return hit.data;
+                    generation = cacheGeneration;
+                }
 
+                var data = QueryAccountViews(days, activeDays);
+
+                lock (cacheLock)
+                {
+                    if (generation == cacheGeneration)
+                    {
+                        foreach (var stale in accountCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= CacheSeconds).Select(kv => kv.Key).ToList())
+                            accountCache.Remove(stale);
+
+                        accountCache[(days, activeDays)] = (DateTime.UtcNow, data);
+                        return data;
+                    }
+                }
+
+                // a snapshot was saved while this ran: read again once, then answer without caching
+                if (attempt >= 1)
+                    return data;
+            }
+        }
+
+        /// <summary>
+        /// The uncached read behind <see cref="LoadAccountViews"/>. Only holdings stamped with the same save time as the
+        /// day's supply row are used, so rows left from an earlier same-day snapshot never pair with the new supply.
+        /// </summary>
+        private static Dictionary<string, Dictionary<DateTime, AccountView>> QueryAccountViews(int days, int activeDays)
+        {
             var data = EconomyLedger.Currencies.ToDictionary(c => c.Key, _ => new Dictionary<DateTime, AccountView>(), StringComparer.OrdinalIgnoreCase);
 
             if (TableExists("economy_holdings_daily"))
             {
                 var since = DateTime.UtcNow.Date.AddDays(-Math.Max(days, 40));
-                var filter = activeDays > 0 ? " AND `idle_seconds` IS NOT NULL AND `idle_seconds` <= @idle" : "";
+                var filter = activeDays > 0 ? " AND h.`idle_seconds` IS NOT NULL AND h.`idle_seconds` <= @idle" : "";
+                const string current = "FROM `economy_holdings_daily` h JOIN `economy_supply_daily` s " +
+                    "ON s.`day_utc` = h.`day_utc` AND s.`currency` = h.`currency` AND s.`taken_utc` = h.`snapshot_utc` WHERE h.`day_utc` >= @since";
 
                 var rows = Query(
                     "SELECT `currency`, `day_utc`, COUNT(*), SUM(`banked`), SUM(`items`), MAX(`banked` + `items`), " +
                     "SUM(CASE WHEN rn <= CEIL(cnt / 100) THEN `banked` + `items` ELSE 0 END) " +
-                    "FROM (SELECT `currency`, `day_utc`, `banked`, `items`, " +
-                    "ROW_NUMBER() OVER (PARTITION BY `currency`, `day_utc` ORDER BY `banked` + `items` DESC) AS rn, " +
-                    "COUNT(*) OVER (PARTITION BY `currency`, `day_utc`) AS cnt " +
-                    $"FROM `economy_holdings_daily` WHERE `day_utc` >= @since{filter}) h GROUP BY `currency`, `day_utc`",
+                    "FROM (SELECT h.`currency`, h.`day_utc`, h.`banked`, h.`items`, " +
+                    "ROW_NUMBER() OVER (PARTITION BY h.`currency`, h.`day_utc` ORDER BY h.`banked` + h.`items` DESC) AS rn, " +
+                    "COUNT(*) OVER (PARTITION BY h.`currency`, h.`day_utc`) AS cnt " +
+                    $"{current}{filter}) x GROUP BY `currency`, `day_utc`",
                     c =>
                     {
                         Param(c, "@since", since);
@@ -463,21 +501,13 @@ namespace ACE.Server.Managers
                 if (activeDays > 0)
                 {
                     var stored = Query(
-                        "SELECT DISTINCT `currency`, `day_utc` FROM `economy_holdings_daily` WHERE `day_utc` >= @since",
+                        $"SELECT DISTINCT h.`currency`, h.`day_utc` {current}",
                         c => Param(c, "@since", since),
                         r => (currency: S(r, 0), day: Convert.ToDateTime(r.GetValue(1)).Date));
                     foreach (var (currency, day) in stored)
                         if (data.TryGetValue(currency, out var byDay) && !byDay.ContainsKey(day))
                             byDay[day] = new AccountView { ActiveDays = activeDays };
                 }
-            }
-
-            lock (cacheLock)
-            {
-                foreach (var stale in accountCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= CacheSeconds).Select(kv => kv.Key).ToList())
-                    accountCache.Remove(stale);
-
-                accountCache[(days, activeDays)] = (DateTime.UtcNow, data);
             }
 
             return data;
@@ -491,6 +521,7 @@ namespace ACE.Server.Managers
         {
             lock (cacheLock)
             {
+                cacheGeneration++;
                 accountCache.Clear();
                 detailCache.Clear();
             }
@@ -650,23 +681,34 @@ namespace ACE.Server.Managers
 
             days = ClampDays(days);
 
-            lock (cacheLock)
+            for (var attempt = 0; ; attempt++)
             {
-                if (detailCache.TryGetValue((currency.Key, days, activeDays), out var hit) && (DateTime.UtcNow - hit.at).TotalSeconds < CacheSeconds)
-                    return hit.data;
+                long generation;
+                lock (cacheLock)
+                {
+                    if (detailCache.TryGetValue((currency.Key, days, activeDays), out var hit) && (DateTime.UtcNow - hit.at).TotalSeconds < CacheSeconds)
+                        return hit.data;
+                    generation = cacheGeneration;
+                }
+
+                var detail = BuildCurrency(currency, days, activeDays);
+
+                lock (cacheLock)
+                {
+                    // a snapshot saved while this was built would make it stale: never cache it
+                    if (generation == cacheGeneration)
+                    {
+                        foreach (var stale in detailCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= CacheSeconds).Select(kv => kv.Key).ToList())
+                            detailCache.Remove(stale);
+
+                        detailCache[(currency.Key, days, activeDays)] = (DateTime.UtcNow, detail);
+                        return detail;
+                    }
+                }
+
+                if (attempt >= 1)
+                    return detail;
             }
-
-            var detail = BuildCurrency(currency, days, activeDays);
-
-            lock (cacheLock)
-            {
-                foreach (var stale in detailCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= CacheSeconds).Select(kv => kv.Key).ToList())
-                    detailCache.Remove(stale);
-
-                detailCache[(currency.Key, days, activeDays)] = (DateTime.UtcNow, detail);
-            }
-
-            return detail;
         }
 
         private static CurrencyDetail BuildCurrency(EconomyLedger.Currency currency, int days, int activeDays)
