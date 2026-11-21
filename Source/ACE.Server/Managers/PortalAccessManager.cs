@@ -33,6 +33,7 @@ namespace ACE.Server.Managers
         public const string PetNaming = "pet-naming";
         public const string PyrealLedger = "pyreal-ledger";
         public const string Economy = "economy";
+        public const string ZoneControl = "zone-control";
     }
 
     public sealed class PortalPageDefinition
@@ -133,6 +134,7 @@ namespace ACE.Server.Managers
             new(PortalPages.Weenie, "Weenie Editor", "/weenie", "Content Tools", DefaultRestrictedPageMinLevel),
             new(PortalPages.Console, "Console", "/console", "Server Management", DefaultRestrictedPageMinLevel),
             new(PortalPages.Params, "Server Params", "/params", "Server Management", DefaultRestrictedPageMinLevel),
+            new(PortalPages.ZoneControl, "Zone Control", "/zone-control", "Server Management", DefaultRestrictedPageMinLevel),
             new(PortalPages.Events, "Server Events", "/events", "Server Management", DefaultRestrictedPageMinLevel),
             new(PortalPages.PortalSecurity, "Portal Security", "/portal-security", "Server Management", DefaultRestrictedPageMinLevel),
             new(PortalPages.PatchNotesAdmin, "Patch Notes", "/patch-notes/manage", "Server Management", DefaultRestrictedPageMinLevel),
