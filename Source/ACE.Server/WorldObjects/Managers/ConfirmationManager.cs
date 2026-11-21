@@ -30,6 +30,12 @@ namespace ACE.Server.WorldObjects.Managers
         }
 
         /// <summary>
+        /// True when a popup of this type is already open, so <see cref="EnqueueSend"/> would refuse another one. Lets a caller
+        /// that charges before asking say "answer the popup you have open" before it takes anything.
+        /// </summary>
+        public bool IsPending(ConfirmationType confirmationType) => confirmations.ContainsKey(confirmationType);
+
+        /// <summary>
         /// Builds a new confirmation request on the server,
         /// and sends the request to the client
         /// </summary>

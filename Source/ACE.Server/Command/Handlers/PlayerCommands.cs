@@ -527,7 +527,14 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You are not permitted to use bank commands at this time.", ChatMessageType.Broadcast));
                 return;
             }
-            
+
+            // bank lock (/banklock): staff froze this bank - every /bank and /b command is refused, the balances too
+            if (session.Player.IsBankLocked)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Your bank is locked.", ChatMessageType.Broadcast));
+                return;
+            }
+
             // Show balance if no parameters (just /b)
             if (parameters.Length == 0)
             {
@@ -1060,6 +1067,13 @@ namespace ACE.Server.Command.Handlers
 
             if (session.Player == null)
                 return;
+
+            // bank lock (/banklock): /clap pays into the bank, which takes nothing in while locked - keep the materials
+            if (session.Player.IsBankLocked)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Your bank is locked.", ChatMessageType.Broadcast));
+                return;
+            }
 
             if (session.Player.QuestManager.GetCurrentSolves("AutoCraftingEnabled") < 1)
             {

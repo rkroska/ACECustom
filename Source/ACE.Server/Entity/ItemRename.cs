@@ -245,6 +245,16 @@ CREATE TABLE IF NOT EXISTS `pet_name_requests` (
                 var online = PlayerManager.GetOnlinePlayer(characterId);
                 if (online != null)
                 {
+                    // bank lock (/banklock): a locked bank takes nothing in, so the refund is not paid - the player is told so,
+                    // and the log says what to credit by hand
+                    if (online.IsBankLocked)
+                    {
+                        online.Session?.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"{reason} Your fee of {amount:N0} pyreals could not be returned: your bank is locked.", ChatMessageType.Broadcast));
+                        log.Warn($"{Tag} did not refund {amount} pyreals to {online.Name} (0x{characterId:X8}, online): the bank is locked ({reason}). Credit it by hand after /bankunlock if it is owed.");
+                        return;
+                    }
+
                     online.BankedPyreals = (online.BankedPyreals ?? 0) + amount;
                     online.RefreshCoinValueAfterBankChange();
                     online.Session?.Network.EnqueueSend(new GameMessageSystemChat(
@@ -257,6 +267,12 @@ CREATE TABLE IF NOT EXISTS `pet_name_requests` (
                 if (offline == null)
                 {
                     log.Error($"{Tag} could not refund {amount} pyreals to character 0x{characterId:X8}: no such character ({reason}). Credit it by hand.");
+                    return;
+                }
+
+                if (BankLock.IsLocked(offline))
+                {
+                    log.Warn($"{Tag} did not refund {amount} pyreals to {offline.Name} (0x{characterId:X8}, offline): the bank is locked ({reason}). Credit it by hand after /bankunlock if it is owed.");
                     return;
                 }
 

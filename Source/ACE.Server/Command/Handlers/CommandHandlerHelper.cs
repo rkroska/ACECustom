@@ -5,6 +5,7 @@ using System.Linq;
 
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
@@ -169,14 +170,50 @@ namespace ACE.Server.Command.Handlers
         /// <returns>The target, or null (already reported)</returns>
         public static WorldObject GetCommandTarget(Session session, string[] parameters, int ownParameterCount)
         {
+            ResolveCommandTarget(session, parameters, ownParameterCount, false, out var target, out _);
+            return target;
+        }
+
+        /// <summary>
+        /// GetCommandTarget, reaching offline characters too (2026-11-20, /setproperty, /getproperty, /propertydump). The same
+        /// rules: with no name or id after the command's own arguments it is the last appraised object; an id is an object
+        /// near the admin or an online player anywhere; a name is an online player. When that finds nothing, an offline
+        /// character with that name or id is returned in <paramref name="offline"/> - its stored record, which the command
+        /// reads or changes and saves. Exactly one of the two outs is set when this returns true; false means nothing was
+        /// found, and that has been reported. In game only, as GetCommandTarget.
+        /// </summary>
+        /// <param name="session">The admin's session (null from the server console - refused)</param>
+        /// <param name="parameters">All the command's arguments (CommandManager.ParseCommand has already grouped quoted text)</param>
+        /// <param name="ownParameterCount">How many of them are the command's own (property, value, ...) - the rest name the target</param>
+        /// <param name="target">The object or online player, when that is what was found</param>
+        /// <param name="offline">The offline character, when that is what was found</param>
+        /// <returns>True when a target was found</returns>
+        public static bool TryGetCommandTargetOrOffline(Session session, string[] parameters, int ownParameterCount, out WorldObject target, out OfflinePlayer offline)
+        {
+            return ResolveCommandTarget(session, parameters, ownParameterCount, true, out target, out offline);
+        }
+
+        /// <summary>
+        /// The one set of rules behind GetCommandTarget (<paramref name="allowOffline"/> false: an online player or a nearby
+        /// object, reported exactly as before) and TryGetCommandTargetOrOffline (true: then an offline character as well).
+        /// Reports what it does not find.
+        /// </summary>
+        private static bool ResolveCommandTarget(Session session, string[] parameters, int ownParameterCount, bool allowOffline, out WorldObject target, out OfflinePlayer offline)
+        {
+            target = null;
+            offline = null;
+
             if (session?.Player == null)
             {
                 WriteOutputInfo(session, "Run this command in game - from the server console it would change a player off the world thread.");
-                return null;
+                return false;
             }
 
             if (parameters.Length <= ownParameterCount)
-                return GetLastAppraisedObject(session);
+            {
+                target = GetLastAppraisedObject(session);
+                return target != null;
+            }
 
             var text = string.Join(" ", parameters, ownParameterCount, parameters.Length - ownParameterCount).Trim();
 
@@ -185,16 +222,90 @@ namespace ACE.Server.Command.Handlers
             if (ownParameterCount > 0 && parameters[ownParameterCount - 1].EndsWith(" " + text, StringComparison.Ordinal))
             {
                 WriteOutputInfo(session, "A quote is not closed - nothing done.");
-                return null;
+                return false;
             }
 
             if (TryParseObjectId(text, out var guid))
-                return GetWorldObjectByGuid(session, guid);   // reports when not found
+            {
+                if (!allowOffline)
+                {
+                    target = GetWorldObjectByGuid(session, guid);   // reports when not found
+                    return target != null;
+                }
 
-            var player = PlayerManager.GetOnlinePlayer(text);   // case-insensitive, with or without the + admin prefix
-            if (player == null)
-                WriteOutputInfo(session, $"No online player named {text} - nothing done.");
-            return player;
+                target = session.Player.FindObject(guid, Player.SearchLocations.Everywhere, out _, out _, out _) ?? PlayerManager.GetOnlinePlayer(guid);
+                if (target == null)
+                    offline = PlayerManager.GetOfflinePlayer(guid);
+                if (target == null && offline == null)
+                    WriteOutputInfo(session, $"No object, online player or character with id 0x{guid:X8} - nothing done.");
+                return target != null || offline != null;
+            }
+
+            if (!allowOffline)
+            {
+                target = PlayerManager.GetOnlinePlayer(text);   // case-insensitive, with or without the + admin prefix
+                if (target == null)
+                    WriteOutputInfo(session, $"No online player named {text} - nothing done.");
+                return target != null;
+            }
+
+            var character = FindCharacterByName(text);
+            target = character as Player;
+            offline = character as OfflinePlayer;
+            if (character == null)
+                WriteOutputInfo(session, $"No character named {text} - nothing done.");
+            return character != null;
+        }
+
+        /// <summary>
+        /// A character by name, case-insensitive, with or without the + admin prefix: an online player first, then an offline
+        /// character that is not pending deletion (PlayerManager.FindByName), then one that is. A deleted character's name can
+        /// be taken again, so the live character comes first - the one pending deletion is still found when it is the only one.
+        /// </summary>
+        private static IPlayer FindCharacterByName(string name)
+            => PlayerManager.FindByName(name) ?? PlayerManager.GetOfflinePlayer(name);
+
+        /// <summary>
+        /// "offline", or "offline, pending deletion" - how an offline character is labelled in staff command output.
+        /// </summary>
+        public static string OfflineLabel(IPlayer character)
+            => character.IsPendingDeletion ? "offline, pending deletion" : "offline";
+
+        /// <summary>
+        /// The character a staff command names (2026-11-20, /bankwipe, /banklock, /bankunlock): the arguments from
+        /// <paramref name="firstParameter"/> on are a character name (case-insensitive, with or without the + admin prefix,
+        /// spaces allowed) or an id (decimal, or 0x hex). An online player is found first, then an offline character - by name,
+        /// one that is not pending deletion before one that is (FindCharacterByName). False, reported, when there is none.
+        /// </summary>
+        /// <param name="session">The admin's session</param>
+        /// <param name="parameters">All the command's arguments</param>
+        /// <param name="firstParameter">Where the name or id starts</param>
+        /// <param name="character">The character found</param>
+        /// <returns>True when a character was found</returns>
+        public static bool TryGetCharacter(Session session, string[] parameters, int firstParameter, out IPlayer character)
+        {
+            character = null;
+
+            if (parameters == null || parameters.Length <= firstParameter)
+            {
+                WriteOutputInfo(session, "Name a character, by name or by id.");
+                return false;
+            }
+
+            var text = string.Join(" ", parameters, firstParameter, parameters.Length - firstParameter).Trim();
+
+            if (TryParseObjectId(text, out var guid))
+            {
+                character = PlayerManager.FindByGuid(guid);   // online, else offline
+                if (character == null)
+                    WriteOutputInfo(session, $"No character with id 0x{guid:X8} - nothing done.");
+                return character != null;
+            }
+
+            character = FindCharacterByName(text);
+            if (character == null)
+                WriteOutputInfo(session, $"No character named {text} - nothing done.");
+            return character != null;
         }
 
         /// <summary>

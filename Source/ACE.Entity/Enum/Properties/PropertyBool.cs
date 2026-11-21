@@ -493,6 +493,11 @@ namespace ACE.Entity.Enum.Properties
         /// Server-only - not an assessment property.</summary>
         ParagonCollector = 56100,
 
+        /// <summary>Bank lock (2026-11-20): on a CHARACTER, staff locked the bank (/banklock). No banked currency changes - nothing
+        /// in, nothing out, by any path - and the bank reads as empty to the game until /bankunlock (BankLock.cs). 56300, free
+        /// in EVERY Property enum. Server-only - not an assessment property.</summary>
+        BankLocked = 56300,
+
         /// <summary>T11+ Slash Rending (2026-10-28): on a melee weapon whose Slashing/Piercing damage type was rewritten to
         /// Slashing only (ZoneSlashRendDamageType.Normalize). Tells a converted weapon from one that was always Slashing, so
         /// only converted weapons play slashes in place of thrusts. 59000, free in EVERY Property enum on master and the

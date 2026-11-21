@@ -3997,6 +3997,21 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Bank lock (/banklock): true, with the item bounced back and the player told why, when the NPC deals with this hand-in
+        /// through the bank (BankLock.UsesBank follows the set and its branches). A locked player keeps the item rather than
+        /// hand it over for nothing. False for an unlocked player, or a set (or none) that does not touch the bank.
+        /// </summary>
+        private bool RefuseHandInToLockedBank(WorldObject target, WorldObject item, PropertiesEmote emoteSet)
+        {
+            if (!IsBankLocked || !BankLock.UsesBank(emoteSet, target.Biota.PropertiesEmote))
+                return false;
+
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} uses your bank for that, and your bank is locked.", ChatMessageType.Broadcast));
+            Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+            return true;
+        }
+
+        /// <summary>
         /// Hands an item to an NPC. Town Crier IOUs, forge smiths and Paragon Collectors are handed off to their own code first
         /// (smiths and collectors never take the item here); otherwise the NPC's Give / Refuse emote for the item decides, or
         /// AiAcceptEverything takes it.
@@ -4044,6 +4059,14 @@ namespace ACE.Server.WorldObjects
             if (target.GetProperty(PropertyBool.ParagonCollector) == true)
             {
                 Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+
+                // bank lock (/banklock): the collector pays into the bank, which takes nothing in while locked
+                if (IsBankLocked)
+                {
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} pays into your bank, and your bank is locked.", ChatMessageType.Broadcast));
+                    return;
+                }
+
                 ACE.Server.Entity.ParagonCollectorService.HandleGive(this, target, item, itemWasEquipped);
                 return;
             }
@@ -4054,6 +4077,10 @@ namespace ACE.Server.WorldObjects
             {
                 if (acceptAll || (emoteResult.Category == EmoteCategory.Give && target.AllowGive))
                 {
+                    // bank lock (/banklock): an accept-everything NPC with no Give set for the item has no emote to look at
+                    if (RefuseHandInToLockedBank(target, item, emoteResult))
+                        return;
+
                     // Pre-removal gate: verify the player can carry the rewards BEFORE consuming the
                     // turn-in. The reward emote chain runs asynchronously, but the turn-in is removed
                     // and Destroy()-ed synchronously below — so without this check a full inventory
@@ -4116,6 +4143,10 @@ namespace ACE.Server.WorldObjects
                 }
                 else if (emoteResult.Category == EmoteCategory.Refuse)
                 {
+                    // bank lock (/banklock): a Refuse set can still take the item (TakeItems) and pay for it
+                    if (RefuseHandInToLockedBank(target, item, emoteResult))
+                        return;
+
                     // Item rejected by npc
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"You allow {target.Name} to examine your {item.NameWithMaterial}.", ChatMessageType.Broadcast));
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full, WeenieError.TradeAiRefuseEmote));

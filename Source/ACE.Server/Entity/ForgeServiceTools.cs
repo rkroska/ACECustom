@@ -359,6 +359,14 @@ namespace ACE.Server.Entity
                 Say(player, null, reason);
                 return;
             }
+            // A popup already open means the keep-it question could not be shown: say so before anything is charged. The
+            // refund further down stays for the rare popup that opens in between, but it goes to the bank, and a locked bank
+            // (/banklock) takes nothing in.
+            if (player.ConfirmationManager.IsPending(ConfirmationType.Yes_No))
+            {
+                Say(player, null, "Answer the popup you already have open first.");
+                return;
+            }
             if (!TryLock(player, Math.Max(5, ServerConfig.forge_dye_preview_seconds.Value)))
             {
                 Say(player, null, "Finish what you are doing at the forge first.");
@@ -468,10 +476,19 @@ namespace ACE.Server.Entity
                 Redraw(player, items, false);
                 if (chargeOnTry && fee > 0)
                 {
-                    // the colour was never offered, so the try is not owed: back to the bank, whichever purse paid
-                    player.BankedPyreals = (player.BankedPyreals ?? 0) + fee;
-                    player.SaveBiotaToDatabase();
-                    log.Info($"[Dye] {player.Name}: popup could not be shown; {fee} pyreals returned to the bank");
+                    // the colour was never offered, so the try is not owed: back to the bank, whichever purse paid - unless the
+                    // bank is locked (/banklock), which takes nothing in
+                    if (player.IsBankLocked)
+                    {
+                        log.Warn($"[Dye] {player.Name} (0x{player.Guid.Full:X8}): popup could not be shown; {fee} pyreals NOT returned - the bank is locked. Credit it by hand after /bankunlock if it is owed.");
+                        Say(player, null, $"Your bank is locked, so the {fee:N0} pyreals for this try could not be returned.");
+                    }
+                    else
+                    {
+                        player.BankedPyreals = (player.BankedPyreals ?? 0) + fee;
+                        player.SaveBiotaToDatabase();
+                        log.Info($"[Dye] {player.Name}: popup could not be shown; {fee} pyreals returned to the bank");
+                    }
                 }
                 Say(player, null, "Answer the popup you already have open first.");
             }

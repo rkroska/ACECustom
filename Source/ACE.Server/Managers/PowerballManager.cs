@@ -399,9 +399,19 @@ namespace ACE.Server.Managers
         {
             if (summary.NetWon <= 0) return;
 
+            // bank lock (/banklock): a locked bank takes nothing in - the win is not paid, and the log says what to credit by hand
+            void LogNotPaid(string where) => log.Warn($"[Powerball] {summary.Name} (ID {charId}, {where}) won {summary.NetWon:N0} luminance ({FormatLum(summary.NetWon)}), but the bank is locked - not paid. Credit exactly {summary.NetWon:N0} by hand after /bankunlock if it is owed.");
+
             var online = PlayerManager.GetOnlinePlayer(charId);
             if (online != null)
             {
+                if (online.IsBankLocked)
+                {
+                    LogNotPaid("online");
+                    online.Session?.Network.EnqueueSend(new GameMessageSystemChat($"[Powerball] You won {FormatLum(summary.NetWon)}, but your bank is locked, so it could not be banked.", ChatMessageType.Broadcast));
+                    return;
+                }
+
                 using (PyrealLedger.Begin(EconomyLedger.SrcPowerball, "payout", "Powerball payout"))
                     online.BankedLuminance = (online.BankedLuminance ?? 0) + summary.NetWon;
                 online.SaveBiotaToDatabase(enqueueSave: true);
@@ -412,6 +422,12 @@ namespace ACE.Server.Managers
                 var offline = PlayerManager.GetOfflinePlayer(charId);
                 if (offline != null)
                 {
+                    if (BankLock.IsLocked(offline))
+                    {
+                        LogNotPaid("offline");
+                        return;
+                    }
+
                     using (PyrealLedger.Begin(EconomyLedger.SrcPowerball, "payout", "Powerball payout"))
                         offline.BankedLuminance = (offline.BankedLuminance ?? 0) + summary.NetWon;
                     offline.SaveBiotaToDatabase(enqueueSave: true);
