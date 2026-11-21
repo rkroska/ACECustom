@@ -19,10 +19,12 @@
    current order. Nothing is removed. The Skill Credit Gems get the same shop row values as the Specialized Skill
    Augmentation Gems (stack size 0, palette 1, shade 0.5).
 
-   How: the vendor lists its shop in create list id order (Vendor.LoadInventory fills DefaultItemsForSale in that order,
-   and ApproachVendor sends them that way), so the shop rows are copied to a temporary table, deleted and inserted back
-   sorted (INSERT ... SELECT ... ORDER BY gives the new auto-increment ids in that order). The delete and the insert are
-   one transaction. Only rows with object_Id 300002 and destination_Type 4 (Shop) are touched.
+   How: the vendor lists its shop in the order it reads the create list rows, which is id order. GetWeenie looks them up
+   through the object_Id index (InnoDB returns them in object_Id, id order), Vendor.LoadInventory fills
+   DefaultItemsForSale in that order, and ApproachVendor sends them in insertion order. Nothing sorts them explicitly;
+   every vendor's shop order already relies on this. So the shop rows are copied to a temporary table, deleted and
+   inserted back sorted (INSERT ... SELECT ... ORDER BY gives the new auto-increment ids in that order). The delete and
+   the insert are one transaction. Only rows with object_Id 300002 and destination_Type 4 (Shop) are touched.
 
    Run against ace_world, after the gems (a shop row for a missing weenie is skipped by the vendor, so the order of the
    two files is not critical). Safe to re-run: the gems are listed once, and the result is the same. Restart the server
