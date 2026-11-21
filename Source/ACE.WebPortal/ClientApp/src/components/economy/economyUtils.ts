@@ -14,8 +14,28 @@ export function clampEconomyDays(raw: string | null | undefined): number {
   return (ECONOMY_DAY_OPTIONS as readonly number[]).includes(n) ? n : ECONOMY_DEFAULT_DAYS
 }
 
-export function currencyPath(key: string, days: number): string {
-  return `${ECONOMY_BASE_PATH}/${encodeURIComponent(key)}?days=${days}`
+/**
+ * The page's "active in the last N days" filter from the URL (?active=). null = not chosen, so the server applies
+ * its default (economy_active_days). The server refuses windows it does not offer.
+ */
+export function parseActiveDays(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = Number(raw)
+  return Number.isInteger(n) && n >= 0 ? n : null
+}
+
+/** Query-string suffix for API calls: '' when no filter was chosen, else '&activeDays=N'. */
+export function activeDaysQuery(active: number | null): string {
+  return active === null ? '' : `&activeDays=${active}`
+}
+
+/** Short label for a window: 0 = all accounts. */
+export function activeLabel(days: number): string {
+  return days <= 0 ? 'All accounts' : `Active ${days}d`
+}
+
+export function currencyPath(key: string, days: number, active: number | null = null): string {
+  return `${ECONOMY_BASE_PATH}/${encodeURIComponent(key)}?days=${days}${active === null ? '' : `&active=${active}`}`
 }
 
 export function formatPct(n: number | null | undefined, digits = 1): string {

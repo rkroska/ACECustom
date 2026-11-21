@@ -2,11 +2,16 @@ import { useMemo } from 'react'
 import type { EconomyFlowPoint, EconomySeriesPoint } from '../../types/economy'
 import { dayLabel, formatCompact, formatFull } from './economyUtils'
 
-/** Total and active-player supply over time. Plain SVG line chart. */
-export function SupplyChart({ series }: { series: EconomySeriesPoint[] }) {
+/**
+ * Total supply over time, plus the part held by the accounts the activity filter keeps. Days from before per-account
+ * data was saved fall back to the stored active-player figure. Plain SVG line chart.
+ */
+export function SupplyChart({ series, filterLabel = 'Active players' }: { series: EconomySeriesPoint[]; filterLabel?: string }) {
+  const second = (p: EconomySeriesPoint) => p.filteredTotal ?? p.activeSupply
+  const anyFiltered = series.some(p => p.filteredTotal !== null && p.filteredTotal !== undefined)
   const geo = useMemo(() => {
     if (series.length < 2) return null
-    const all = series.flatMap(p => [p.total, p.activeSupply])
+    const all = series.flatMap(p => [p.total, second(p)])
     const min = Math.min(...all)
     const max = Math.max(...all)
     const span = max - min || 1
@@ -20,7 +25,7 @@ export function SupplyChart({ series }: { series: EconomySeriesPoint[] }) {
       min,
       max,
       total: series.map((p, i) => `${x(i).toFixed(1)},${y(p.total).toFixed(1)}`).join(' '),
-      active: series.map((p, i) => `${x(i).toFixed(1)},${y(p.activeSupply).toFixed(1)}`).join(' '),
+      active: series.map((p, i) => `${x(i).toFixed(1)},${y(second(p)).toFixed(1)}`).join(' '),
       x,
     }
   }, [series])
@@ -36,7 +41,7 @@ export function SupplyChart({ series }: { series: EconomySeriesPoint[] }) {
           <span className="w-2.5 h-0.5 bg-blue-400" /> Total supply
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-2.5 h-0.5 bg-emerald-400" /> Active players
+          <span className="w-2.5 h-0.5 bg-emerald-400" /> {anyFiltered ? filterLabel : 'Active players'}
         </span>
         <span className="text-neutral-600">
           Scale <span title={formatFull(geo.min)}>{formatCompact(geo.min)}</span> to <span title={formatFull(geo.max)}>{formatCompact(geo.max)}</span>.
@@ -54,7 +59,7 @@ export function SupplyChart({ series }: { series: EconomySeriesPoint[] }) {
         <polyline points={geo.active} fill="none" stroke="currentColor" className="text-emerald-400" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
         {series.map((p, i) => (
           <rect key={p.day} x={geo.x(i) - geo.w / series.length / 2} y={0} width={geo.w / series.length} height={geo.h} fill="transparent">
-            <title>{`${dayLabel(p.day)} UTC\nTotal: ${formatFull(p.total)}\nBanked: ${formatFull(p.banked)}\nIn items: ${formatFull(p.items)}\nActive: ${formatFull(p.activeSupply)}`}</title>
+            <title>{`${dayLabel(p.day)} UTC\nTotal: ${formatFull(p.total)}\nBanked: ${formatFull(p.banked)}\nIn items: ${formatFull(p.items)}\n${p.filteredTotal !== null && p.filteredTotal !== undefined ? `${filterLabel}: ${formatFull(p.filteredTotal)}` : `Active players: ${formatFull(p.activeSupply)}`}`}</title>
           </rect>
         ))}
       </svg>

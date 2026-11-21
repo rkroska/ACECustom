@@ -539,6 +539,24 @@ namespace ACE.Server.Entity
                 .ToHashSet();
         }
 
+        /// <summary>
+        /// Accounts with a non-deleted character that logged into the game within <paramref name="activeDays"/> days, or
+        /// null for 0 or less (no activity filter). Same rule as the SQL leaderboards (LeaderboardInlineSql.ActiveCondition).
+        /// </summary>
+        private static HashSet<uint> LoadActiveAccountIds(ShardDbContext context, int activeDays)
+        {
+            if (activeDays <= 0)
+                return null;
+
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-activeDays).ToUnixTimeSeconds();
+            return context.Character
+                .AsNoTracking()
+                .Where(c => !c.IsDeleted && c.LastLoginTimestamp >= cutoff)
+                .Select(c => c.AccountId)
+                .Distinct()
+                .ToHashSet();
+        }
+
         private static string MainCharacterNameHighestLogins(ShardDbContext context, uint accountId)
         {
             return LoadMainCharacterNames(context, new[] { accountId }).TryGetValue(accountId, out var name)
@@ -566,7 +584,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// All accounts ordered by pet-species count (same rules as the leaderboard), excluding leaderboard-hidden accounts.
         /// </summary>
-        private static List<(uint AccountId, int Count)> BuildOrderedPetSpeciesCounts(ShardDbContext context, bool shinyOnly, HashSet<uint> excludedAccounts)
+        private static List<(uint AccountId, int Count)> BuildOrderedPetSpeciesCounts(ShardDbContext context, bool shinyOnly, HashSet<uint> excludedAccounts, HashSet<uint> activeAccounts)
         {
             var ordered = new List<(uint AccountId, int Count)>();
 
@@ -583,7 +601,7 @@ namespace ACE.Server.Entity
 
                 foreach (var row in ranked)
                 {
-                    if (excludedAccounts.Contains(row.AccountId))
+                    if (excludedAccounts.Contains(row.AccountId) || (activeAccounts != null && !activeAccounts.Contains(row.AccountId)))
                         continue;
                     ordered.Add((row.AccountId, row.Count));
                 }
@@ -610,7 +628,7 @@ namespace ACE.Server.Entity
 
             foreach (var row in rankedNonShiny)
             {
-                if (excludedAccounts.Contains(row.AccountId))
+                if (excludedAccounts.Contains(row.AccountId) || (activeAccounts != null && !activeAccounts.Contains(row.AccountId)))
                     continue;
                 ordered.Add((row.AccountId, row.Count));
             }
@@ -622,9 +640,10 @@ namespace ACE.Server.Entity
             !string.IsNullOrEmpty(name) && name.StartsWith("+");
 
         /// <summary>
-        /// Global rank on the pet or shiny species leaderboard for an account, if the account appears on that board.
+        /// Global rank on the pet or shiny species leaderboard for an account, if the account appears on that board
+        /// (only accounts active within <paramref name="activeDays"/> days are ranked; 0 = everyone).
         /// </summary>
-        public static bool TryGetPetSpeciesPlacement(uint accountId, bool shinyOnly, out int rank, out int count, out string characterName)
+        public static bool TryGetPetSpeciesPlacement(uint accountId, bool shinyOnly, int activeDays, out int rank, out int count, out string characterName)
         {
             rank = 0;
             count = 0;
@@ -633,7 +652,7 @@ namespace ACE.Server.Entity
             using (var context = new ShardDbContext())
             {
                 var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
-                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, excludedAccounts);
+                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, excludedAccounts, LoadActiveAccountIds(context, activeDays));
                 var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
                 var visibleRank = 0;
@@ -662,12 +681,12 @@ namespace ACE.Server.Entity
         /// Get top accounts by unique pet count (for leaderboard) - counts distinct creature names
         /// Returns main character name (by most logins) instead of account name
         /// </summary>
-        public static List<(uint AccountId, string CharacterName, int Count)> GetTopPets(int limit = 25)
+        public static List<(uint AccountId, string CharacterName, int Count)> GetTopPets(int limit, int activeDays)
         {
             using (var context = new ShardDbContext())
             {
                 var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
-                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: false, excludedAccounts);
+                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: false, excludedAccounts, LoadActiveAccountIds(context, activeDays));
                 var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();
@@ -704,12 +723,12 @@ namespace ACE.Server.Entity
         /// Get top accounts by shiny pet count (for leaderboard) - counts distinct shiny creature names
         /// Returns main character name (by most logins) instead of account name
         /// </summary>
-        public static List<(uint AccountId, string CharacterName, int Count)> GetTopShinies(int limit = 25)
+        public static List<(uint AccountId, string CharacterName, int Count)> GetTopShinies(int limit, int activeDays)
         {
             using (var context = new ShardDbContext())
             {
                 var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
-                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: true, excludedAccounts);
+                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: true, excludedAccounts, LoadActiveAccountIds(context, activeDays));
                 var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();

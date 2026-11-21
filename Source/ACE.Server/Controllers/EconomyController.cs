@@ -31,14 +31,33 @@ namespace ACE.Server.Web.Controllers
             }
         }
 
+        /// <summary>
+        /// The page's "active in the last N days" filter for the per-account figures: none given = economy_active_days;
+        /// otherwise one of the offered windows (so a caller cannot fill the caches with arbitrary windows).
+        /// </summary>
+        private IActionResult WithActiveDays(int? activeDays, Func<int, object> query)
+        {
+            var defaultDays = ActiveWindow.EconomyDefault;
+            if (!ActiveWindow.TryResolve(activeDays, defaultDays, out var resolved))
+            {
+                if (!HasPortalAccess(PortalPages.Economy))
+                    return Forbid();
+                return BadRequest(new { Message = "Unsupported activity window.", Options = ActiveWindow.Options(defaultDays) });
+            }
+            return Run(() => query(resolved));
+        }
+
         [HttpGet("overview")]
-        public IActionResult GetOverview([FromQuery] int days = 30) => Run(() => EconomyReports.GetOverview(days));
+        public IActionResult GetOverview([FromQuery] int days = 30, [FromQuery] int? activeDays = null) =>
+            WithActiveDays(activeDays, a => EconomyReports.GetOverview(days, a));
 
         [HttpGet("currencies/{key}")]
-        public IActionResult GetCurrency(string key, [FromQuery] int days = 30) => Run(() => EconomyReports.GetCurrency(key, days));
+        public IActionResult GetCurrency(string key, [FromQuery] int days = 30, [FromQuery] int? activeDays = null) =>
+            WithActiveDays(activeDays, a => EconomyReports.GetCurrency(key, days, a));
 
         [HttpGet("prompt")]
-        public IActionResult GetPrompt([FromQuery] string currency = "all", [FromQuery] int days = 30) => Run(() => EconomyReports.GetPrompt(currency, days));
+        public IActionResult GetPrompt([FromQuery] string currency = "all", [FromQuery] int days = 30, [FromQuery] int? activeDays = null) =>
+            WithActiveDays(activeDays, a => EconomyReports.GetPrompt(currency, days, a));
 
         [HttpGet("stalled")]
         public IActionResult GetStalled([FromQuery] int days = 30, [FromQuery] int stallDays = 30, [FromQuery] int minEnl = 10, [FromQuery] int maxEnl = 0,

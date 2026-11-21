@@ -40,33 +40,6 @@ namespace ACE.Server.Controllers
                 ["litters"] = "Litters bred",
             };
 
-        /// <summary>Pet breeding mutation counts (PropertyInt 9070-9074), served through the generic cached path.</summary>
-        private static readonly Dictionary<string, string> PetMutationBoardSql =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["mutations"] = LeaderboardInlineSql.TopPetMutations,
-                ["summutations"] = LeaderboardInlineSql.TopSumPetMutations,
-                ["litters"] = LeaderboardInlineSql.TopLittersBred,
-            };
-
-        /// <summary>PropertyInt player discipline stats (9044–9045).</summary>
-        private static readonly Dictionary<string, string> DisciplineStatBoardSql =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["jails"] = LeaderboardInlineSql.TopTimesJailed,
-                ["notguilty"] = LeaderboardInlineSql.TopUcmChecksPassed,
-            };
-
-        /// <summary>PropertyInt64 banked counters (9020 enlightened coins, 9027 weakly enlightened, 9021 mythic keys, 9015 legendary keys).</summary>
-        private static readonly Dictionary<string, string> BankedInt64BoardSql =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["enlcoins"] = LeaderboardInlineSql.TopBankedEnlightenedCoins,
-                ["wenlcoins"] = LeaderboardInlineSql.TopBankedWeaklyEnlightenedCoins,
-                ["mkeys"] = LeaderboardInlineSql.TopBankedMythicalKeys,
-                ["lkeys"] = LeaderboardInlineSql.TopBankedLegendaryKeys,
-            };
-
         private static object MakeSelfRow(int rank, long score, string character, uint? account, string characterGuid, bool inTopList) =>
             new { rank, score, character = character ?? "", account, characterGuid, inTopList };
 
@@ -80,7 +53,8 @@ namespace ACE.Server.Controllers
                 .OrderBy(kv => kv.Key)
                 .Select(kv => new { id = kv.Key, title = kv.Value })
                 .ToList();
-            return Ok(new { boards });
+            var defaultDays = ActiveWindow.LeaderboardDefault;
+            return Ok(new { boards, activeDays = defaultDays, activeDayOptions = ActiveWindow.Options(defaultDays) });
         }
 
         /// <summary>
@@ -118,7 +92,7 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("{boardId}")]
-        public async Task<IActionResult> GetBoard(string boardId)
+        public async Task<IActionResult> GetBoard(string boardId, [FromQuery] int? days = null)
         {
             if (!HasPortalAccess(PortalPages.Leaderboards))
                 return Forbid();
@@ -139,11 +113,17 @@ namespace ACE.Server.Controllers
                 return NotFound(new { message = "Unknown leaderboard.", code = "unknown_board" });
             }
 
+            var defaultDays = ActiveWindow.LeaderboardDefault;
+            if (!ActiveWindow.TryResolve(days, defaultDays, out var activeDays))
+                return BadRequest(new { message = "Unsupported activity window.", code = "invalid_days", options = ActiveWindow.Options(defaultDays) });
+
+            var options = ActiveWindow.Options(defaultDays);
             var me = CurrentAccountId;
 
-            if (norm == "pets")
+            if (norm == "pets" || norm == "shinies")
             {
-                var list = PetRegistryManager.GetTopPets(25);
+                var shinyOnly = norm == "shinies";
+                var list = shinyOnly ? PetRegistryManager.GetTopShinies(25, activeDays) : PetRegistryManager.GetTopPets(25, activeDays);
                 var rows = list.Select((t, i) => new
                 {
                     rank = i + 1,
@@ -160,7 +140,7 @@ namespace ACE.Server.Controllers
                     var you = rows.FirstOrDefault(r => r.you);
                     if (you != null)
                         petsSelfRow = MakeSelfRow(you.rank, you.score, you.character, you.account, you.characterGuid, true);
-                    else if (PetRegistryManager.TryGetPetSpeciesPlacement(me.Value, shinyOnly: false, out var pr, out var pc, out var pn))
+                    else if (PetRegistryManager.TryGetPetSpeciesPlacement(me.Value, shinyOnly, activeDays, out var pr, out var pc, out var pn))
                         petsSelfRow = MakeSelfRow(pr, pc, pn, me.Value, null, false);
                 }
 
@@ -170,184 +150,19 @@ namespace ACE.Server.Controllers
                     title,
                     nextRefreshApproxUtc = (DateTime?)null,
                     cached = false,
+                    activeDays,
+                    activeDayOptions = options,
                     rows,
                     selfRow = petsSelfRow,
                 });
             }
 
-            if (norm == "shinies")
-            {
-                var list = PetRegistryManager.GetTopShinies(25);
-                var rows = list.Select((t, i) => new
-                {
-                    rank = i + 1,
-                    score = (long)t.Count,
-                    character = t.CharacterName,
-                    account = t.AccountId,
-                    characterGuid = (string)null,
-                    you = me.HasValue && t.AccountId == me.Value,
-                }).ToList();
-
-                object shiniesSelfRow = null;
-                if (me.HasValue)
-                {
-                    var you = rows.FirstOrDefault(r => r.you);
-                    if (you != null)
-                        shiniesSelfRow = MakeSelfRow(you.rank, you.score, you.character, you.account, you.characterGuid, true);
-                    else if (PetRegistryManager.TryGetPetSpeciesPlacement(me.Value, shinyOnly: true, out var pr, out var pc, out var pn))
-                        shiniesSelfRow = MakeSelfRow(pr, pc, pn, me.Value, null, false);
-                }
-
-                return Ok(new
-                {
-                    id = norm,
-                    title,
-                    nextRefreshApproxUtc = (DateTime?)null,
-                    cached = false,
-                    rows,
-                    selfRow = shiniesSelfRow,
-                });
-            }
+            if (!LeaderboardInlineSql.TopBoards.ContainsKey(norm))
+                return NotFound(new { message = "Unknown leaderboard.", code = "unknown_board" });
 
             await using var context = new AuthDbContext();
             var cache = LeaderboardCache.Instance;
-
-            if (BankedInt64BoardSql.TryGetValue(norm, out var bankedSql))
-            {
-                var bankedData = await cache.GetTopBankedInt64Async(context, norm, bankedSql);
-                var bankedRows = bankedData.Select((x, i) => new
-                {
-                    rank = i + 1,
-                    score = (long)(x.Score ?? 0),
-                    character = x.Character ?? "",
-                    account = x.Account,
-                    characterGuid = x.LeaderboardId.ToString(),
-                    you = me.HasValue && x.Account == me.Value,
-                }).ToList();
-
-                object bankedSelfRow = null;
-                if (me.HasValue)
-                {
-                    var you = bankedRows.FirstOrDefault(r => r.you);
-                    if (you != null)
-                        bankedSelfRow = MakeSelfRow(you.rank, you.score, you.character, you.account, you.characterGuid, true);
-                    else
-                    {
-                        var p = await Leaderboard.GetSelfPlacementRowAsync(context, norm, me.Value);
-                        if (p != null)
-                            bankedSelfRow = MakeSelfRow((int)p.PlacementRank, (long)(p.Score ?? 0), p.Character, p.Account, p.LeaderboardId.ToString(), false);
-                    }
-                }
-
-                return Ok(new
-                {
-                    id = norm,
-                    title,
-                    nextRefreshApproxUtc = cache.GetBankedInt64NextUpdate(norm),
-                    cached = true,
-                    rows = bankedRows,
-                    selfRow = bankedSelfRow,
-                });
-            }
-
-            if (DisciplineStatBoardSql.TryGetValue(norm, out var disciplineSql) || PetMutationBoardSql.TryGetValue(norm, out disciplineSql))
-            {
-                var disciplineData = await cache.GetTopBankedInt64Async(context, norm, disciplineSql);
-                var disciplineRows = disciplineData.Select((x, i) => new
-                {
-                    rank = i + 1,
-                    score = (long)(x.Score ?? 0),
-                    character = x.Character ?? "",
-                    account = x.Account,
-                    characterGuid = x.LeaderboardId.ToString(),
-                    you = me.HasValue && x.Account == me.Value,
-                }).ToList();
-
-                object disciplineSelfRow = null;
-                if (me.HasValue)
-                {
-                    var you = disciplineRows.FirstOrDefault(r => r.you);
-                    if (you != null)
-                        disciplineSelfRow = MakeSelfRow(you.rank, you.score, you.character, you.account, you.characterGuid, true);
-                    else
-                    {
-                        var p = await Leaderboard.GetSelfPlacementRowAsync(context, norm, me.Value);
-                        if (p != null)
-                            disciplineSelfRow = MakeSelfRow((int)p.PlacementRank, (long)(p.Score ?? 0), p.Character, p.Account, p.LeaderboardId.ToString(), false);
-                    }
-                }
-
-                return Ok(new
-                {
-                    id = norm,
-                    title,
-                    nextRefreshApproxUtc = cache.GetBankedInt64NextUpdate(norm),
-                    cached = true,
-                    rows = disciplineRows,
-                    selfRow = disciplineSelfRow,
-                });
-            }
-
-            List<Leaderboard> data;
-            DateTime nextRefresh;
-
-            switch (norm)
-            {
-                case "qb":
-                    data = await cache.GetTopQBAsync(context);
-                    nextRefresh = cache.QBLastUpdate;
-                    break;
-                case "level":
-                    data = await cache.GetTopLevelAsync(context);
-                    nextRefresh = cache.LevelLastUpdate;
-                    break;
-                case "enl":
-                    data = await cache.GetTopEnlAsync(context);
-                    nextRefresh = cache.EnlLastUpdate;
-                    break;
-                case "title":
-                    data = await cache.GetTopTitleAsync(context);
-                    nextRefresh = cache.TitleLastUpdate;
-                    break;
-                case "augs":
-                    data = await cache.GetTopAugsAsync(context);
-                    nextRefresh = cache.AugsLastUpdate;
-                    break;
-                case "deaths":
-                    data = await cache.GetTopDeathsAsync(context);
-                    nextRefresh = cache.DeathsLastUpdate;
-                    break;
-                case "bank":
-                    data = await cache.GetTopBankAsync(context);
-                    nextRefresh = cache.BanksLastUpdate;
-                    break;
-                case "lum":
-                    data = await cache.GetTopLumAsync(context);
-                    nextRefresh = cache.LumLastUpdate;
-                    break;
-                case "attr":
-                    data = await cache.GetTopAttrAsync(context);
-                    nextRefresh = cache.AttrLastUpdate;
-                    break;
-                case "bond":
-                case "bonds":
-                    data = await cache.GetTopBondsAsync(context);
-                    nextRefresh = cache.BondsLastUpdate;
-                    break;
-                case "sumbond":
-                case "sumbonds":
-                    data = await cache.GetTopSumBondsAsync(context);
-                    nextRefresh = cache.SumBondsLastUpdate;
-                    break;
-                case "potency":
-                    data = await cache.GetTopPotencyAsync(context);
-                    nextRefresh = cache.PotencyLastUpdate;
-                    break;
-                default:
-                    data = new List<Leaderboard>();
-                    nextRefresh = DateTime.UtcNow;
-                    break;
-            }
+            var data = await cache.GetTopAsync(context, norm, activeDays);
 
             var sqlRows = data.Select((x, i) => new
             {
@@ -367,7 +182,7 @@ namespace ACE.Server.Controllers
                     sqlSelfRow = MakeSelfRow(you.rank, you.score, you.character, you.account, you.characterGuid, true);
                 else
                 {
-                    var p = await Leaderboard.GetSelfPlacementRowAsync(context, norm, me.Value);
+                    var p = await Leaderboard.GetSelfPlacementRowAsync(context, norm, me.Value, activeDays);
                     if (p != null)
                         sqlSelfRow = MakeSelfRow((int)p.PlacementRank, (long)(p.Score ?? 0), p.Character, p.Account, p.LeaderboardId.ToString(), false);
                 }
@@ -377,8 +192,10 @@ namespace ACE.Server.Controllers
             {
                 id = norm,
                 title,
-                nextRefreshApproxUtc = nextRefresh,
+                nextRefreshApproxUtc = cache.GetNextUpdate(norm, activeDays),
                 cached = true,
+                activeDays,
+                activeDayOptions = options,
                 rows = sqlRows,
                 selfRow = sqlSelfRow,
             });

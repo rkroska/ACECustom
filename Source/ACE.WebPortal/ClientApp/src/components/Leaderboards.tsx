@@ -31,8 +31,17 @@ type BoardPayload = {
   title: string
   nextRefreshApproxUtc: string | null
   cached: boolean
+  /** Only accounts with a character that logged into the game within this many days are ranked (0 = everyone). */
+  activeDays: number
+  activeDayOptions: number[]
   rows: BoardRow[]
   selfRow?: SelfPlacementRow | null
+}
+
+type CatalogPayload = { boards: BoardMeta[]; activeDays: number; activeDayOptions: number[] }
+
+function activeOptionLabel(days: number): string {
+  return days <= 0 ? 'All players' : `Active in last ${days} days`
 }
 
 type PetRegistryEntry = {
@@ -126,6 +135,9 @@ function leaderboardCharacterName(
 export default function Leaderboards() {
   const [catalog, setCatalog] = useState<BoardMeta[]>([])
   const [boardId, setBoardId] = useState(DEFAULT_BOARD)
+  /** null until the catalog says the server default (leaderboard_active_days). */
+  const [activeDays, setActiveDays] = useState<number | null>(null)
+  const [activeOptions, setActiveOptions] = useState<number[]>([])
   const [payload, setPayload] = useState<BoardPayload | null>(null)
   const [loadingCatalog, setLoadingCatalog] = useState(true)
   const [loadingBoard, setLoadingBoard] = useState(false)
@@ -143,10 +155,12 @@ export default function Leaderboards() {
     ;(async () => {
       try {
         setLoadingCatalog(true)
-        const res = await api.get<{ boards: BoardMeta[] }>('/api/leaderboard/boards')
+        const res = await api.get<CatalogPayload>('/api/leaderboard/boards')
         if (cancelled) return
         const boards = res?.boards ?? []
         setCatalog(orderBoards(boards))
+        setActiveDays(res?.activeDays ?? 0)
+        setActiveOptions(res?.activeDayOptions ?? [])
 
         if (boards.length && !boards.some((b) => b.id === boardId)) {
           setBoardId(boards[0].id)
@@ -177,11 +191,12 @@ export default function Leaderboards() {
     return groups
   }, [catalog])
 
-  const loadBoard = useCallback(async (id: string) => {
+  const loadBoard = useCallback(async (id: string, days: number | null) => {
     try {
       setLoadingBoard(true)
       setError(null)
-      const res = await api.get<BoardPayload>(`/api/leaderboard/${encodeURIComponent(id)}`)
+      const q = days === null ? '' : `?days=${days}`
+      const res = await api.get<BoardPayload>(`/api/leaderboard/${encodeURIComponent(id)}${q}`)
       if (res) setPayload(res)
     } catch (e) {
       setPayload(null)
@@ -193,8 +208,8 @@ export default function Leaderboards() {
 
   useEffect(() => {
     if (!boardId || loadingCatalog) return
-    loadBoard(boardId)
-  }, [boardId, loadingCatalog, loadBoard])
+    loadBoard(boardId, activeDays)
+  }, [boardId, activeDays, loadingCatalog, loadBoard])
 
   const scoreHeader = useMemo(() => {
     if (boardId === 'pets' || boardId === 'shinies') return 'Count'
@@ -284,9 +299,23 @@ export default function Leaderboards() {
       <div className="p-8 pb-0 shrink-0">
         <div className="max-w-4xl mx-auto w-full">
           <PageHeader title="Leaderboards" icon={Trophy}>
+            {activeOptions.length > 0 && activeDays !== null && (
+              <select
+                value={activeDays}
+                onChange={(e) => setActiveDays(Number(e.target.value))}
+                title="Only rank accounts with a character that logged into the game within this many days."
+                className="px-2 py-1.5 rounded-xl text-[11px] font-semibold bg-neutral-800 border border-neutral-700 text-neutral-200 hover:bg-neutral-700"
+              >
+                {activeOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {activeOptionLabel(d)}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               type="button"
-              onClick={() => loadBoard(boardId)}
+              onClick={() => loadBoard(boardId, activeDays)}
               disabled={loadingBoard}
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-neutral-800 border border-neutral-700 text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
             >
@@ -333,6 +362,11 @@ export default function Leaderboards() {
           {payload && (
             <div className="text-[11px] text-neutral-500 uppercase tracking-wider space-y-1">
               <p>{payload.title}</p>
+              <p className="text-neutral-600 normal-case tracking-normal">
+                {payload.activeDays > 0
+                  ? `Showing players who logged into the game in the last ${payload.activeDays} days.`
+                  : 'Showing all players, active or not.'}
+              </p>
               {payload.cached && refreshLabel(payload.nextRefreshApproxUtc) && (
                 <p className="text-neutral-600 normal-case tracking-normal">
                   Cache rolls after {refreshLabel(payload.nextRefreshApproxUtc)}
