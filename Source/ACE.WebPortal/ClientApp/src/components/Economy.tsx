@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Camera, Landmark, Sparkles } from 'lucide-react'
 import PageHeader from './common/PageHeader'
@@ -54,6 +54,16 @@ export default function Economy() {
     next.set('active', String(d))
     setParams(next)
   }
+
+  // a saved or bookmarked window the server no longer offers (economy_active_days changed): drop it so the page
+  // loads with the current default instead of staying on an error. Other errors keep the viewer's choice.
+  useEffect(() => {
+    if (active !== null && overview.errorCode === 'invalid_days') {
+      const next = new URLSearchParams(params)
+      next.delete('active')
+      setParams(next, { replace: true })
+    }
+  }, [active, overview.errorCode, params, setParams])
 
   const takeSnapshot = async () => {
     setBusy(true)

@@ -1686,7 +1686,10 @@ namespace ACE.Server.Command.Handlers
                     }
                     else
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat(shinies ? "No shinies captured yet!" : "No pet registrations yet!", ChatMessageType.Broadcast));
+                        var empty = activeDays > 0
+                            ? $"[TOP] No {(shinies ? "shiny captures" : "pet registrations")} from {ActiveWindow.Describe(activeDays)}."
+                            : shinies ? "No shinies captured yet!" : "No pet registrations yet!";
+                        session.Network.EnqueueSend(new GameMessageSystemChat(empty, ChatMessageType.Broadcast));
                     }
                     return;
                 }
@@ -1719,12 +1722,17 @@ namespace ACE.Server.Command.Handlers
                     if (p != null)
                     {
                         var score = jailbreak ? FormatJailbreakTime(p.Score ?? 0) : $"{p.Score ?? 0:N0}";
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Your placement: #{p.PlacementRank:N0} - Score: {score} ({p.Character})", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Your placement (live): #{p.PlacementRank:N0} - Score: {score} ({p.Character})", ChatMessageType.Broadcast));
                     }
                 }
 
                 if (list.Count == 0)
-                    session.Network.EnqueueSend(new GameMessageSystemChat(jailbreak ? "No jail escape completions yet!" : "[TOP] No entries on this leaderboard yet.", ChatMessageType.Broadcast));
+                {
+                    var empty = activeDays > 0
+                        ? $"[TOP] No entries on this leaderboard from {ActiveWindow.Describe(activeDays)}."
+                        : jailbreak ? "No jail escape completions yet!" : "[TOP] No entries on this leaderboard yet.";
+                    session.Network.EnqueueSend(new GameMessageSystemChat(empty, ChatMessageType.Broadcast));
+                }
             }
             catch (Exception ex)
             {

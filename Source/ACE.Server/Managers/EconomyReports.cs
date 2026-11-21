@@ -483,6 +483,19 @@ namespace ACE.Server.Managers
             return data;
         }
 
+        /// <summary>
+        /// Drops the cached per-account views and currency details, so the page never pairs a new supply snapshot with
+        /// the previous snapshot's account figures. Called after each snapshot is saved.
+        /// </summary>
+        public static void InvalidateCaches()
+        {
+            lock (cacheLock)
+            {
+                accountCache.Clear();
+                detailCache.Clear();
+            }
+        }
+
         /// <summary>The first snapshot day that has per-account rows, or null.</summary>
         private static string AccountsSince() =>
             TableExists("economy_holdings_daily")

@@ -123,7 +123,8 @@ namespace ACE.Server.Controllers
             if (norm == "pets" || norm == "shinies")
             {
                 var shinyOnly = norm == "shinies";
-                var list = shinyOnly ? PetRegistryManager.GetTopShinies(25, activeDays) : PetRegistryManager.GetTopPets(25, activeDays);
+                // list and placement from one ranked read, so the viewer's rank cannot clash with the list
+                var (list, placement) = PetRegistryManager.GetPetSpeciesBoard(shinyOnly, 25, activeDays, me);
                 var rows = list.Select((t, i) => new
                 {
                     rank = i + 1,
@@ -140,8 +141,8 @@ namespace ACE.Server.Controllers
                     var you = rows.FirstOrDefault(r => r.you);
                     if (you != null)
                         petsSelfRow = MakeSelfRow(you.rank, you.score, you.character, you.account, you.characterGuid, true);
-                    else if (PetRegistryManager.TryGetPetSpeciesPlacement(me.Value, shinyOnly, activeDays, out var pr, out var pc, out var pn))
-                        petsSelfRow = MakeSelfRow(pr, pc, pn, me.Value, null, false);
+                    else if (placement.HasValue)
+                        petsSelfRow = MakeSelfRow(placement.Value.Rank, placement.Value.Count, placement.Value.CharacterName, me.Value, null, false);
                 }
 
                 return Ok(new

@@ -895,6 +895,9 @@ namespace ACE.Server.Managers
                     log.Info($"[EconomyLedger] Supply snapshot ({reason}) written in {(DateTime.UtcNow - started).TotalSeconds:N1} s: " +
                              string.Join(", ", rows.Select(r => $"{r.Currency}={r.Banked + r.Items:N0}")));
 
+                    // the Economy page's minute-long caches still hold the previous snapshot's per-account figures
+                    EconomyReports.InvalidateCaches();
+
                     // who gained an enlightenment or an aug since the last snapshot (has its own error handling)
                     EconomyProgress.Update();
                 }
@@ -1204,6 +1207,21 @@ namespace ACE.Server.Managers
             catch (Exception ex)
             {
                 log.Error($"[EconomyLedger] Saving per-account holdings for {day:yyyy-MM-dd} failed (the supply snapshot itself was saved): {ex.Message}");
+
+                // rows from an earlier snapshot the same day no longer match the supply just saved: better no
+                // per-account data for the day (the page falls back to the stored figures) than mismatched data
+                try
+                {
+                    using var del = NewCommand(con);
+                    del.CommandTimeout = 60;
+                    del.CommandText = "DELETE FROM `economy_holdings_daily` WHERE `day_utc` = @d";
+                    AddParam(del, "@d", day);
+                    del.ExecuteNonQuery();
+                }
+                catch (Exception cleanupEx)
+                {
+                    log.Error($"[EconomyLedger] Clearing stale holdings for {day:yyyy-MM-dd} failed too: {cleanupEx.Message}");
+                }
             }
         }
 

@@ -42,7 +42,7 @@ namespace ACE.Server.Web.Controllers
             {
                 if (!HasPortalAccess(PortalPages.Economy))
                     return Forbid();
-                return BadRequest(new { Message = "Unsupported activity window.", Options = ActiveWindow.Options(defaultDays) });
+                return BadRequest(new { Message = "Unsupported activity window.", Code = "invalid_days", Options = ActiveWindow.Options(defaultDays) });
             }
             return Run(() => query(resolved));
         }

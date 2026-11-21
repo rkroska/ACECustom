@@ -640,41 +640,38 @@ namespace ACE.Server.Entity
             !string.IsNullOrEmpty(name) && name.StartsWith("+");
 
         /// <summary>
-        /// Global rank on the pet or shiny species leaderboard for an account, if the account appears on that board
-        /// (only accounts active within <paramref name="activeDays"/> days are ranked; 0 = everyone).
+        /// The pet or shiny species board and, when <paramref name="accountId"/> is given, that account's placement, both
+        /// from one ranked read: the viewer's rank can never contradict the list shown with it.
         /// </summary>
-        public static bool TryGetPetSpeciesPlacement(uint accountId, bool shinyOnly, int activeDays, out int rank, out int count, out string characterName)
+        public static (List<(uint AccountId, string CharacterName, int Count)> Top, (int Rank, int Count, string CharacterName)? Placement)
+            GetPetSpeciesBoard(bool shinyOnly, int limit, int activeDays, uint? accountId)
         {
-            rank = 0;
-            count = 0;
-            characterName = null;
+            using var context = new ShardDbContext();
+            var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, LoadLeaderboardHiddenAccountIds(context), LoadActiveAccountIds(context, activeDays));
+            var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
-            using (var context = new ShardDbContext())
+            var top = new List<(uint AccountId, string CharacterName, int Count)>();
+            (int Rank, int Count, string CharacterName)? placement = null;
+            var visibleRank = 0;
+
+            foreach (var entry in ordered)
             {
-                var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
-                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, excludedAccounts, LoadActiveAccountIds(context, activeDays));
-                var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
+                if (!mainCharacters.TryGetValue(entry.AccountId, out var mainCharacter))
+                    mainCharacter = "Unknown";
+                if (IsStaffLeaderboardCharacter(mainCharacter))
+                    continue;
 
-                var visibleRank = 0;
-                for (var i = 0; i < ordered.Count; i++)
-                {
-                    if (!mainCharacters.TryGetValue(ordered[i].AccountId, out var mainCharacter))
-                        mainCharacter = "Unknown";
-                    if (IsStaffLeaderboardCharacter(mainCharacter))
-                        continue;
+                visibleRank++;
+                if (top.Count < limit)
+                    top.Add((entry.AccountId, mainCharacter, entry.Count));
+                if (accountId.HasValue && entry.AccountId == accountId.Value)
+                    placement = (visibleRank, entry.Count, mainCharacter);
 
-                    visibleRank++;
-                    if (ordered[i].AccountId != accountId)
-                        continue;
-
-                    rank = visibleRank;
-                    count = ordered[i].Count;
-                    characterName = mainCharacter;
-                    return true;
-                }
+                if (top.Count >= limit && (placement.HasValue || !accountId.HasValue))
+                    break;
             }
 
-            return false;
+            return (top, placement);
         }
 
         /// <summary>

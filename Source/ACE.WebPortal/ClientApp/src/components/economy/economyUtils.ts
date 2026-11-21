@@ -84,34 +84,38 @@ export interface EconomyFetchState<T> {
   data: T | null
   loading: boolean
   error: string | null
+  /** The server's error code (e.g. 'invalid_days', '403'), when it sent one. */
+  errorCode: string | null
   reload: () => void
 }
 
 /** GETs an economy endpoint; pass null to skip. Re-fetches when the path changes or reload() is called. */
 export function useEconomyFetch<T>(path: string | null): EconomyFetchState<T> {
   const [tick, setTick] = useState(0)
-  const [state, setState] = useState<{ data: T | null; loading: boolean; error: string | null }>({
+  const [state, setState] = useState<{ data: T | null; loading: boolean; error: string | null; errorCode: string | null }>({
     data: null,
     loading: path !== null,
     error: null,
+    errorCode: null,
   })
   const reload = useCallback(() => setTick(t => t + 1), [])
 
   useEffect(() => {
     if (path === null) {
-      setState({ data: null, loading: false, error: null })
+      setState({ data: null, loading: false, error: null, errorCode: null })
       return
     }
     const controller = new AbortController()
-    setState({ data: null, loading: true, error: null })
+    setState({ data: null, loading: true, error: null, errorCode: null })
     api
       .get<T>(`${ECONOMY_API}${path}`, { signal: controller.signal })
       .then(data => {
-        if (!controller.signal.aborted) setState({ data, loading: false, error: null })
+        if (!controller.signal.aborted) setState({ data, loading: false, error: null, errorCode: null })
       })
       .catch(err => {
         if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) return
-        setState({ data: null, loading: false, error: describeEconomyError(err) })
+        const code = (err as { code?: string } | null)?.code
+        setState({ data: null, loading: false, error: describeEconomyError(err), errorCode: code ?? null })
       })
     return () => controller.abort()
   }, [path, tick])

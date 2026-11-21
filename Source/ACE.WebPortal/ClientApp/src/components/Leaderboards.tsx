@@ -205,9 +205,10 @@ export default function Leaderboards() {
       try {
         res = await fetchBoard(days)
       } catch (e) {
-        // the window may no longer be offered (staff changed leaderboard_active_days while the page was open):
-        // ask for the server default once and take the current choices from that answer
-        if (days === null) throw e
+        // the window is no longer offered (staff changed leaderboard_active_days while the page was open): ask for
+        // the server default once and take the current choices from that answer. Any other failure keeps the
+        // viewer's choice and is shown as an error.
+        if (days === null || (e as { code?: string })?.code !== 'invalid_days') throw e
         res = await fetchBoard(null)
         if (seq === requestSeq.current && res) {
           setActiveOptions(res.activeDayOptions ?? [])
@@ -448,7 +449,7 @@ export default function Leaderboards() {
                           colSpan={3}
                           className="px-4 pt-4 pb-1 text-[10px] uppercase tracking-widest text-neutral-500 border-t border-neutral-800"
                         >
-                          Your placement
+                          {payload.cached ? 'Your placement (live; the list above refreshes every 15 minutes)' : 'Your placement'}
                         </td>
                       </tr>
                       <tr className="bg-blue-600/10 border-b border-neutral-800/80">

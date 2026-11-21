@@ -11,7 +11,10 @@ namespace ACE.Server.Managers
     /// </summary>
     public static class ActiveWindow
     {
-        /// <summary>Longest window accepted from a setting (ten years); anything longer is the same as everyone.</summary>
+        /// <summary>
+        /// Longest window accepted from a setting (ten years). Larger values are capped at this and still leave out
+        /// accounts idle for longer; only 0 (or less) shows every account.
+        /// </summary>
         public const int MaxDays = 3650;
 
         /// <summary>The windows a web viewer can pick. The configured default is always allowed as well.</summary>
