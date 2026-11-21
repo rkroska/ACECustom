@@ -22,7 +22,8 @@ namespace ACE.Server.Entity
         // - Inventory space requirements.
         //
         // You lose:
-        // - Your level, which reverts to 1.
+        // - Your level, which reverts to 1. A Level Retention Stone used beforehand keeps it instead, up to
+        //   enl_keeps_level_up_to (RetainLevel); skills reset either way.
         // - Skills, which revert to their base state.
         // - Any items that are required for enlightenment, as per tier requirements. 
         // - Enchantments / spells (you are dispelled).
@@ -37,9 +38,15 @@ namespace ACE.Server.Entity
         // - +2 Vitality (via enlightenment property calculation).
         // - +1 to all skills (via enlightenment property calculation).
 
-        public static void HandleEnlightenment(Player player)
+        /// <param name="confirmed">
+        /// What the /enlighten prompt told the player would happen to their level (null from callers with no prompt). If it
+        /// no longer holds, the ritual stops before it spends anything.
+        /// </param>
+        public static void HandleEnlightenment(Player player, Outcome? confirmed = null)
         {
             if (!VerifyRequirements(player)) return;
+
+            if (!ConfirmedOutcomeHolds(player, confirmed, out _)) return;
 
             player.SendMotionAsCommands(MotionCommand.MarketplaceRecall, MotionStance.NonCombat);
 
@@ -64,6 +71,10 @@ namespace ACE.Server.Entity
                 // Re-validate since 14 seconds have passed.
                 if (!VerifyRequirements(player, isRevalidation: true)) return;
 
+                // and what the player was told still holds (the level can pass enl_keeps_level_up_to while the prompt is open).
+                // The ritual then carries out this outcome, without reading the settings again.
+                if (!ConfirmedOutcomeHolds(player, confirmed, out var outcome)) return;
+
                 if (!SpendLuminance(player))
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to enlighten!", ChatMessageType.Broadcast));
@@ -78,7 +89,17 @@ namespace ACE.Server.Entity
                 player.ThreadSafeTeleportOnDeath();
                 RemoveSociety(player);
                 RemoveSkills(player);
-                RemoveLevel(player);
+
+                // A Level Retention Stone keeps the level (up to enl_keeps_level_up_to); each stone covers one enlightenment.
+                // Skills reset either way.
+                if (outcome.KeepsLevel)
+                {
+                    RetainLevel(player, outcome.LevelDropsTo ?? player.Level ?? 1);
+                    player.LevelRetentionPending = false;
+                }
+                else
+                    RemoveLevel(player);
+
                 RemoveAllSpells(player);
                 AddPerks(player);
                 player.SaveBiotaToDatabase();
@@ -362,6 +383,194 @@ namespace ACE.Server.Entity
             
             player.Level = 1;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Level, player.Level ?? 0));
+        }
+
+        /// <summary>
+        /// Enlightening after a Level Retention Stone: the level stays, at most enl_keeps_level_up_to (above it, the level and
+        /// total experience drop to that level's). RemoveSkills has just rebuilt the skill credit pool for a level 1 character,
+        /// so the credits for levels 2 up to the kept level go back in, as CheckForLevelup gave them on the way up. Leveling
+        /// past the kept level again gives the credits above it, as for any character.
+        /// </summary>
+        /// <param name="plannedLevel">The level of the outcome checked before anything was spent (PlannedOutcome).</param>
+        private static void RetainLevel(Player player, int plannedLevel)
+        {
+            var level = player.Level ?? 1;
+            var keptLevel = Math.Min(plannedLevel, level);
+
+            if (keptLevel < level)
+            {
+                var totalXp = TotalExperienceForLevel(keptLevel);
+                player.TotalExperience = (long)Math.Min(totalXp, long.MaxValue);
+                player.TotalExperienceDouble = totalXp;
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.TotalExperience, player.TotalExperience ?? 0));
+
+                player.Level = keptLevel;
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Level, keptLevel));
+            }
+
+            var xpTable = DatManager.PortalDat.XpTable;
+            player.AvailableSkillCredits = (player.AvailableSkillCredits ?? 0) + LevelSkillCredits(keptLevel, l => xpTable.CharacterLevelSkillCreditList[l]);
+            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));
+
+            player.SendMessage(keptLevel < level
+                ? $"Your Level Retention Stone kept your level up to {keptLevel}: your level has been lowered to {keptLevel}."
+                : $"Your Level Retention Stone kept your level ({keptLevel}).", ChatMessageType.Broadcast);
+        }
+
+        /// <summary>
+        /// The skill credits a character earns by leveling from 1 to this level, as CheckForLevelup gives them: the chart for
+        /// levels 2 to 274 (datCredits: the chart's credits at a level), then one at every 5th level from 275 on.
+        /// </summary>
+        public static int LevelSkillCredits(int level, Func<int, uint> datCredits)
+        {
+            long credits = 0;
+
+            for (var l = 2; l <= Math.Min(level, 274); l++)
+                credits += datCredits(l);
+
+            if (level >= 275)
+                credits += level / 5 - 274 / 5;   // 275, 280, ... up to level
+
+            return (int)Math.Min(credits, int.MaxValue);
+        }
+
+        /// <summary>
+        /// The level a Level Retention Stone keeps: the character's own, at most keepUpTo (0 or less = no limit)
+        /// </summary>
+        public static int KeptLevel(int level, long keepUpTo)
+        {
+            return keepUpTo > 0 && level > keepUpTo ? (int)keepUpTo : level;
+        }
+
+        /// <summary>
+        /// The total experience a character has on reaching this level: the DAT table through 275, the dynamic curve past it
+        /// </summary>
+        private static double TotalExperienceForLevel(int level)
+        {
+            if (level > 275)
+                return Player.GenerateDynamicLevelPostMax(level);
+
+            return DatManager.PortalDat.XpTable.CharacterLevelXPList[Math.Clamp(level, 1, 275)];
+        }
+
+        /// <summary>
+        /// What enlightening will do to a character's level (skills always reset): return it to 1 (KeepsLevel false), or keep it
+        /// after a Level Retention Stone (LevelDropsTo null) or lower it to enl_keeps_level_up_to (LevelDropsTo). The /enlighten
+        /// prompt promises one, and the ritual checks it still holds before spending anything.
+        /// </summary>
+        public readonly record struct Outcome(bool KeepsLevel, int? LevelDropsTo);
+
+        /// <summary>The outcome with the values passed in.</summary>
+        /// <param name="stoneUsed">True when the character used a Level Retention Stone since it last enlightened.</param>
+        public static Outcome PlannedOutcome(int level, bool stoneUsed, long keepUpTo)
+        {
+            if (!stoneUsed)
+                return new Outcome(false, null);
+
+            var keptLevel = KeptLevel(level, keepUpTo);
+
+            return new Outcome(true, keptLevel < level ? (int?)keptLevel : null);
+        }
+
+        /// <summary>The outcome for this character now, with the live setting.</summary>
+        public static Outcome PlannedOutcome(Player player)
+        {
+            return PlannedOutcome(player.Level ?? 1, player.LevelRetentionPending, ServerConfig.enl_keeps_level_up_to.Value);
+        }
+
+        /// <summary>
+        /// False, with a message, when what the player confirmed no longer holds: the character's level passed
+        /// enl_keeps_level_up_to, or the setting changed. Called before anything is spent.
+        /// </summary>
+        /// <param name="planned">The outcome now, which the ritual carries out when this returns true.</param>
+        private static bool ConfirmedOutcomeHolds(Player player, Outcome? confirmed, out Outcome planned)
+        {
+            planned = PlannedOutcome(player);
+
+            if (!confirmed.HasValue || planned == confirmed.Value)
+                return true;
+
+            player.SendMessage("What enlightening would do to your level has changed since you confirmed. Nothing was spent. Use /enlighten again to see what it will do now.", ChatMessageType.Broadcast);
+            return false;
+        }
+
+        /// <summary>The Level Retention Stone: stackable, Bonded and Sticky Attuned, used up on use (Gem.ActOnUse).</summary>
+        public const uint LevelRetentionStoneWcid = 98760530;
+
+        /// <summary>
+        /// Why a character can't use a Level Retention Stone now, or null when it can: it needs Enlightenment minEnlightenment
+        /// (enl_level_retention_from, 50 by default), and one stone covers the next enlightenment.
+        /// </summary>
+        public static string LevelRetentionStoneRefusal(int currentEnlightenment, long minEnlightenment, bool alreadyRetained)
+        {
+            if (currentEnlightenment < minEnlightenment)
+                return $"You must be at Enlightenment {minEnlightenment} or higher to use a Level Retention Stone.";
+
+            if (alreadyRetained)
+                return "Your next enlightenment already keeps your level.";
+
+            return null;
+        }
+
+        private static string LevelRetentionStoneRefusal(Player player)
+        {
+            return LevelRetentionStoneRefusal(player.Enlightenment, ServerConfig.enl_level_retention_from.Value, player.LevelRetentionPending);
+        }
+
+        /// <summary>
+        /// Using a Level Retention Stone: after a Yes, one stone is used up and the character's next enlightenment keeps its level
+        /// (up to enl_keeps_level_up_to) instead of returning it to 1. Skills still reset. That enlightenment removes the mark
+        /// (PropertyInt.LevelRetentionPending).
+        /// </summary>
+        public static void UseLevelRetentionStone(Player player)
+        {
+            var refusal = LevelRetentionStoneRefusal(player);
+            if (refusal != null)
+            {
+                player.SendTransientError(refusal);
+                return;
+            }
+
+            var keepUpTo = ServerConfig.enl_keeps_level_up_to.Value;
+            var upTo = keepUpTo > 0 ? $", up to level {keepUpTo}," : "";
+            var msg = $"Use a Level Retention Stone? Your next enlightenment will keep your level{upTo} instead of returning it to 1. Your skills will still reset. The stone will be used up.";
+
+            void onResponse(bool response, bool _)
+            {
+                if (!response)
+                    return;
+
+                // checked again: enl_level_retention_from may have changed while the box was open
+                var refusedNow = LevelRetentionStoneRefusal(player);
+                if (refusedNow != null)
+                {
+                    player.SendTransientError(refusedNow);
+                    return;
+                }
+
+                // the Yes agreed to the cap in the box: when enl_keeps_level_up_to changed while it was open, nothing is used
+                // up and the box comes back with the new cap
+                if (ServerConfig.enl_keeps_level_up_to.Value != keepUpTo)
+                {
+                    player.SendMessage("The level a Level Retention Stone keeps up to changed while you were deciding. Nothing was used up. Please answer again.", ChatMessageType.Broadcast);
+                    UseLevelRetentionStone(player);
+                    return;
+                }
+
+                // TryConsumeFromInventoryWithNetworking(wcid, ...) reports success when there is nothing to consume: count first
+                if (player.GetNumInventoryItemsOfWCID(LevelRetentionStoneWcid) < 1 || !player.TryConsumeFromInventoryWithNetworking(LevelRetentionStoneWcid, 1))
+                {
+                    player.SendTransientError("You no longer have a Level Retention Stone.");
+                    return;
+                }
+
+                player.LevelRetentionPending = true;
+
+                player.SendMessage($"Your next enlightenment will keep your level{(keepUpTo > 0 ? $" (up to level {keepUpTo})" : "")}. Your skills will still reset.", ChatMessageType.Broadcast);
+            }
+
+            if (!player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, onResponse), msg))
+                player.SendWeenieError(WeenieError.ConfirmationInProgress);
         }
 
         private static void RemoveSkills(Player player)

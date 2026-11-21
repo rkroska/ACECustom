@@ -1316,10 +1316,24 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while teleporting or busy. Complete your movement and try again. Neener neener.", ChatMessageType.System));
                 return;
             }
-            //if(!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(session.Player.Guid, session.Player.Guid, "Enlightenment"), "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes."))
-            //    return;
-            var message = "Are you certain that you'd like to Enlighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes.";
-            void onResponse(bool response, bool _) { if (response) { Enlightenment.HandleEnlightenment(session.Player); } }
+            // Enlightenment spends only its luminance cost and keeps unspent experience, so neither is promised away here.
+            // The rest follows Enlightenment.HandleEnlightenment: dequip, leave the fellowship (and the society while
+            // enl_removes_society is on), return to the lifestone, dispel, reset skills. The level returns to 1 unless a Level
+            // Retention Stone was used (Enlightenment.PlannedOutcome); the ritual gets the outcome promised here and stops,
+            // before spending anything, if it no longer holds.
+            var outcome = Enlightenment.PlannedOutcome(session.Player);
+            var keepUpTo = ServerConfig.enl_keeps_level_up_to.Value;
+            var upTo = keepUpTo > 0 ? $", up to level {keepUpTo}" : "";
+            var level = !outcome.KeepsLevel
+                ? session.Player.Enlightenment >= ServerConfig.enl_level_retention_from.Value
+                    ? $"Your level will return to 1 (use a Level Retention Stone first to keep your level{upTo})."
+                    : "Your level will return to 1."
+                : outcome.LevelDropsTo.HasValue
+                    ? $"Your Level Retention Stone keeps your level{upTo}: your level will drop to {outcome.LevelDropsTo.Value}."
+                    : "Your Level Retention Stone keeps your level.";
+            var leaves = ServerConfig.enl_removes_society.Value ? "your fellowship and your society" : "your fellowship";
+            var message = $"Are you certain that you'd like to Enlighten? {level} Your skills will return to their base state and your skill credits will be recalculated. You will keep your attributes and unspent experience. Your equipment will be unequipped and your enchantments dispelled, you will leave {leaves}, and you will return to your lifestone.";
+            void onResponse(bool response, bool _) { if (response) { Enlightenment.HandleEnlightenment(session.Player, outcome); } }
             var confirm = session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, onResponse), message);
 
         }

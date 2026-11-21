@@ -203,6 +203,16 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.AvailableSkillCredits); else SetProperty(PropertyInt.AvailableSkillCredits, value.Value); }
         }
 
+        /// <summary>
+        /// True after the character used a Level Retention Stone: its next enlightenment keeps the level, and removes the mark
+        /// (stored as PropertyInt.LevelRetentionPending = 1)
+        /// </summary>
+        public bool LevelRetentionPending
+        {
+            get => (GetProperty(PropertyInt.LevelRetentionPending) ?? 0) > 0;
+            set { if (!value) RemoveProperty(PropertyInt.LevelRetentionPending); else SetProperty(PropertyInt.LevelRetentionPending, 1); }
+        }
+
         public int? TotalSkillCredits
         {
             get => GetProperty(PropertyInt.TotalSkillCredits);
