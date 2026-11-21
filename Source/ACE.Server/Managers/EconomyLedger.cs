@@ -577,6 +577,9 @@ namespace ACE.Server.Managers
                 if (meta.TryGetValue("snapshot_items", out var mode))
                     lastSnapshotCountedItems = mode == "1" ? true : mode == "0" ? false : null;
 
+                // stamps must keep rising across restarts too (a clock set back must not reuse an earlier stamp)
+                lastSavedStamp = LoadLastSavedStamp();
+
                 shuttingDown = false;
 
                 if (trackFlows)
@@ -1069,6 +1072,17 @@ namespace ACE.Server.Managers
                 .Where(c => !c.IsDeleted)
                 .Select(c => new { c.Id, c.LastLoginTimestamp })
                 .ToDictionary(c => c.Id, c => c.LastLoginTimestamp);
+        }
+
+        /// <summary>The newest stamp already saved (MAX supply taken_utc), or null when there is none.</summary>
+        private static DateTime? LoadLastSavedStamp()
+        {
+            using var ctx = new ShardDbContext();
+            var con = OpenConnection(ctx);
+            using var cmd = NewCommand(con);
+            cmd.CommandText = "SELECT MAX(`taken_utc`) FROM `economy_supply_daily`";
+            var value = cmd.ExecuteScalar();
+            return value == null || value is DBNull ? null : DateTime.SpecifyKind(Convert.ToDateTime(value), DateTimeKind.Utc);
         }
 
         /// <summary>The stamp of the last saved snapshot (supply taken_utc = holdings snapshot_utc), so the next is always later.</summary>

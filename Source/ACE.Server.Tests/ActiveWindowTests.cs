@@ -162,6 +162,19 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void AccountView_IsOnlyPairedWithTheSupplyItWasWrittenFor()
+        {
+            var oldSnapshot = new DateTime(2026, 11, 21, 9, 0, 1);
+            var newSnapshot = new DateTime(2026, 11, 21, 10, 0, 5);
+            var cached = new EconomyReports.AccountView { SnapshotUtc = oldSnapshot, Total = 1000, Accounts = 3 };
+
+            // a read between the new supply's commit and the cache being cleared: new supply, old cached view
+            Assert.IsNull(EconomyReports.AccountPairing.Match(newSnapshot, cached));
+            Assert.AreSame(cached, EconomyReports.AccountPairing.Match(oldSnapshot, cached));
+            Assert.IsNull(EconomyReports.AccountPairing.Match(newSnapshot, null));
+        }
+
+        [TestMethod]
         public void SnapshotStamp_IsWholeSeconds_AndAlwaysLaterThanTheLast()
         {
             var t = new DateTime(2026, 11, 21, 10, 0, 5, DateTimeKind.Utc).AddMilliseconds(400);
@@ -173,6 +186,10 @@ namespace ACE.Server.Tests
             Assert.AreEqual(first.AddSeconds(1), second);
             var third = EconomyLedger.HoldingsBuilder.NextStamp(t.AddSeconds(-30), second);
             Assert.AreEqual(second.AddSeconds(1), third);
+
+            // after a restart the last stamp comes from the database: a clock set back still gets a later stamp
+            var restored = new DateTime(2026, 11, 21, 12, 0, 0, DateTimeKind.Utc);
+            Assert.AreEqual(restored.AddSeconds(1), EconomyLedger.HoldingsBuilder.NextStamp(restored.AddHours(-2), restored));
 
             // normally the stamp is just the time
             Assert.AreEqual(first.AddMinutes(5), EconomyLedger.HoldingsBuilder.NextStamp(t.AddMinutes(5), third));

@@ -56,6 +56,8 @@ namespace ACE.Server.Managers
         /// <summary>One snapshot's supply per account, limited to accounts active within the filter's window.</summary>
         public class AccountView
         {
+            /// <summary>The supply row's save time these holdings were written for (supply taken_utc = holdings snapshot_utc).</summary>
+            public DateTime SnapshotUtc { get; set; }
             public int ActiveDays { get; set; }
             public long Banked { get; set; }
             public long Items { get; set; }
@@ -476,8 +478,8 @@ namespace ACE.Server.Managers
 
                 var rows = Query(
                     "SELECT `currency`, `day_utc`, COUNT(*), SUM(`banked`), SUM(`items`), MAX(`banked` + `items`), " +
-                    "SUM(CASE WHEN rn <= CEIL(cnt / 100) THEN `banked` + `items` ELSE 0 END) " +
-                    "FROM (SELECT h.`currency`, h.`day_utc`, h.`banked`, h.`items`, " +
+                    "SUM(CASE WHEN rn <= CEIL(cnt / 100) THEN `banked` + `items` ELSE 0 END), MAX(`snapshot_utc`) " +
+                    "FROM (SELECT h.`currency`, h.`day_utc`, h.`banked`, h.`items`, h.`snapshot_utc`, " +
                     "ROW_NUMBER() OVER (PARTITION BY h.`currency`, h.`day_utc` ORDER BY h.`banked` + h.`items` DESC) AS rn, " +
                     "COUNT(*) OVER (PARTITION BY h.`currency`, h.`day_utc`) AS cnt " +
                     $"{current}{filter}) x GROUP BY `currency`, `day_utc`",
@@ -490,7 +492,7 @@ namespace ACE.Server.Managers
                     r => (currency: S(r, 0), day: Convert.ToDateTime(r.GetValue(1)).Date, view: new AccountView
                     {
                         ActiveDays = activeDays, Accounts = L(r, 2), Banked = L(r, 3), Items = L(r, 4), Total = L(r, 3) + L(r, 4),
-                        LargestHolder = L(r, 5), Top1PctAmount = L(r, 6),
+                        LargestHolder = L(r, 5), Top1PctAmount = L(r, 6), SnapshotUtc = Convert.ToDateTime(r.GetValue(7)),
                     }));
 
                 foreach (var (currency, day, view) in rows)
@@ -501,16 +503,30 @@ namespace ACE.Server.Managers
                 if (activeDays > 0)
                 {
                     var stored = Query(
-                        $"SELECT DISTINCT h.`currency`, h.`day_utc` {current}",
+                        $"SELECT DISTINCT h.`currency`, h.`day_utc`, h.`snapshot_utc` {current}",
                         c => Param(c, "@since", since),
-                        r => (currency: S(r, 0), day: Convert.ToDateTime(r.GetValue(1)).Date));
-                    foreach (var (currency, day) in stored)
+                        r => (currency: S(r, 0), day: Convert.ToDateTime(r.GetValue(1)).Date, stamp: Convert.ToDateTime(r.GetValue(2))));
+                    foreach (var (currency, day, stamp) in stored)
                         if (data.TryGetValue(currency, out var byDay) && !byDay.ContainsKey(day))
-                            byDay[day] = new AccountView { ActiveDays = activeDays };
+                            byDay[day] = new AccountView { ActiveDays = activeDays, SnapshotUtc = stamp };
                 }
             }
 
             return data;
+        }
+
+        /// <summary>
+        /// Kept apart from EconomyReports' own static fields (whose setup reads the world database) so it can be unit tested.
+        /// </summary>
+        internal static class AccountPairing
+        {
+            /// <summary>
+            /// The account view to show with a supply snapshot taken (saved) at <paramref name="supplyTakenUtc"/>: only one
+            /// written for that same snapshot. A view from another snapshot (a cache filled just before a new supply was
+            /// saved, or rows left from an earlier snapshot) gives null, so the page falls back instead of mixing them. Pure.
+            /// </summary>
+            internal static AccountView Match(DateTime supplyTakenUtc, AccountView view) =>
+                view != null && view.SnapshotUtc.Ticks == supplyTakenUtc.Ticks ? view : null;
         }
 
         /// <summary>
@@ -577,7 +593,7 @@ namespace ACE.Server.Managers
             // the inflation trend and Unexplained stay on the full supply: an account going quiet removes nothing from
             // the economy, so filtering those would show sinks and faucets that never happened
             foreach (var day in supply)
-                day.Supply.Accounts = accounts.TryGetValue(day.Day, out var view) ? view : null;
+                day.Supply.Accounts = AccountPairing.Match(day.TakenUtc, accounts.TryGetValue(day.Day, out var view) ? view : null);
 
             summary.Series = supply.Where(s => s.Day >= windowStart)
                 .Select(s => new SupplyPoint { Day = s.Supply.Day, Banked = s.Supply.Banked, Items = s.Supply.Items, Total = s.Supply.Total, ActiveSupply = s.Supply.ActiveSupply, Unexplained = s.Supply.Unexplained, FilteredTotal = s.Supply.Accounts?.Total })
