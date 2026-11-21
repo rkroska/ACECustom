@@ -301,7 +301,9 @@ namespace ACE.Server.Managers
 
             public EmoteWalk(IEnumerable<PropertiesEmote> allSets)
             {
-                this.allSets = allSets?.Where(s => s?.PropertiesEmoteAction != null).ToList() ?? new List<PropertiesEmote>();
+                // every set, in the NPC's order: a tie in Probability goes to the first listed, and a set with no steps can be
+                // the one picked (it runs nothing)
+                this.allSets = allSets?.Where(s => s != null).ToList() ?? new List<PropertiesEmote>();
             }
 
             public ChainOutcome Outcome(PropertiesEmote set, int fromIndex, int depth)
@@ -316,6 +318,10 @@ namespace ACE.Server.Managers
                 // past the engine's own limit nothing more is known about the chain: it may reach the bank, and pay nothing else
                 if (depth > MaxBranchDepth)
                     return new ChainOutcome(true, true, true);
+
+                // a set with no steps runs nothing
+                if (set.PropertiesEmoteAction == null)
+                    return new ChainOutcome(false, true, false);
 
                 // a branch back into a set already being followed as a whole
                 if (wholeSet && !onPath.Add(set))
@@ -380,10 +386,11 @@ namespace ACE.Server.Managers
             }
 
             /// <summary>
-            /// One branching step, as EmoteManager.GetEmoteSet picks its continuation: among the sets of the outcome's category
-            /// whose Quest is the step's Message (any Quest when the Message is null), the one with the lowest Probability above a
-            /// roll in [0, 1). So every such set with a Probability above 0 can run, and an outcome category with no set at 1 or
-            /// above can run nothing.
+            /// One branching step, followed as EmoteManager.GetEmoteSet picks its continuation: among the sets of the outcome's
+            /// category whose Quest is the step's Message (any Quest when the Message is null), those with a Probability above a
+            /// roll in [0, 1), lowest Probability first, the first listed of equal ones. So only the first listed set of each
+            /// distinct Probability above 0 can run, up to and including the first at 1 or more - none above that is ever
+            /// picked - and an outcome with no set at 1 or more can run nothing.
             /// </summary>
             private ChainOutcome Branch(EmoteCategory[] categories, string quest, int depth)
             {
@@ -393,24 +400,29 @@ namespace ACE.Server.Managers
 
                 foreach (var category in categories)
                 {
-                    var highestProbability = 0f;
+                    var pickable = allSets
+                        .Where(s => s.Category == category && s.Probability > 0
+                            && (quest == null || (s.Quest != null && s.Quest.Equals(quest, StringComparison.OrdinalIgnoreCase))))
+                        .GroupBy(s => s.Probability)
+                        .Select(sameProbability => sameProbability.First())
+                        .OrderBy(s => s.Probability);
 
-                    foreach (var next in allSets)
+                    var sureToPickOne = false;
+                    foreach (var next in pickable)
                     {
-                        if (next.Category != category || next.Probability <= 0)
-                            continue;
-                        if (quest != null && (next.Quest == null || !next.Quest.Equals(quest, StringComparison.OrdinalIgnoreCase)))
-                            continue;
-
-                        highestProbability = Math.Max(highestProbability, next.Probability);
-
                         var run = Outcome(next, 0, depth + 1);
                         reachesBankStep |= run.ReachesBankStep;
                         canPayNoOther |= run.CanPayNoOtherReward;
                         canPayOnlyLuminance |= run.CanPayOnlyLuminance;
+
+                        if (next.Probability >= 1f)
+                        {
+                            sureToPickOne = true;
+                            break;
+                        }
                     }
 
-                    if (highestProbability < 1f)
+                    if (!sureToPickOne)
                         canPayNoOther = true;
                 }
 
@@ -422,8 +434,9 @@ namespace ACE.Server.Managers
         /// A step that pays the player something besides luminance, making a hand-in worth doing without it: an item, XP, a
         /// skill, credits, a spell or an augmentation, a title, treasure, a contract, a stat of the character, a random quest
         /// stamp (its account bonus), a pet skin, a creature or object made, or a teleport. Not one: chat and motions, plain
-        /// quest stamps and their bookkeeping, taking items, an XP step that takes XP (a negative amount), luminance (that is
-        /// what is being looked for) and the branching steps (followed instead).
+        /// quest stamps and their bookkeeping, taking items, an XP step that takes XP (a negative amount), steps ExecuteEmote
+        /// does nothing for (SetSecondaryAttributeStat is an empty case; PromptAddAugment10 has none), luminance (that is what is
+        /// being looked for) and the branching steps (followed instead).
         /// </summary>
         private static bool IsOtherReward(PropertiesEmoteAction action)
         {
@@ -444,7 +457,6 @@ namespace ACE.Server.Managers
                 case EmoteType.CastSpell:
                 case EmoteType.CastSpellInstant:
                 case EmoteType.PromptAddAugment:
-                case EmoteType.PromptAddAugment10:
                 case EmoteType.AddCharacterTitle:
                 case EmoteType.CreateTreasure:
                 case EmoteType.AddContract:
@@ -453,7 +465,6 @@ namespace ACE.Server.Managers
                 case EmoteType.SetBoolStat:
                 case EmoteType.SetFloatStat:
                 case EmoteType.SetAttributeStat:
-                case EmoteType.SetSecondaryAttributeStat:
                 case EmoteType.GrantAttributeStat:
                 case EmoteType.GrantVitalStat:
                 case EmoteType.GrantRandomQuestStamp:

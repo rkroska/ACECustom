@@ -171,6 +171,40 @@ namespace ACE.Server.Tests
             Assert.IsFalse(BankLock.UsesBank(Set(Step(EmoteType.AwardLuminance), Step(EmoteType.AwardXP, amount: 1000)), null));
         }
 
+        /// <summary>
+        /// Steps ExecuteEmote does nothing for are no reward beside luminance: SetSecondaryAttributeStat is an empty case and
+        /// PromptAddAugment10 has none. Luminance beside real XP or an item still goes ahead.
+        /// </summary>
+        [TestMethod]
+        public void UsesBank_StepsThatDoNothingAreNoReward()
+        {
+            Assert.IsTrue(BankLock.UsesBank(Set(Step(EmoteType.AwardLuminance), Step(EmoteType.SetSecondaryAttributeStat)), null));
+            Assert.IsTrue(BankLock.UsesBank(Set(Step(EmoteType.AwardLuminance), Step(EmoteType.PromptAddAugment10)), null));
+            Assert.IsFalse(BankLock.UsesBank(Set(Step(EmoteType.AwardLuminance), Step(EmoteType.AwardXP, amount: 1000)), null));
+            Assert.IsFalse(BankLock.UsesBank(Set(Step(EmoteType.AwardLuminance), Step(EmoteType.Give)), null));
+        }
+
+        /// <summary>
+        /// Only the sets EmoteManager.GetEmoteSet can pick count: the first listed of equal Probability, and nothing past the
+        /// first at Probability 1 or more (the roll is under 1). A lower Probability before it can still be picked.
+        /// </summary>
+        [TestMethod]
+        public void UsesBank_OnlySetsTheRollCanPickCount()
+        {
+            var root = Set(Step(EmoteType.Give), Step(EmoteType.Goto, message: "Pick"));
+            var xp = Branch(EmoteCategory.GotoSet, "Pick", Step(EmoteType.AwardXP));
+            var bank = Branch(EmoteCategory.GotoSet, "Pick", Step(EmoteType.IncrementInt64Stat, PropertyInt64.BankedLuminance));
+
+            Assert.IsFalse(BankLock.UsesBank(root, new[] { root, xp, bank }));
+            Assert.IsTrue(BankLock.UsesBank(root, new[] { root, bank, xp }));
+
+            var bankPastTheTop = Chance(Branch(EmoteCategory.GotoSet, "Pick", Step(EmoteType.IncrementInt64Stat, PropertyInt64.BankedLuminance)), 2f);
+            Assert.IsFalse(BankLock.ReachesBankStep(root, 0, new[] { root, xp, bankPastTheTop }));
+
+            var bankBelowTheTop = Chance(Branch(EmoteCategory.GotoSet, "Pick", Step(EmoteType.IncrementInt64Stat, PropertyInt64.BankedLuminance)), 0.5f);
+            Assert.IsTrue(BankLock.ReachesBankStep(root, 0, new[] { root, xp, bankBelowTheTop }));
+        }
+
         /// <summary>A chain deeper than the emote engine goes (it aborts past 100 nested sets) is assumed to reach the bank.</summary>
         [TestMethod]
         public void UsesBank_AChainPastTheEngineLimitIsAssumedToReachTheBank()
