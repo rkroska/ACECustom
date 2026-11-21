@@ -84,6 +84,13 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Skill Credit Gems (2026-11-21): skill credits for good, kept through enlightenment - used up there, never by UseGem
+            if (Player.SkillCreditGems.TryGetValue(WeenieClassId, out var skillCredits))
+            {
+                player.UseSkillCreditGem(this, skillCredits);
+                return;
+            }
+
             // QB Deeds: the Deedkeeper's Writ runs /rebuff - its checks, lockout and messages (never consumed)
             if (WeenieClassId == DeedsTiers.DeedkeepersWritWcid)
             {

@@ -189,6 +189,9 @@ namespace ACE.Server.Command.Handlers
             player.AvailableSkillCredits = 46;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, 46));
 
+            // the Skill Credit Gems' credits went with the pool: enlightenment must not add them back
+            player.SkillCreditsFromGems = 0;
+
             // 6. Reset all Skills to Untrained with 0 ranks and 0 spent XP
             foreach (var skill in player.Skills.Values)
             {
