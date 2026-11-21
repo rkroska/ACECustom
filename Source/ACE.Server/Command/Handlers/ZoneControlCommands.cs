@@ -155,6 +155,13 @@ namespace ACE.Server.Command.Handlers
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
         public static void HandleZoneControl(Session session, params string[] parameters)
         {
+            // every store save this command makes is logged as this player's (ZoneControlChangeLog: whole-part entries)
+            using (ZoneControlChangeLog.ActingAs(EditActor(session)))
+                HandleZoneControlCore(session, parameters);
+        }
+
+        private static void HandleZoneControlCore(Session session, params string[] parameters)
+        {
             void Msg(string s) => ChatPacket.SendServerMessage(session, s, ChatMessageType.Broadcast);
 
             // Bare /zonecontrol = this usage dump. `help` no longer stops here (2026-09-03): it falls through to
@@ -859,11 +866,7 @@ namespace ACE.Server.Command.Handlers
                         if (wcid.HasValue && rank != ZcRank.None)
                         { StatRowFor(area.Profile, wcid, rank, false, out var refusal); Msg(refusal); return; }
 
-                        ZoneControlManager.MutateArea(name, a =>
-                        {
-                            var vp = StatRowFor(a.Profile, wcid, rank, create: true, out _);
-                            vp.Stats[stat] = new StatCurve { Base = value, Growth = 1.0, Additive = false };
-                        });
+                        ZoneStatEditor.Set(ZoneStatTarget.ForZone(name, wcid, rank), stat, value, EditActor(session));
                         Msg($"'{name}'{(wcid.HasValue ? " [wcid " + wcid.Value + "]" : "")}{RankTag(rank)} {stat} = {FmtStatEcho(value)}. " +
                             $"{(area.Enabled ? "" : "Zone still DISABLED - /zonecontrol enable " + name)}");
                         return;
@@ -880,12 +883,7 @@ namespace ACE.Server.Command.Handlers
                         var stat = NormalizeStat(args[2]) ?? args[2].Trim().ToLowerInvariant();
                         if (wcid.HasValue && rank != ZcRank.None)
                         { StatRowFor(area.Profile, wcid, rank, false, out var refusal); Msg(refusal); return; }
-                        var removed = false;
-                        ZoneControlManager.MutateArea(name, a =>
-                        {
-                            var vp = StatRowFor(a.Profile, wcid, rank, create: false, out _);
-                            if (vp != null) removed = vp.Stats.Remove(stat);
-                        });
+                        var removed = ZoneStatEditor.Clear(ZoneStatTarget.ForZone(name, wcid, rank), stat, EditActor(session)).Status == ZoneStatEditStatus.Applied;
                         Msg(removed ? $"'{name}'{RankTag(rank)} {stat} cleared." : "That stat wasn't set" + (rank != ZcRank.None ? " on that rank row." : "."));
                         return;
                     }
@@ -1255,6 +1253,18 @@ namespace ACE.Server.Command.Handlers
                             return;
                         }
                         var helpFilter = args.Count >= 2 && !args[1].StartsWith("--") ? args[1] : null;
+
+                        // help <stat> = what the stat does (ZoneStatHelp, the same text as the portal's Zone Control page)
+                        var helpStat = helpFilter == null ? null : ZoneStatEditor.NormalizeStat(helpFilter);
+                        if (helpStat != null)
+                        {
+                            var statLines = ZoneStatHelp.ChatLines(helpStat);
+                            if (statLines.Count == 0)
+                                Msg($"No help has been written for {helpStat} yet.");
+                            foreach (var line in statLines) Msg(line);
+                            return;
+                        }
+
                         foreach (var g in ZoneControlCommandHelp.Groups)
                         {
                             var rows = ZoneControlCommandHelp.All.Where(e => e.Group == g
@@ -2716,10 +2726,7 @@ namespace ACE.Server.Command.Handlers
                                 || !int.TryParse(args[start + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out entryAmount)
                                 || !int.TryParse(args[start + 2], NumberStyles.Integer, CultureInfo.InvariantCulture, out entryWeight))
                                 return tableUsage;
-                            if (entryAmount < 1 || entryAmount > BountyManager.MaxAmount) return $"the amount must be 1-{BountyManager.MaxAmount:N0}.";
-                            if (entryWeight < 1 || entryWeight > BountyRewardTable.MaxWeight) return $"the weight must be 1-{BountyRewardTable.MaxWeight:N0}.";
-                            if (!BountyManager.IsGivableItem(entryWcid)) return $"{entryWcid} isn't an item a player can carry.";
-                            return null;
+                            return BountyEdits.CheckRewardRow(entryWcid, entryAmount, entryWeight);
                         }
 
                         Func<BountyRewardTable, string> tableChange;
@@ -3233,8 +3240,7 @@ namespace ACE.Server.Command.Handlers
                             if (dstat == null) { Msg("Unknown stat. Stats: " + string.Join(", ", ZoneStat.All)); return; }
                             if (!TryDouble(args[4], out var dval)) { Msg("value must be a number."); return; }
 
-                            ZoneControlManager.MutateVariationDefault(dvar, d =>
-                                d.Profile.RankLayer(rank, create: true).Stats[dstat] = new StatCurve { Base = dval, Growth = 1.0, Additive = false });
+                            ZoneStatEditor.Set(ZoneStatTarget.ForDefault(dvar, rank), dstat, dval, EditActor(session));
                             Msg($"Default v{dvar}{RankTag(rank)} {dstat} = {FmtStatEcho(dval)}. " + (rank == ZcRank.None
                                 ? $"Every zone at v{dvar} that doesn't set it inherits this."
                                 : $"Every {ZoneRank.Label(rank)} at v{dvar} reads this instead of the Default row."));
@@ -3251,12 +3257,7 @@ namespace ACE.Server.Command.Handlers
                             // Found 2026-08-24 after loot_max_drops -> loot_drops_min. Setting still
                             // validates - you may only clear rubbish, never author it.
                             var dstat = NormalizeStat(args[3]) ?? args[3].Trim().ToLowerInvariant();
-                            var dremoved = false;
-                            ZoneControlManager.MutateVariationDefault(dvar, d =>
-                            {
-                                var row = d.Profile.RankLayer(rank, create: false);
-                                if (row != null) dremoved = row.Stats.Remove(dstat);
-                            });
+                            var dremoved = ZoneStatEditor.Clear(ZoneStatTarget.ForDefault(dvar, rank), dstat, EditActor(session)).Status == ZoneStatEditStatus.Applied;
                             Msg(dremoved ? $"Default v{dvar}{RankTag(rank)} {dstat} cleared." : $"That stat wasn't set on the Default{RankTag(rank)}.");
                             return;
                         }
@@ -4531,16 +4532,12 @@ namespace ACE.Server.Command.Handlers
         /// inside it. Returns null with <paramref name="refusal"/> set for --wcid + --rank (a bucket has
         /// no rows). <paramref name="create"/> = author (set) vs inspect/clear.</summary>
         private static ZoneVariantProfile StatRowFor(ZoneScalingProfile profile, uint? wcid, ZcRank rank, bool create, out string refusal)
-        {
-            refusal = null;
-            if (wcid.HasValue && rank != ZcRank.None)
-            {
-                refusal = "A monster override has no rank rows - it IS one rank. Drop --rank, or set the rank row on the zone / tier without --wcid.";
-                return null;
-            }
-            var layer = wcid.HasValue ? profile.VariantForWcid(wcid.Value, create) : profile.Minion;
-            return layer?.RankLayer(rank, create);
-        }
+            => ZoneStatEditor.RowFor(profile, wcid, rank, create, out refusal);
+
+        /// <summary>Who the change log credits for a stat edit made by this command.</summary>
+        private static ZoneStatActor EditActor(Session session) => session?.Player != null
+            ? new ZoneStatActor { Name = session.Player.Name, Source = ZoneStatActor.SourceGame }
+            : new ZoneStatActor { Name = "console", Source = ZoneStatActor.SourceConsole };
 
         private static string RankTag(ZcRank rank) => rank == ZcRank.None ? "" : " [" + ZoneRank.Label(rank) + " row]";
 
@@ -4550,9 +4547,7 @@ namespace ACE.Server.Command.Handlers
         /// <summary>The most reward rows a bountytable delete's audit line lists; the rest go to the server log only.</summary>
         private const int MaxAuditRewardRows = 10;
 
-        /// <summary>One reward table row for bountytable's audit lines: "5 x Bag of Rebirth (78780315), weight 10", or "(none)".</summary>
-        private static string RewardRowText(BountyRewardEntry e)
-            => e == null ? "(none)" : $"{e.Amount:N0} x {RoomAssignManager.ItemName(e.Wcid)} ({e.Wcid}), weight {e.Weight:N0}";
+        private static string RewardRowText(BountyRewardEntry e) => BountyEdits.RewardRowText(e);
 
         private static bool TryHex(string s, out int value)
         {
@@ -4565,18 +4560,7 @@ namespace ACE.Server.Command.Handlers
         /// dropped a bag on every kill, a NaN loot_grade_floor forced every grade to 0). Thousands separators are allowed only
         /// as real 3-digit groups after a non-zero lead ("151,200" for odds): "0,5" used to read as 5 (x10 a vuln cap or a DoT
         /// multiplier) and is now refused, like "0,500", currency signs and parentheses (review 2026-10-04).</summary>
-        private static bool TryDouble(string s, out double value)
-        {
-            value = 0;
-            s = s?.Trim();
-            if (string.IsNullOrEmpty(s) || (s.Contains(',') && !ThousandsGroups.IsMatch(s)))
-                return false;
-            return double.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out value)
-                && double.IsFinite(value);
-        }
-
-        private static readonly System.Text.RegularExpressions.Regex ThousandsGroups =
-            new System.Text.RegularExpressions.Regex(@"^[+-]?[1-9]\d{0,2}(,\d{3})+(\.\d*)?([eE][+-]?\d+)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        private static bool TryDouble(string s, out double value) => ZoneStatEditor.TryParseValue(s, out value);
 
         /// <summary>A finite plain number - no thousands separators ("0,1" is refused, never read as 1), no currency or
         /// parentheses. For values where a comma can only be a mistyped decimal point (chances, tier anchors).</summary>
@@ -5507,11 +5491,7 @@ namespace ACE.Server.Command.Handlers
             return dt != DamageType.Undef && Enum.IsDefined(typeof(DamageType), dt) && !dt.IsMultiDamage();
         }
 
-        private static string NormalizeStat(string s)
-        {
-            s = s.Trim().ToLowerInvariant();
-            return ZoneStat.All.FirstOrDefault(k => k.Equals(s, StringComparison.OrdinalIgnoreCase));
-        }
+        private static string NormalizeStat(string s) => ZoneStatEditor.NormalizeStat(s);
 
         /// <summary>Parse a CombatBodyPart by enum name (case-insensitive) or raw int; rejects Undefined.</summary>
         private static bool TryParseBodyPart(string s, out CombatBodyPart part)

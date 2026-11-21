@@ -212,50 +212,140 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Writes the updated config values to the database.
+        /// Writes the updated config values to the database. Returns false when a row could not be written.
+        /// A row that fails (e.g. the database is unreachable) is NOT dropped (2026-11-19): it is queued again, so the next save
+        /// - the property worker's, every 5 minutes - tries it again, and LoadFromDb keeps the in-memory value meanwhile
+        /// instead of reverting it to the old row. When the DATABASE is the problem (a connection or transient failure) the
+        /// pass stops there, as before - the rows after it stay queued, so an outage costs one row's retries per pass, not one
+        /// per queued row. Any other failure belongs to that row only: it is logged and queued again, and the pass goes on,
+        /// so one row that can never be written does not hold back every other setting.
+        /// One pass at a time (FlushLock; the property worker holds it for its write AND its reload, see FlushAndReload): a
+        /// failed older row can only be queued again while no newer value for its key is pending (TryAdd), so it never comes
+        /// back over a newer one.
         /// </summary>
-        public static void WriteUpdatesToDb()
+        public static bool WriteUpdatesToDb()
         {
-            foreach (var key in _modifiedBoolProps.Keys)
+            lock (FlushLock)
+                return WriteUpdatesToDbLocked();
+        }
+
+        /// <summary>
+        /// For an admin command (often on the world thread): write the queued rows now. It waits at most 2 s for a pass that is
+        /// already running (the property worker's) instead of queueing behind it; its own write is synchronous, as it always
+        /// was. Returns true only when THIS key has really been written; false = not saved yet (the write failed, or the
+        /// worker's pass was still running) - a later pass writes it, and only a crash or forced stop before that loses it.
+        /// </summary>
+        public static bool SaveNow(string key)
+        {
+            if (!System.Threading.Monitor.TryEnter(FlushLock, TimeSpan.FromSeconds(2)))
+                return false;   // the worker's pass may be writing this very row right now - never report it as saved
+            try
             {
-                if (_modifiedBoolProps.TryRemove(key, out ConfigProperty<bool>? property))
+                WriteUpdatesToDbLocked();
+                return !IsPendingSave(key);   // answered inside the lock: no other pass can be half way through it
+            }
+            finally { System.Threading.Monitor.Exit(FlushLock); }
+        }
+
+        /// <summary>The property worker's pass (and the shutdown flush): write, then reload, under the save lock - so no save
+        /// can complete between the reload reading a row and checking whether that key is still queued, and put the old row
+        /// back over a value that was just saved.</summary>
+        /// <param name="skipIfBusy">The 5-minute timer: when a pass is still running (stuck on a database outage), skip this
+        /// tick instead of piling up threads waiting behind it. The shutdown flush waits.</param>
+        public static void FlushAndReload(bool skipIfBusy = false)
+        {
+            if (!System.Threading.Monitor.TryEnter(FlushLock, skipIfBusy ? TimeSpan.Zero : System.Threading.Timeout.InfiniteTimeSpan))
+                return;
+            try
+            {
+                WriteUpdatesToDbLocked();
+                LoadFromDb();
+            }
+            finally { System.Threading.Monitor.Exit(FlushLock); }
+        }
+
+        /// <summary>True when the database itself failed (connection, timeout, retries used up) - not this one row.</summary>
+        public static bool IsDatabaseOutage(Exception ex)
+        {
+            for (var e = ex; e != null; e = e.InnerException)
+            {
+                if (e is Microsoft.EntityFrameworkCore.Storage.RetryLimitExceededException || e is TimeoutException
+                    || e is System.Net.Sockets.SocketException || (e is System.Data.Common.DbException db && db.IsTransient))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>True while a change to this config key is queued and not yet in the database.</summary>
+        public static bool IsPendingSave(string key)
+        {
+            var k = CanonicalKey(key);
+            return _modifiedBoolProps.ContainsKey(k) || _modifiedLongProps.ContainsKey(k)
+                || _modifiedDoubleProps.ContainsKey(k) || _modifiedStringProps.ContainsKey(k);
+        }
+
+        private static readonly object FlushLock = new();
+
+        private static bool WriteUpdatesToDbLocked()
+        {
+            var outage = false;
+            var ok = FlushPending(_modifiedBoolProps, ref outage, (key, property) =>
                 {
                     if (DatabaseManager.ShardConfig.BoolExists(key))
                         DatabaseManager.ShardConfig.SaveBool(new ConfigPropertiesBoolean { Key = key, Value = property.Value, Description = property.Description });
                     else
                         DatabaseManager.ShardConfig.AddBool(key, property.Value, property.Description);
-                }
-            }
-            foreach (var key in _modifiedLongProps.Keys)
-            {
-                if (_modifiedLongProps.TryRemove(key, out ConfigProperty<long>? property))
+                });
+            if (!outage) ok &= FlushPending(_modifiedLongProps, ref outage, (key, property) =>
                 {
                     if (DatabaseManager.ShardConfig.LongExists(key))
                         DatabaseManager.ShardConfig.SaveLong(new ConfigPropertiesLong { Key = key, Value = property.Value, Description = property.Description });
                     else
                         DatabaseManager.ShardConfig.AddLong(key, property.Value, property.Description);
-                }
-            }
-            foreach (var key in _modifiedDoubleProps.Keys)
-            {
-                if (_modifiedDoubleProps.TryRemove(key, out ConfigProperty<double>? property))
+                });
+            if (!outage) ok &= FlushPending(_modifiedDoubleProps, ref outage, (key, property) =>
                 {
                     if (DatabaseManager.ShardConfig.DoubleExists(key))
                         DatabaseManager.ShardConfig.SaveDouble(new ConfigPropertiesDouble { Key = key, Value = property.Value, Description = property.Description });
                     else
                         DatabaseManager.ShardConfig.AddDouble(key, property.Value, property.Description);
-                }
-            }
-            foreach (var key in _modifiedStringProps.Keys)
-            {
-                if (_modifiedStringProps.TryRemove(key, out ConfigProperty<string>? property))
+                });
+            if (!outage) ok &= FlushPending(_modifiedStringProps, ref outage, (key, property) =>
                 {
                     if (DatabaseManager.ShardConfig.StringExists(key))
                         DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = key, Value = property.Value, Description = property.Description });
                     else
                         DatabaseManager.ShardConfig.AddString(key, property.Value, property.Description);
+                });
+            return ok && !outage;
+        }
+
+        /// <summary>Writes the queued rows. A row that throws is logged and queued again (a newer change made meanwhile wins);
+        /// on a database outage the pass stops there (<paramref name="outage"/> set), otherwise it goes on with the next row.</summary>
+        private static bool FlushPending<T>(ConcurrentDictionary<string, ConfigProperty<T>> pending, ref bool outage, Action<string, ConfigProperty<T>> save)
+        {
+            var ok = true;
+            foreach (var key in pending.Keys)
+            {
+                if (!pending.TryRemove(key, out var property))
+                    continue;
+                try
+                {
+                    save(key, property);
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    pending.TryAdd(key, property);
+                    log.Error($"[CONFIG] could not write {key} to the database - kept, it is tried again on the next save: {ex.Message}");
+                    if (IsDatabaseOutage(ex))
+                    {
+                        outage = true;   // the database is down: leave the rest queued for the next pass
+                        return false;
+                    }
                 }
             }
+            return ok;
         }
 
         /// <summary>
@@ -1146,6 +1236,16 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> item_bounty_ledger_wcid { get; private set; } = new(98760483, "ITEM BOUNTIES: the Bounty Ledger's weenie (a Book; Database/Updates/World/2026-11-12-00-Bounty-Ledger.sql). A bounty used on the ledger starts; the ledger opens as a book with a page per bounty and its progress, and its description lists them. One is handed to any player with bounties and no ledger (when a bounty is used, and at login). 0 = no ledgers: a bounty is started with two double-clicks. Bounties a player carries switch over at their next login.");
 
         public static ConfigProperty<string> nolog_landblocks { get; private set; } = new("", "Overrides for the no-log landblock list (log out here, log back in at your lifestone). Comma-separated tokens, each [-]HEX[:base|all|<variation>] - e.g. \"016C:11, 0007:all, -0002\". A bare token or one starting '+' ADDS; one starting '-' SUPPRESSES, including entries from the built-in retail list. Variation omitted means base only; 'all' means base and every variation. Edit with /nolog rather than by hand.");
+        // PERSONAL LIFESTONE (owner 2026-11-14): a carried item that raises an owner-only lifestone in front of the player for a
+        // short time. See Player_PersonalLifestone.cs. All read live.
+        public static ConfigProperty<bool> personal_lifestone_enabled { get; private set; } = new(true, "PERSONAL LIFESTONE: when FALSE the Personal Lifestone item refuses to work. Stones already standing still fade on their own.");
+        public static ConfigProperty<long> personal_lifestone_cooldown_seconds { get; private set; } = new(72000, "PERSONAL LIFESTONE: real-time cooldown in seconds after a stone is raised (72000 = 20 hours; used within 0 - 31536000, one year). Per character, keeps running while logged out. Spent only when a stone actually appears.");
+        public static ConfigProperty<long> personal_lifestone_lifetime_seconds { get; private set; } = new(120, "PERSONAL LIFESTONE: how long a raised stone stands before it deletes itself, in seconds (used within 1 - 86400, one day). An attune or tie made on it stays after it fades.");
+        public static ConfigProperty<string> personal_lifestone_excluded_landblocks { get; private set; } = new("", "PERSONAL LIFESTONE: areas where the item cannot be used, on top of the built-in list (housing, apartments, Marketplace, jail, arenas). Comma-separated tokens, each [-]HEX[:base|all|<variation>] - the same grammar as nolog_landblocks. A '-' token removes a built-in entry. Variation omitted = base only; 'all' = base and every variation. The most specific token wins (a variation's or base's token beats an 'all' token; at one scope '-' beats '+'). Edit with /plstone rather than by hand.");
+        public static ConfigProperty<bool> personal_lifestone_block_nolog_areas { get; private set; } = new(true, "PERSONAL LIFESTONE: when TRUE every no-log area (the /nolog list) also blocks the item.");
+        public static ConfigProperty<bool> personal_lifestone_block_t10_vod { get; private set; } = new(false, "PERSONAL LIFESTONE: optional, OFF by default (owner 2026-11-19). When TRUE Thaelaryn Island (T10, LandblockCollections.ThaelarynIslandLandblocks) and the Valley of Death (ValleyOfDeathLandblocks) block the item in EVERY variation. FALSE = allowed there. A '-' token in personal_lifestone_excluded_landblocks still lifts one landblock. Toggle with /plstone t10vod on|off.");
+        public static ConfigProperty<bool> personal_lifestone_block_dungeons { get; private set; } = new(false, "PERSONAL LIFESTONE: when TRUE the item only works outdoors - any indoor/dungeon cell refuses it. A landblock token in personal_lifestone_excluded_landblocks still blocks outdoors too.");
+
         public static ConfigProperty<string> content_folder { get; private set; } = new("Content", "for content creators to live edit weenies. defaults to Content folder found in same directory as ACE.Server.dll");
         public static ConfigProperty<long> content_template_export_wcid_start { get; private set; } = new(78790000, "@export-template / @et / @ed template: first wcid of the TEMPORARY export staging block. Automatic ids come only from [start, end] (the 7879 prefix; 7878 stays hand-authored), and @id / @import-sql / @import-json refuse a wcid inside it unless the word force is added. See docs/WCID_ALLOCATION_7878.md.");
         public static ConfigProperty<long> content_template_export_wcid_end { get; private set; } = new(78799999, "@export-template: last wcid of the export staging block (inclusive). Raise it when the block is used up; the tool never wraps around.");
@@ -1196,6 +1296,14 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> discord_broadcast_level { get; private set; } = new(1, "Controls World Broadcasts. 0=None, 1=Info (@broadcast/@event), 2=Verbose.");
         public static ConfigProperty<long> discord_performance_level { get; private set; } = new(1, "Controls Performance Alerts. 0=None, 1=Info (Overload/Queue), 2=Verbose (ActionLag/SlowSave).");
         public static ConfigProperty<long> discord_server_status_channel { get; private set; } = new(0, "Discord channel id for server status posts: online, restart scheduled/cancelled, offline (planned or stopped on purpose), and back online after a crash. 0 = off. Use /modifylong discord_server_status_channel <channel id>.");
+        public static ConfigProperty<long> discord_ops_alert_channel { get; private set; } = new(0, "Discord channel id for staff alerts about server problems, e.g. an area where players keep getting stuck loading (stuck_area_*). 0 = off; the alert is still logged as [STUCK AREA]. Use /modifylong discord_ops_alert_channel <channel id>.");
+
+        // Stuck area alert: many different players unable to finish loading the same landblock (2026-11-20 Qalaba'r)
+        public static ConfigProperty<long> stuck_area_min_players { get; private set; } = new(5, "Stuck area alert: this many DIFFERENT players stuck loading (forced out of portal space) in the same landblock within stuck_area_window_minutes raises a [STUCK AREA] alert. 0 = off. On 2026-11-20 the busiest normal landblock reached 3 in 30 min; Qalaba'r reached 6. Use /modifylong stuck_area_min_players <n>.");
+        public static ConfigProperty<long> stuck_area_window_minutes { get; private set; } = new(30, "Stuck area alert: the window, in minutes, the different players are counted over. Use /modifylong stuck_area_window_minutes <minutes>.");
+        public static ConfigProperty<long> stuck_area_alert_cooldown_minutes { get; private set; } = new(60, "Stuck area alert: minutes before the same landblock can post a new Discord alert after it cleared. Use /modifylong stuck_area_alert_cooldown_minutes <minutes>.");
+        public static ConfigProperty<long> stuck_area_clear_quiet_minutes { get; private set; } = new(20, "Stuck area alert: an area that alerted is called clear (an [OK] post in game and to Discord) once nobody has been stuck loading there for this many minutes. Use /modifylong stuck_area_clear_quiet_minutes <minutes>.");
+        public static ConfigProperty<long> stuck_area_staff_reminder_minutes { get; private set; } = new(10, "Stuck area alert: in game, the alert goes to the Audit channel (staff only) when it starts, again every this many minutes while it is still happening, and once when it clears. 0 = no in-game posts. Use /modifylong stuck_area_staff_reminder_minutes <minutes>.");
 
         // Network Throttle Configuration
         public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(0, "Maximum UDP packets sent to a single client per server tick. 0 = unlimited (drain the whole queue each tick, matching base ACE) and is the default. A burst of CreateObject packets on landblock entry/teleport must not be trickled out over many ticks or objects pop in slowly. Set a positive value ONLY as an emergency throttle during mass-spawn incidents. Use /modifylong net_max_packets_per_tick <value>.");
@@ -1298,7 +1406,7 @@ namespace ACE.Server.Managers
                 ServerConfig.SetValue("content_folder", "/ace/Content");
 
             // Subscribe the worker thread to  execute DoWork whenever it elapses.
-            _workerThread.Elapsed += (source, e) => DoWork();
+            _workerThread.Elapsed += (source, e) => DoWork(skipIfBusy: true);
             _workerThread.AutoReset = true;
             _workerThread.Start();
         }
@@ -1325,11 +1433,10 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Flushes pending writes to the datbase, then refreshes our view to be consistent.
         /// </summary>
-        private static void DoWork()
+        private static void DoWork(bool skipIfBusy = false)
         {
             var startTime = DateTime.UtcNow;
-            ServerConfig.WriteUpdatesToDb();
-            ServerConfig.LoadFromDb();
+            ServerConfig.FlushAndReload(skipIfBusy);
             log.Debug($"PropertyManager DoWork took {(DateTime.UtcNow - startTime).TotalMilliseconds:N0} ms");
         }
     }

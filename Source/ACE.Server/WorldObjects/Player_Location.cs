@@ -879,20 +879,28 @@ namespace ACE.Server.WorldObjects
                 if (_noLog.Raw == raw)
                     return;
 
-                var adds = new Dictionary<ushort, HashSet<int>>();
-                var removes = new Dictionary<ushort, HashSet<int>>();
-
-                foreach (var token in raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-                {
-                    if (!TryParseNoLogToken(token, out var landblock, out var key, out var suppress))
-                        continue;
-                    var target = suppress ? removes : adds;
-                    if (!target.TryGetValue(landblock, out var set))
-                        target[landblock] = set = new HashSet<int>();
-                    set.Add(key);
-                }
-
+                ParseLandblockTokens(raw, out var adds, out var removes);
                 _noLog = new NoLogOverrides(raw, adds, removes);
+            }
+        }
+
+        /// <summary>
+        /// Split a comma / semicolon token list into landblock -> scope keys, adds and suppresses apart. Total: a malformed
+        /// token is skipped, never thrown. Shared by nolog_landblocks and personal_lifestone_excluded_landblocks.
+        /// </summary>
+        public static void ParseLandblockTokens(string raw, out Dictionary<ushort, HashSet<int>> adds, out Dictionary<ushort, HashSet<int>> removes)
+        {
+            adds = new Dictionary<ushort, HashSet<int>>();
+            removes = new Dictionary<ushort, HashSet<int>>();
+
+            foreach (var token in (raw ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!TryParseNoLogToken(token, out var landblock, out var key, out var suppress))
+                    continue;
+                var target = suppress ? removes : adds;
+                if (!target.TryGetValue(landblock, out var set))
+                    target[landblock] = set = new HashSet<int>();
+                set.Add(key);
             }
         }
 
@@ -944,6 +952,24 @@ namespace ACE.Server.WorldObjects
             return normalized.HasValue ? normalized.Value : NoLogBaseKey;
         }
 
+        /// <summary>True for a scope a token can name: base, all, or a real variation (0 and up). A rift layer (-1000 and
+        /// down) is temporary and has no token form.</summary>
+        public static bool IsListableNoLogScope(int variationKey)
+            => variationKey >= 0 || variationKey == NoLogBaseKey || variationKey == NoLogAllKey;
+
+        /// <summary>True for a layer a 'here' target may stand for: the base world or a real variation. Any negative layer
+        /// (a rift) is not - and -1 / -2 would otherwise read as the base / all scope keys (PR #616).</summary>
+        public static bool IsListableNoLogLayer(int? variation) => !variation.HasValue || variation.Value >= 0;
+
+        /// <summary>
+        /// /nolog and /plstone add|remove: the refusal for a scope no token can name, or null when it is fine. A rift layer
+        /// (any negative layer) needs an explicit scope - 'here' there would otherwise act on base (-1) or all (-2). PR #616.
+        /// </summary>
+        public static string UnlistableNoLogScopeError(int variationKey, string scopeArg, int? rawVariation)
+            => !IsListableNoLogScope(variationKey) || (string.IsNullOrWhiteSpace(scopeArg) && !IsListableNoLogLayer(rawVariation))
+                ? "You are in a rift layer - those are temporary and cannot be listed. Add a scope: base, all, or a variation number."
+                : null;
+
         /// <summary>The token an override entry is written as - the inverse of TryParseNoLogToken.</summary>
         public static string NoLogTokenFor(ushort landblock, int variationKey, bool suppress)
         {
@@ -983,9 +1009,36 @@ namespace ACE.Server.WorldObjects
         /// <summary>The base-bucket scope key, for callers that need to test scope without a magic number.</summary>
         public static int NoLogBaseScopeKey => NoLogBaseKey;
 
+        /// <summary>The base-and-every-variation scope key (Personal Lifestone reuses the token grammar).</summary>
+        public static int NoLogAllScopeKey => NoLogAllKey;
+
         /// <summary>True when this exact entry comes from the built-in retail list rather than an override.</summary>
         public static bool IsNoLogSeed(ushort landblock, int variationKey)
             => variationKey == NoLogBaseKey && NoLog_Landblocks.ContainsKey(landblock);
+
+        /// <summary>Personal Lifestone 'all' scope (2026-11-17): a no-log area in EVERY layer - an 'all' add no remove touches.</summary>
+        public static bool IsNoLogEveryLayer(ushort landblock)
+        {
+            EnsureNoLogOverrides();
+            var o = _noLog;
+            return o.Adds.TryGetValue(landblock, out var adds) && adds.Contains(NoLogAllKey) && !o.Removes.ContainsKey(landblock);
+        }
+
+        /// <summary>Personal Lifestone 'all' scope (2026-11-17): a no-log area in ANY layer - the base world or any variation an
+        /// override names (and no remove lifts).</summary>
+        public static bool IsNoLogAnyLayer(ushort landblock)
+        {
+            EnsureNoLogOverrides();
+            var o = _noLog;
+            if (IsNoLogArea(o, landblock, null))
+                return true;
+            if (!o.Adds.TryGetValue(landblock, out var adds))
+                return false;
+            foreach (var key in adds)
+                if (!NoLogSetMatches(o.Removes, landblock, key))
+                    return true;
+            return false;
+        }
 
         /// <summary>Every no-log entry in force, seed and overrides merged - for /nolog list.</summary>
         public static List<(ushort Landblock, int VariationKey)> NoLogEntries()
