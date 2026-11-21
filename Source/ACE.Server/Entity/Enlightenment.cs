@@ -381,6 +381,8 @@ namespace ACE.Server.Entity
             availableSkillCredits += player.QuestManager.GetCurrentSolves("OswaldManualCompleted");  // additional quest skill credit
             availableSkillCredits += player.QuestManager.GetCurrentSolves("LumAugSkillQuest");   // additional quest skill credits
 
+            availableSkillCredits += player.SkillCreditsFromGems;   // Skill Credit Gems: the character's for good
+
             player.AvailableSkillCredits = availableSkillCredits;
 
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));

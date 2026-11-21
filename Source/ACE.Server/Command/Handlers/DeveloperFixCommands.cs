@@ -434,7 +434,10 @@ namespace ACE.Server.Command.Handlers
                 if (lumAugSkillCredits.TryGetValue(player.Guid.Full, out var lumSkillCredits))
                     questCredits += lumSkillCredits;
 
-                var totalCredits = startCredits + levelCredits + questCredits;
+                // Skill Credit Gems: the character's for good (PropertyInt.SkillCreditsFromGems)
+                var gemCredits = Math.Max(0, player.GetProperty(PropertyInt.SkillCreditsFromGems) ?? 0);
+
+                var totalCredits = startCredits + levelCredits + questCredits + gemCredits;
 
                 //Console.WriteLine($"{player.Name} (0x{player.Guid}) Heritage: {heritage}, Level: {player.Level}, Base Credits: {startCredits}, Additional Level Credits: {levelCredits}, Quest Credits: {questCredits}, Total Skill Credits: {totalCredits}");
 
