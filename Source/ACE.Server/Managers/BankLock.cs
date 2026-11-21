@@ -287,7 +287,8 @@ namespace ACE.Server.Managers
         /// Follows one emote set and every set its steps can continue in, for one question. A set runs all its own steps, and each
         /// branching step adds one run of the sets it can continue in - or none, when the outcome reached has no set, or no set
         /// there is sure to be picked. Each set is worked out once from its first step (memoized), and a branch back into a set
-        /// already being followed adds nothing (that set's own steps are counted where it was entered).
+        /// already being followed as a whole adds nothing (that set's own steps are counted where it was entered). A walk from a
+        /// later step is not such a visit: a branch back into that set looks at the whole of it.
         /// </summary>
         private sealed class EmoteWalk
         {
@@ -305,16 +306,19 @@ namespace ACE.Server.Managers
 
             public ChainOutcome Outcome(PropertiesEmote set, int fromIndex, int depth)
             {
-                var memoize = fromIndex <= 0;
-                if (memoize && walked.TryGetValue(set, out var known))
+                // A walk from a later step (the DoEnqueue guard) is not a visit of the whole set: a branch back into the set runs
+                // it again from its first step, which must still be looked at. So only whole-set walks are memoized and marked
+                // as on the path.
+                var wholeSet = fromIndex <= 0;
+                if (wholeSet && walked.TryGetValue(set, out var known))
                     return known;
 
                 // past the engine's own limit nothing more is known about the chain: it may reach the bank, and pay nothing else
                 if (depth > MaxBranchDepth)
                     return new ChainOutcome(true, true, true);
 
-                // a branch back into a set already being followed
-                if (!onPath.Add(set))
+                // a branch back into a set already being followed as a whole
+                if (wholeSet && !onPath.Add(set))
                     return new ChainOutcome(false, true, false);
 
                 try
@@ -364,13 +368,14 @@ namespace ACE.Server.Managers
 
                     var canPayNoOther = !ownOtherReward && everyBranchCanPayNoOther;
                     var outcome = new ChainOutcome(reachesBankStep, canPayNoOther, canPayNoOther && (ownLuminance || someBranchCanPayOnlyLuminance));
-                    if (memoize)
+                    if (wholeSet)
                         walked[set] = outcome;
                     return outcome;
                 }
                 finally
                 {
-                    onPath.Remove(set);
+                    if (wholeSet)
+                        onPath.Remove(set);
                 }
             }
 

@@ -4055,10 +4055,11 @@ namespace ACE.Server.WorldObjects.Managers
             // reach count too: a set that can reach such a step stops here, before its next step, for a locked player, and the
             // stop is logged for staff (BankLock.NoteStoppedSet). Like the scan-ahead below, it returns without the shared
             // AbortEmoteChain flag, which would leak to a sibling nested chain.
-            if (targetObject is Player bankLockedPlayer && bankLockedPlayer.IsBankLocked && BankLock.ReachesBankStep(emoteSet, emoteIdx, WorldObject.Biota.PropertiesEmote))
+            // (The sets are the emote owner's, _worldObject, where GetEmoteSet finds every continuation - not a proxy's.)
+            if (targetObject is Player bankLockedPlayer && bankLockedPlayer.IsBankLocked && BankLock.ReachesBankStep(emoteSet, emoteIdx, _worldObject.Biota.PropertiesEmote))
             {
                 bankLockedPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your bank is locked, so {WorldObject.Name} can't do that.", ChatMessageType.Broadcast));
-                BankLock.NoteStoppedSet(bankLockedPlayer, WorldObject, emoteSet, emoteIdx);
+                BankLock.NoteStoppedSet(bankLockedPlayer, _worldObject, emoteSet, emoteIdx);
                 Nested--;
                 if (Nested == 0)
                     IsBusy = false;

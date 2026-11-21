@@ -242,6 +242,20 @@ namespace ACE.Server.Tests
             Assert.IsFalse(BankLock.ReachesBankStep(use, 0, new[] { use }));
         }
 
+        /// <summary>
+        /// A walk from a later step is not a visit of the whole set: a Goto back into the same set runs it again from its first
+        /// step, so a bank step before the starting point still counts.
+        /// </summary>
+        [TestMethod]
+        public void ReachesBankStep_ALoopBackLooksAtTheWholeSet()
+        {
+            var again = Branch(EmoteCategory.GotoSet, "Again",
+                Step(EmoteType.IncrementInt64Stat, PropertyInt64.BankedLuminance), Step(EmoteType.Tell), Step(EmoteType.Goto, message: "Again"));
+
+            Assert.IsTrue(BankLock.ReachesBankStep(again, 1, new[] { again }));
+            Assert.IsFalse(BankLock.ReachesBankStep(again, 1, new PropertiesEmote[0]));   // no set to loop back into
+        }
+
         /// <summary>The lock read off a character, and the setters' rule: a write is refused only for a balance of a locked bank, outside a staff write.</summary>
         [TestMethod]
         public void RefusesWrite_ALockedCharactersBalances()
