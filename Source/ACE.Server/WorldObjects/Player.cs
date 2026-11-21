@@ -63,6 +63,24 @@ namespace ACE.Server.WorldObjects
             portalStuckRecoveryAttempted = false;
         }
 
+        /// <summary>One [PORTAL STUCK DIAG] line: acknowledgements, backlog, and the objects sent during this load.</summary>
+        private void LogPortalStuckDiagnostics()
+        {
+            try
+            {
+                var network = Session?.Network;
+                if (network == null)
+                    return;
+
+                log.Warn(ACE.Server.Network.SentObjectLog.BuildStuckReport(Name, DateTime.UtcNow, PortalSpaceEnteredUtc, network.LastAckUtc,
+                    network.LastAckSequence, network.UnacknowledgedPacketCount, network.SentObjects.Snapshot()));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[PORTAL STUCK DIAG] {Name}: report failed: {ex.Message}");
+            }
+        }
+
         /// <summary>Forces server-side end of teleport/portal physics state when LoginComplete never arrives. Client UI may still show portal until recall/relog.</summary>
         public void ForceEndPortalSpaceStuck(string reason)
         {
@@ -71,6 +89,10 @@ namespace ACE.Server.WorldObjects
 
             var secs = PortalSpaceEnteredUtc.HasValue ? (DateTime.UtcNow - PortalSpaceEnteredUtc.Value).TotalSeconds : -1;
             log.Warn($"[PORTAL STUCK] {Name} (0x{Guid}) forcing server materialize after {secs:F0}s ({reason}). Landblock={CurrentLandblock?.Id.Raw:X8}");
+
+            // what this client was sent before it went quiet, and whether many players are stuck in this area
+            LogPortalStuckDiagnostics();
+            StuckAreaMonitor.Record(this);
 
             ClearPortalSpaceEntered();
 

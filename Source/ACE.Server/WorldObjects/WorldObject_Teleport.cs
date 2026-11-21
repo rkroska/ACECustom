@@ -262,7 +262,10 @@ namespace ACE.Server.WorldObjects
             // pre-validate movement (skip during forced server teleport; CurrentLandblock is often null mid-handoff)
             if (player != null && !(Teleporting && forceUpdate) && !player.ValidateMovement(newPosition))
             {
-                log.Warn($"{Name}.UpdatePosition() - movement pre-validation failed from {Location} to {newPosition}, t: {Teleporting}");
+                // a move into a landblock that doesn't exist is logged by ValidateMovement, rate-limited and naming the
+                // sender; logging it here too would write one unthrottled line per packet
+                if (!player.IsMoveIntoMissingLandblock(newPosition))
+                    log.Warn($"{Name}.UpdatePosition() - movement pre-validation failed from {Location} to {newPosition}, t: {Teleporting}");
                 return false;
             }
 
