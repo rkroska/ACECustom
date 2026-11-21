@@ -577,6 +577,9 @@ namespace ACE.Server.Managers
                 if (meta.TryGetValue("snapshot_items", out var mode))
                     lastSnapshotCountedItems = mode == "1" ? true : mode == "0" ? false : null;
 
+                // stamps must keep rising across restarts too (a clock set back must not reuse an earlier stamp)
+                lastSavedStamp = LoadLastSavedStamp();
+
                 shuttingDown = false;
 
                 if (trackFlows)
@@ -819,6 +822,29 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// One account's holdings of one currency at a snapshot (economy_holdings_daily), so the Economy page can
+        /// filter by how recently the account played. Staff accounts are not included.
+        /// </summary>
+        public readonly struct AccountHolding
+        {
+            public readonly string Currency;
+            public readonly uint AccountId;
+            public readonly long Banked;
+            public readonly long Items;
+            /// <summary>Seconds from the account's newest game login (any character) to the snapshot; 0 while online, null if never.</summary>
+            public readonly long? IdleSeconds;
+
+            public AccountHolding(string currency, uint accountId, long banked, long items, long? idleSeconds)
+            {
+                Currency = currency;
+                AccountId = accountId;
+                Banked = banked;
+                Items = items;
+                IdleSeconds = idleSeconds;
+            }
+        }
+
+        /// <summary>
         /// Starts a supply snapshot on a pool thread. Returns false if one is already running or the tables are not
         /// ready. Today's row for each currency is replaced, so running it more than once a day is safe.
         /// </summary>
@@ -843,7 +869,7 @@ namespace ACE.Server.Managers
                     // that follows takes a minute or two; item moves in that window are small timing noise)
                     var includeItems = ServerConfig.economy_snapshot_items.Value;
                     var net = TakeNetSinceSnapshot();
-                    var rows = ComputeSupply(includeItems);
+                    var rows = ComputeSupply(includeItems, started, out var holdings);
 
                     // The flows are compared with how much the supply changed since the previous snapshot, so both
                     // snapshots must have been counted the same way; after a change of economy_snapshot_items the
@@ -863,7 +889,7 @@ namespace ACE.Server.Managers
                         }
                     }
 
-                    SaveSupply(started.Date, rows);
+                    SaveSupply(started.Date, rows, holdings);
 
                     LastSnapshotUtc = started;
                     lastSnapshotCountedItems = includeItems;
@@ -871,6 +897,9 @@ namespace ACE.Server.Managers
 
                     log.Info($"[EconomyLedger] Supply snapshot ({reason}) written in {(DateTime.UtcNow - started).TotalSeconds:N1} s: " +
                              string.Join(", ", rows.Select(r => $"{r.Currency}={r.Banked + r.Items:N0}")));
+
+                    // the Economy page's minute-long caches still hold the previous snapshot's per-account figures
+                    EconomyReports.InvalidateCaches();
 
                     // who gained an enlightenment or an aug since the last snapshot (has its own error handling)
                     EconomyProgress.Update();
@@ -955,13 +984,18 @@ namespace ACE.Server.Managers
             return row;
         }
 
-        private static List<SupplyRow> ComputeSupply(bool includeItems)
+        private static List<SupplyRow> ComputeSupply(bool includeItems, DateTime takenUtc, out List<AccountHolding> holdings)
         {
             var activeSince = DateTimeOffset.UtcNow.AddDays(-ActiveDays).ToUnixTimeSeconds();
+            var takenUnix = new DateTimeOffset(DateTime.SpecifyKind(takenUtc, DateTimeKind.Utc)).ToUnixTimeSeconds();
             var players = PlayerManager.GetAllPlayers();
+            var lastLogins = LoadCharacterLogins();
 
             // char -> (admin, active)
             var info = new Dictionary<uint, (bool admin, bool active)>(players.Count);
+            // char -> account, and account -> seconds since its newest game login (online = 0)
+            var accountOf = new Dictionary<uint, uint>(players.Count);
+            var idleOf = new Dictionary<uint, long>();
             // per currency: char -> banked
             var banked = Currencies.Select(_ => new Dictionary<uint, long>()).ToArray();
 
@@ -969,8 +1003,20 @@ namespace ACE.Server.Managers
             {
                 var charId = player.Guid.Full;
                 var admin = (player.Account?.AccessLevel ?? 0) > 0;
-                var active = player is Player || (player.GetProperty(PropertyFloat.LoginTimestamp) ?? 0) >= activeSince;
+                lastLogins.TryGetValue(charId, out var login);
+                var active = player is Player || login >= activeSince;
                 info[charId] = (admin, active);
+
+                var accountId = player.Account?.AccountId ?? 0;
+                if (!admin && accountId != 0)
+                {
+                    accountOf[charId] = accountId;
+                    if (player is Player || login > 0)
+                    {
+                        var idle = player is Player ? 0 : Math.Max(0, takenUnix - (long)login);
+                        idleOf[accountId] = idleOf.TryGetValue(accountId, out var known) ? Math.Min(known, idle) : idle;
+                    }
+                }
 
                 foreach (var currency in Currencies)
                 {
@@ -1005,7 +1051,90 @@ namespace ACE.Server.Managers
                 })));
             }
 
+            holdings = HoldingsBuilder.Build(Currencies.Select(c => c.Key).ToList(), banked, items, accountOf, idleOf);
             return rows;
+        }
+
+        /// <summary>
+        /// Kept apart from EconomyLedger's own static fields (whose setup reads the world database), so it can be unit
+        /// tested on its own.
+        /// </summary>
+        /// <summary>
+        /// Every non-deleted character's last game login (character.last_Login_Timestamp, unix seconds): the same column
+        /// the leaderboards' activity window reads, so the Economy page and the leaderboards always agree on who is
+        /// active. The login float on the biota is saved separately and can lag behind it.
+        /// </summary>
+        internal static Dictionary<uint, double> LoadCharacterLogins()
+        {
+            using var ctx = new ShardDbContext();
+            return ctx.Character
+                .AsNoTracking()
+                .Where(c => !c.IsDeleted)
+                .Select(c => new { c.Id, c.LastLoginTimestamp })
+                .ToDictionary(c => c.Id, c => c.LastLoginTimestamp);
+        }
+
+        /// <summary>The newest stamp already saved (MAX supply taken_utc), or null when there is none.</summary>
+        private static DateTime? LoadLastSavedStamp()
+        {
+            using var ctx = new ShardDbContext();
+            var con = OpenConnection(ctx);
+            using var cmd = NewCommand(con);
+            cmd.CommandText = "SELECT MAX(`taken_utc`) FROM `economy_supply_daily`";
+            var value = cmd.ExecuteScalar();
+            return value == null || value is DBNull ? null : DateTime.SpecifyKind(Convert.ToDateTime(value), DateTimeKind.Utc);
+        }
+
+        /// <summary>The stamp of the last saved snapshot (supply taken_utc = holdings snapshot_utc), so the next is always later.</summary>
+        private static DateTime? lastSavedStamp;
+
+        internal static class HoldingsBuilder
+        {
+            /// <summary>
+            /// The stamp for a snapshot saved at <paramref name="nowUtc"/>: whole seconds (what the datetime columns keep) and
+            /// always later than <paramref name="lastStamp"/>, so two snapshots within one second never share a stamp and
+            /// one's holdings can never be read as the other's. Pure; unit tested.
+            /// </summary>
+            internal static DateTime NextStamp(DateTime nowUtc, DateTime? lastStamp)
+            {
+                var stamp = new DateTime(nowUtc.Ticks - nowUtc.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
+                return lastStamp.HasValue && stamp <= lastStamp.Value ? lastStamp.Value.AddSeconds(1) : stamp;
+            }
+
+            /// <summary>
+            /// Adds each currency up per account. <paramref name="banked"/> and <paramref name="items"/> are indexed like
+            /// <paramref name="currencyKeys"/> (char id -> amount). Staff and unknown characters are already left out of
+            /// <paramref name="accountOf"/>. Negative balances count as zero, accounts holding nothing are skipped. Pure; unit tested.
+            /// </summary>
+            internal static List<AccountHolding> Build(IReadOnlyList<string> currencyKeys, Dictionary<uint, long>[] banked, Dictionary<uint, long>[] items,
+                Dictionary<uint, uint> accountOf, Dictionary<uint, long> idleOf)
+            {
+                var result = new List<AccountHolding>();
+
+                for (var index = 0; index < currencyKeys.Count; index++)
+                {
+                    var perAccount = new Dictionary<uint, (long banked, long items)>();
+
+                    void Add(Dictionary<uint, long> source, bool isItems)
+                    {
+                        foreach (var (charId, amount) in source)
+                        {
+                            if (amount <= 0 || !accountOf.TryGetValue(charId, out var accountId))
+                                continue;
+                            perAccount.TryGetValue(accountId, out var t);
+                            perAccount[accountId] = isItems ? (t.banked, t.items + amount) : (t.banked + amount, t.items);
+                        }
+                    }
+
+                    Add(banked[index], false);
+                    Add(items[index], true);
+
+                    foreach (var (accountId, t) in perAccount)
+                        result.Add(new AccountHolding(currencyKeys[index], accountId, t.banked, t.items, idleOf.TryGetValue(accountId, out var idle) ? idle : null));
+                }
+
+                return result;
+            }
         }
 
         /// <summary>Pause between the per-item queries of the pack count, so its disk reads are spread out.</summary>
@@ -1078,8 +1207,14 @@ namespace ACE.Server.Managers
             }
         }
 
-        private static void SaveSupply(DateTime day, List<SupplyRow> rows)
+        private static void SaveSupply(DateTime day, List<SupplyRow> rows, List<AccountHolding> holdings)
         {
+            // one stamp for the supply rows and the holdings written for them (whole seconds, as the datetime columns
+            // store it): the reports only use holdings whose stamp matches the day's supply row, so rows left over from
+            // an earlier same-day snapshot are ignored even if replacing them fails
+            var savedAt = HoldingsBuilder.NextStamp(DateTime.UtcNow, lastSavedStamp);
+            lastSavedStamp = savedAt;
+
             using var ctx = new ShardDbContext();
             var con = OpenConnection(ctx);
             using var tx = con.BeginTransaction();
@@ -1107,7 +1242,79 @@ namespace ACE.Server.Managers
                 AddParam(cmd, "@l", row.LargestHolder);
                 AddParam(cmd, "@ad", row.AdminSupply);
                 AddParam(cmd, "@fn", row.FlowNet);
-                AddParam(cmd, "@u", DateTime.UtcNow);
+                AddParam(cmd, "@u", savedAt);
+                cmd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+
+            // the new supply is visible from here on: drop cached account figures of the previous snapshot now,
+            // not only once the holdings are written (until then the new stamp matches no holdings, so the page
+            // shows its fallback instead of old account totals)
+            EconomyReports.InvalidateCaches();
+
+            // the per-account rows only feed the page's activity filter: if they cannot be written, the day's supply
+            // (which the flow checks depend on) is already saved and stays valid
+            try
+            {
+                SaveHoldings(con, day, savedAt, holdings);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[EconomyLedger] Saving per-account holdings for {day:yyyy-MM-dd} failed (the supply snapshot itself was saved): {ex.Message}");
+
+                // rows from an earlier snapshot the same day no longer match the supply just saved: better no
+                // per-account data for the day (the page falls back to the stored figures) than mismatched data
+                try
+                {
+                    using var del = NewCommand(con);
+                    del.CommandTimeout = 60;
+                    del.CommandText = "DELETE FROM `economy_holdings_daily` WHERE `day_utc` = @d";
+                    AddParam(del, "@d", day);
+                    del.ExecuteNonQuery();
+                }
+                catch (Exception cleanupEx)
+                {
+                    log.Error($"[EconomyLedger] Clearing stale holdings for {day:yyyy-MM-dd} failed too: {cleanupEx.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Replaces the day's per-account holdings in one transaction (a second snapshot on the same day must not leave
+        /// rows for an account that has since emptied its balance).
+        /// </summary>
+        private static void SaveHoldings(DbConnection con, DateTime day, DateTime savedAt, List<AccountHolding> holdings)
+        {
+            using var tx = con.BeginTransaction();
+
+            using (var del = NewCommand(con))
+            {
+                del.Transaction = tx;
+                del.CommandTimeout = 60;
+                del.CommandText = "DELETE FROM `economy_holdings_daily` WHERE `day_utc` = @d";
+                AddParam(del, "@d", day);
+                del.ExecuteNonQuery();
+            }
+
+            foreach (var batch in holdings.Chunk(BatchRows))
+            {
+                using var cmd = NewCommand(con);
+                cmd.Transaction = tx;
+                var sb = new StringBuilder("INSERT INTO `economy_holdings_daily` (`day_utc`,`currency`,`account_id`,`banked`,`items`,`idle_seconds`,`snapshot_utc`) VALUES ");
+                AddParam(cmd, "@d", day);
+                AddParam(cmd, "@t", savedAt);
+                for (var i = 0; i < batch.Length; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    sb.Append($"(@d,@c{i},@a{i},@b{i},@i{i},@s{i},@t)");
+                    AddParam(cmd, $"@c{i}", batch[i].Currency);
+                    AddParam(cmd, $"@a{i}", batch[i].AccountId);
+                    AddParam(cmd, $"@b{i}", batch[i].Banked);
+                    AddParam(cmd, $"@i{i}", batch[i].Items);
+                    AddParam(cmd, $"@s{i}", batch[i].IdleSeconds);
+                }
+                cmd.CommandText = sb.ToString();
                 cmd.ExecuteNonQuery();
             }
 
@@ -1204,7 +1411,7 @@ namespace ACE.Server.Managers
         private static void StartCleanup()
         {
             var days = ServerConfig.economy_ledger_retention_days.Value;
-            if (days <= 0)
+            if (days <= 0 && ServerConfig.economy_holder_retention_days.Value <= 0)
                 return;
 
             if (Interlocked.CompareExchange(ref cleanupRunning, 1, 0) != 0)
@@ -1221,7 +1428,7 @@ namespace ACE.Server.Managers
                     using var ctx = new ShardDbContext();
                     var con = OpenConnection(ctx);
 
-                    while (true)
+                    while (days > 0)
                     {
                         using var cmd = NewCommand(con);
                         cmd.CommandText = $"DELETE FROM `economy_flow_daily` WHERE `day_utc` < @cutoff LIMIT {CleanupBatchRows}";
@@ -1239,6 +1446,10 @@ namespace ACE.Server.Managers
 
                     if (total > 0)
                         log.Info($"[EconomyLedger] Retention ({days} days): deleted {total:N0} flow rows older than {cutoff:yyyy-MM-dd}");
+
+                    total = DeleteOldHoldings(con);
+                    if (total > 0)
+                        log.Info($"[EconomyLedger] Retention ({ServerConfig.economy_holder_retention_days.Value} days): deleted {total:N0} holdings rows");
                 }
                 catch (Exception ex)
                 {
@@ -1249,6 +1460,33 @@ namespace ACE.Server.Managers
                     Interlocked.Exchange(ref cleanupRunning, 0);
                 }
             });
+        }
+
+        /// <summary>Deletes per-account holdings older than economy_holder_retention_days, in small batches. Returns the rows deleted.</summary>
+        private static long DeleteOldHoldings(DbConnection con)
+        {
+            var days = ServerConfig.economy_holder_retention_days.Value;
+            if (days <= 0)
+                return 0;
+
+            var cutoff = DateTime.UtcNow.Date.AddDays(-days);
+            long total = 0;
+
+            while (true)
+            {
+                using var cmd = NewCommand(con);
+                cmd.CommandText = $"DELETE FROM `economy_holdings_daily` WHERE `day_utc` < @cutoff LIMIT {CleanupBatchRows}";
+                cmd.CommandTimeout = 30;
+                AddParam(cmd, "@cutoff", cutoff);
+
+                var deleted = cmd.ExecuteNonQuery();
+                total += deleted;
+
+                if (deleted < CleanupBatchRows)
+                    return total;
+
+                Thread.Sleep(200);
+            }
         }
 
         // ---- database ----------------------------------------------------------------------------------------------
@@ -1326,6 +1564,20 @@ CREATE TABLE IF NOT EXISTS `economy_flow_daily` (
   PRIMARY KEY (`day_utc`, `currency`, `char_id`, `form`, `source`, `detail_key`),
   KEY `ix_currency_day` (`currency`, `day_utc`),
   KEY `ix_char_day` (`char_id`, `day_utc`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            // one row per account and currency per snapshot day; idle_seconds = time since the account's newest game
+            // login at the snapshot, which the Economy page filters on ("active in the last N days")
+            Execute(@"
+CREATE TABLE IF NOT EXISTS `economy_holdings_daily` (
+  `day_utc`       date          NOT NULL,
+  `currency`      varchar(32)   NOT NULL,
+  `account_id`    int unsigned  NOT NULL,
+  `banked`        bigint        NOT NULL DEFAULT 0,
+  `items`         bigint        NOT NULL DEFAULT 0,
+  `idle_seconds`  bigint        NULL,
+  `snapshot_utc`  datetime      NOT NULL,
+  PRIMARY KEY (`day_utc`, `currency`, `account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
             Execute(@"

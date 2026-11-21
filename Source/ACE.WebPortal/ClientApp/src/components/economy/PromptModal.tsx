@@ -2,13 +2,13 @@ import { useRef, useState } from 'react'
 import { Copy, Download, X } from 'lucide-react'
 import type { EconomyPrompt } from '../../types/economy'
 import { ErrorState, LoadingState, Segmented } from '../pyreal-ledger/LedgerShared'
-import { useEconomyFetch } from './economyUtils'
+import { activeDaysQuery, useEconomyFetch } from './economyUtils'
 
 /** Modal that fetches a ready-to-paste economy analysis prompt for Claude. */
-export default function PromptModal({ currencyKey, days, onClose }: { currencyKey: string | null; days: number; onClose: () => void }) {
+export default function PromptModal({ currencyKey, days, active, onClose }: { currencyKey: string | null; days: number; active: number | null; onClose: () => void }) {
   const [scope, setScope] = useState<'one' | 'all'>(currencyKey ? 'one' : 'all')
   const key = scope === 'one' && currencyKey ? currencyKey : 'all'
-  const { data, loading, error } = useEconomyFetch<EconomyPrompt>(`/prompt?currency=${encodeURIComponent(key)}&days=${days}`)
+  const { data, loading, error } = useEconomyFetch<EconomyPrompt>(`/prompt?currency=${encodeURIComponent(key)}&days=${days}${activeDaysQuery(active)}`)
   const [notice, setNotice] = useState('')
   const areaRef = useRef<HTMLTextAreaElement>(null)
 

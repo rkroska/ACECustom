@@ -18,6 +18,19 @@ export interface EconomySupply {
   flowNet: number | null
   /** Supply change since the previous snapshot that no recorded flow accounts for. */
   unexplained: number | null
+  /** The snapshot per account, limited by the page's activity filter; null for days without per-account rows. */
+  accounts: EconomyAccountView | null
+}
+
+/** One snapshot added up per account, keeping accounts that played within activeDays of it (0 = all). */
+export interface EconomyAccountView {
+  activeDays: number
+  banked: number
+  items: number
+  total: number
+  accounts: number
+  top1PctAmount: number
+  largestHolder: number
 }
 
 export interface EconomyChange {
@@ -40,6 +53,8 @@ export interface EconomySeriesPoint {
   items: number
   total: number
   activeSupply: number
+  /** Supply of the accounts the activity filter keeps; null for days without per-account rows. */
+  filteredTotal: number | null
 }
 
 export interface EconomyFlowPoint {
@@ -71,6 +86,11 @@ export interface EconomyOverview {
   lastSnapshotUtc: string | null
   targetMinWeeklyPct: number
   targetMaxWeeklyPct: number
+  /** Activity filter applied to the per-account figures (0 = all accounts). */
+  activeDays: number
+  activeDayOptions: number[]
+  /** First snapshot day with per-account rows, or null if none yet. */
+  accountsSince: string | null
   currencies: CurrencySummary[]
 }
 
@@ -108,6 +128,8 @@ export interface EconomyHolderRow {
   accountId: number
   banked: number
   lastLoginUtc: string | null
+  /** Newest game login of any character on the account (what the activity filter uses). */
+  accountLastLoginUtc: string | null
 }
 
 export interface EconomySettingRow {
@@ -117,6 +139,7 @@ export interface EconomySettingRow {
 }
 
 export interface CurrencyDetail {
+  activeDays: number
   summary: CurrencySummary
   sources: EconomySourceRow[]
   faucets: EconomyDetailRow[]
@@ -131,6 +154,7 @@ export interface EconomyPrompt {
   text: string
   currency: string
   days: number
+  activeDays: number
 }
 
 export interface EconomySnapshotResult {
