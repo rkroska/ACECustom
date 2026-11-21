@@ -381,11 +381,6 @@ namespace ACE.Server.Entity
             availableSkillCredits += player.QuestManager.GetCurrentSolves("OswaldManualCompleted");  // additional quest skill credit
             availableSkillCredits += player.QuestManager.GetCurrentSolves("LumAugSkillQuest");   // additional quest skill credits
 
-            // a skill credit for each Specialized Skill Augmentation: all of them are in the rebuilt pool, so none are owed afterwards
-            var specAugCredits = Player.SpecAugSkillCreditsOwed(player.LuminanceAugmentSpecializeCount ?? 0, 0);
-            availableSkillCredits += specAugCredits;
-            player.SpecAugSkillCreditsGranted = specAugCredits;
-
             player.AvailableSkillCredits = availableSkillCredits;
 
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));

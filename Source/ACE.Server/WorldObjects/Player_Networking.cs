@@ -96,10 +96,6 @@ namespace ACE.Server.WorldObjects
             // item's ItemUseable from that first look)
             ItemBounties.OnLogin(this);
 
-            // Specialized Skill Augmentations give a skill credit each (owner 2026-11-19): augs bought before that, or not yet paid,
-            // get their credits here, before SendSelf, so the character description carries the new total
-            var specAugCredits = GrantSpecAugSkillCredits();
-
             // SendSelf will trigger the entrance into portal space
             SendSelf();
             MarkPortalSpaceEntered();
@@ -152,17 +148,6 @@ namespace ACE.Server.WorldObjects
             // check if vassals earned XP while offline
             HandleAllegianceOnLogin();
             HandleHouseOnLogin();
-
-            if (specAugCredits > 0)
-            {
-                var specAugChain = new ActionChain();
-                specAugChain.AddDelaySeconds(5.0f);
-                specAugChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
-                {
-                    SendMessage($"Your Specialized Skill Augmentations now each give a skill credit: {specAugCredits:N0} skill credits have been added to your available credits.", ChatMessageType.Broadcast);
-                });
-                specAugChain.EnqueueChain();
-            }
 
             if (ConfigManager.Config.PatchNotes?.MotdEnabled == true)
             {

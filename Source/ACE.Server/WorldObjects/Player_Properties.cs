@@ -1475,15 +1475,6 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugSpecializeCount); else SetProperty(PropertyInt64.LumAugSpecializeCount, value.Value); }
         }
 
-        /// <summary>
-        /// The skill credits already given for Specialized Skill Augmentations, one per aug (see GrantSpecAugSkillCredits)
-        /// </summary>
-        public long? SpecAugSkillCreditsGranted
-        {
-            get => GetProperty(PropertyInt64.SpecAugSkillCreditsGranted);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.SpecAugSkillCreditsGranted); else SetProperty(PropertyInt64.SpecAugSkillCreditsGranted, value.Value); }
-        }
-
         public long? LuminanceAugmentSummonCount
         {
             get => GetProperty(PropertyInt64.LumAugSummonCount) ?? 0;
