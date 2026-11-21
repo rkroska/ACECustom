@@ -162,6 +162,23 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void SnapshotStamp_IsWholeSeconds_AndAlwaysLaterThanTheLast()
+        {
+            var t = new DateTime(2026, 11, 21, 10, 0, 5, DateTimeKind.Utc).AddMilliseconds(400);
+            var first = EconomyLedger.HoldingsBuilder.NextStamp(t, null);
+            Assert.AreEqual(new DateTime(2026, 11, 21, 10, 0, 5, DateTimeKind.Utc), first);
+
+            // a second snapshot finishing within the same second (or on a clock that stepped back) gets a later stamp
+            var second = EconomyLedger.HoldingsBuilder.NextStamp(t.AddMilliseconds(300), first);
+            Assert.AreEqual(first.AddSeconds(1), second);
+            var third = EconomyLedger.HoldingsBuilder.NextStamp(t.AddSeconds(-30), second);
+            Assert.AreEqual(second.AddSeconds(1), third);
+
+            // normally the stamp is just the time
+            Assert.AreEqual(first.AddMinutes(5), EconomyLedger.HoldingsBuilder.NextStamp(t.AddMinutes(5), third));
+        }
+
+        [TestMethod]
         public void AccountHoldings_UnknownLogin_IsNull_AndCurrenciesStayApart()
         {
             var banked = Empty();

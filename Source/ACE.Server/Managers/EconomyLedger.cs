@@ -1055,8 +1055,22 @@ namespace ACE.Server.Managers
         /// Kept apart from EconomyLedger's own static fields (whose setup reads the world database), so it can be unit
         /// tested on its own.
         /// </summary>
+        /// <summary>The stamp of the last saved snapshot (supply taken_utc = holdings snapshot_utc), so the next is always later.</summary>
+        private static DateTime? lastSavedStamp;
+
         internal static class HoldingsBuilder
         {
+            /// <summary>
+            /// The stamp for a snapshot saved at <paramref name="nowUtc"/>: whole seconds (what the datetime columns keep) and
+            /// always later than <paramref name="lastStamp"/>, so two snapshots within one second never share a stamp and
+            /// one's holdings can never be read as the other's. Pure; unit tested.
+            /// </summary>
+            internal static DateTime NextStamp(DateTime nowUtc, DateTime? lastStamp)
+            {
+                var stamp = new DateTime(nowUtc.Ticks - nowUtc.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
+                return lastStamp.HasValue && stamp <= lastStamp.Value ? lastStamp.Value.AddSeconds(1) : stamp;
+            }
+
             /// <summary>
             /// Adds each currency up per account. <paramref name="banked"/> and <paramref name="items"/> are indexed like
             /// <paramref name="currencyKeys"/> (char id -> amount). Staff and unknown characters are already left out of
@@ -1168,8 +1182,8 @@ namespace ACE.Server.Managers
             // one stamp for the supply rows and the holdings written for them (whole seconds, as the datetime columns
             // store it): the reports only use holdings whose stamp matches the day's supply row, so rows left over from
             // an earlier same-day snapshot are ignored even if replacing them fails
-            var savedAt = DateTime.UtcNow;
-            savedAt = savedAt.AddTicks(-(savedAt.Ticks % TimeSpan.TicksPerSecond));
+            var savedAt = HoldingsBuilder.NextStamp(DateTime.UtcNow, lastSavedStamp);
+            lastSavedStamp = savedAt;
 
             using var ctx = new ShardDbContext();
             var con = OpenConnection(ctx);
@@ -1203,6 +1217,11 @@ namespace ACE.Server.Managers
             }
 
             tx.Commit();
+
+            // the new supply is visible from here on: drop cached account figures of the previous snapshot now,
+            // not only once the holdings are written (until then the new stamp matches no holdings, so the page
+            // shows its fallback instead of old account totals)
+            EconomyReports.InvalidateCaches();
 
             // the per-account rows only feed the page's activity filter: if they cannot be written, the day's supply
             // (which the flow checks depend on) is already saved and stays valid
