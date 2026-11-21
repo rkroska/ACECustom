@@ -154,7 +154,9 @@ namespace ACE.Database.Adapter
             {
                 result.PropertiesCreateList = new Collection<PropertiesCreateList>();
 
-                foreach (var record in weenie.WeeniePropertiesCreateList)
+                // in row id order: a vendor lists its shop in create list order (Vendor.LoadInventory), and the query and the
+                // HashSet the rows come in don't promise one
+                foreach (var record in weenie.WeeniePropertiesCreateList.OrderBy(r => r.Id))
                 {
                     var newEntity = new PropertiesCreateList
                     {
@@ -555,7 +557,7 @@ namespace ACE.Database.Adapter
 
             // Properties for all world objects that typically aren't modified over the original weenie
 
-            foreach (var value in weenie.WeeniePropertiesCreateList)
+            foreach (var value in weenie.WeeniePropertiesCreateList.OrderBy(r => r.Id))   // row id order, as in ConvertToEntityWeenie
             {
                 result.BiotaPropertiesCreateList.Add(new BiotaPropertiesCreateList
                 {
