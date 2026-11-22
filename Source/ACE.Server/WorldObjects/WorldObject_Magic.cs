@@ -193,7 +193,7 @@ namespace ACE.Server.WorldObjects
             // outright by a tier-11+ monster, whatever the skill check said. Same all-or-nothing
             // rule as melee/missile in DamageEvent.
             if (!resisted && this is Creature gateCaster
-                && !ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(gateCaster, targetCreature))
+                && !ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(gateCaster, targetCreature, ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, itemCaster)))
                 resisted = true;
 
             var player = this as Player;

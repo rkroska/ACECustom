@@ -245,34 +245,14 @@ namespace ACE.Server.WorldObjects.Managers
             { "Specialize", 266 },
         };
 
-        /// <summary>Charm of the Triune Weave. The charm must be in inventory to use Gems; progress lives on the player (PropertyInt64.TriuneWeaveCount), never on the item.</summary>
-        private const uint TriuneCharmWcid = 777700030;
-
-        private sealed class SchoolCharmDef
-        {
-            public string FullName;
-            public uint CharmWcid;
-            public uint Mote1;
-            public uint Mote10;
-            public uint Mote50;
-            public uint Mote100;
-            public PropertyInt64 CountProperty;
-        }
-
         /// <summary>
-        /// School charms keyed by their gem emote-message prefix. Each counter feeds its own school's
-        /// Effective*AugCount, which is how a player gets past the 4,000 cap - the cap bounds
-        /// luminance purchases, the charm is a separate path bought with Prestige Coins. The cap
-        /// check below deliberately still reads the RAW count, so a charm never eats purchase
-        /// headroom.
+        /// The four attack school gem emote prefixes (War / Void / Melee / Missile). Since 2026-11-22 (Triune retire) only an
+        /// EARNED +1 gem does anything (SchoolGems.TryUse); the school charms are keepsakes and nothing reads them here.
         /// </summary>
-        private static readonly Dictionary<string, SchoolCharmDef> SchoolCharms = new Dictionary<string, SchoolCharmDef>
-        {
-            { "Wrath",    new SchoolCharmDef { FullName = "Charm of the Battlemage's Wrath", CharmWcid = 777700051, Mote1 = 777700052, Mote10 = 777700053, Mote50 = 777700054, Mote100 = 777700055, CountProperty = PropertyInt64.BattlemagesWrathCharmCount } },
-            { "Nether",   new SchoolCharmDef { FullName = "Charm of the Nether Veil",    CharmWcid = 777700056, Mote1 = 777700057, Mote10 = 777700058, Mote50 = 777700059, Mote100 = 777700060, CountProperty = PropertyInt64.NetherVeilCharmCount } },
-            { "Steel",    new SchoolCharmDef { FullName = "Charm of Crashing Steel",     CharmWcid = 777700061, Mote1 = 777700062, Mote10 = 777700063, Mote50 = 777700064, Mote100 = 777700065, CountProperty = PropertyInt64.CrashingSteelCharmCount } },
-            { "TrueShot", new SchoolCharmDef { FullName = "Charm of the True Shot",      CharmWcid = 777700066, Mote1 = 777700067, Mote10 = 777700068, Mote50 = 777700069, Mote100 = 777700070, CountProperty = PropertyInt64.TrueShotCharmCount } },
-        };
+        private static readonly HashSet<string> SchoolCharms = new HashSet<string> { "Wrath", "Nether", "Steel", "TrueShot" };
+
+        /// <summary>What a retired gem (Triune, an unstamped attack school gem) says when used (owner 2026-11-22). It stays put.</summary>
+        private const string RetiredGemLine = "This gem is no longer used. Its power now lives in your augmentations.";
 
         /// <summary>
         /// Checked both when the gem is used and again inside the confirmation callback (before any
@@ -281,6 +261,8 @@ namespace ACE.Server.WorldObjects.Managers
         private static bool CheckAugmentationCap(Player player, string school, long currentCount, int augCount)
         {
             var cap = AugmentationCaps[school];
+            // one stat (owner 2026-11-22): the count already holds everything earned from kills and gems, so luminance buys
+            // stop at the cap however the count got there - and nothing ever lowers a count above it
             if (currentCount + augCount <= cap)
                 return true;
 
@@ -1179,7 +1161,10 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (targetObject != null)
                     {
-                        var stat = targetObject.GetProperty((PropertyInt64)emote.Stat);
+                        // an aug school on a creature reads used gems + the T11-T14 drip (GetInt64ForGate)
+                        var stat = targetObject is Creature gateCreature
+                            ? gateCreature.GetInt64ForGate((PropertyInt64)emote.Stat)
+                            : targetObject.GetProperty((PropertyInt64)emote.Stat);
 
                         // bank lock (/banklock): a locked bank reads as empty, so an NPC never takes payment it can't collect
                         if (targetObject is Player inqBankPlayer && BankLock.IsBankProperty((PropertyInt64)emote.Stat) && inqBankPlayer.IsBankLocked)
@@ -2809,10 +2794,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // price floor (owner 2026-11-08): a T11-T14 drip player's gems are priced from max(used, the own tier's entry)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Creature", creatureAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = creatureAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -2899,10 +2886,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // price floor (owner 2026-11-08): a T11-T14 drip player's gems are priced from max(used, the own tier's entry)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Item", itemAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = itemAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -2988,10 +2977,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // price floor (owner 2026-11-08): a T11-T14 drip player's gems are priced from max(used, the own tier's entry)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Life", lifeAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = lifeAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -3077,10 +3068,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // a school fed by the T11-T14 drip is priced as if those points were used (TriuneEarning.GemPriceCount)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "War", warAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = warAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -3165,10 +3158,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // a school fed by the T11-T14 drip is priced as if those points were used (TriuneEarning.GemPriceCount)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Void", voidAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = voidAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -3253,10 +3248,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // a school fed by the T11-T14 drip is priced as if those points were used (TriuneEarning.GemPriceCount)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Melee", meleeAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = meleeAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -3341,10 +3338,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // a school fed by the T11-T14 drip is priced as if those points were used (TriuneEarning.GemPriceCount)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Missile", missileAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = missileAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -3680,39 +3679,9 @@ namespace ACE.Server.WorldObjects.Managers
                             case "Triune10":
                             case "Triune50":
                             case "Triune100":
-                                {
-                                    // Gems are bought with Prestige Coins, so no luminance cost and no cap here.
-                                    int augCount = emote.Message == "Triune" ? 1 :
-                                                   emote.Message == "Triune10" ? 10 :
-                                                   emote.Message == "Triune50" ? 50 :
-                                                   emote.Message == "Triune100" ? 100 : 0;
-
-                                    if (player.GetNumInventoryItemsOfWCID(TriuneCharmWcid) == 0)
-                                    {
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must possess a Charm of the Triune Weave to use this gem.", ChatMessageType.Broadcast));
-                                        break;
-                                    }
-
-                                    int moteId = augCount == 1 ? 777700031 :
-                                                 augCount == 10 ? 777700032 :
-                                                 augCount == 50 ? 777700033 :
-                                                 augCount == 100 ? 777700034 : 0;
-
-                                    // No confirmation dialog (owner, 2026-08-15): using the gem is
-                                    // itself the deliberate act, and the gem is bought with coins
-                                    // rather than spent from luminance, so there is nothing to
-                                    // second-guess. Consume before granting, so a failed consume
-                                    // never awards a free point.
-                                    if (moteId == 0 || !player.TryConsumeFromInventoryWithNetworking((uint)moteId, 1))
-                                    {
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to consume the gem. Please try again.", ChatMessageType.Broadcast));
-                                        break;
-                                    }
-
-                                    player.TriuneWeaveCount = (player.TriuneWeaveCount ?? 0) + augCount;
-                                    player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.TriuneWeaveCount, player.TriuneWeaveCount ?? 0));
-                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your Triune Weave has been empowered by {augCount:N0}, and now stands at {player.TriuneWeaveCount:N0}!", ChatMessageType.Broadcast));
-                                }
+                                // RETIRED 2026-11-22 (Triune retire): the Triune Weave lives in Creature / Item / Life now. The gem
+                                // does nothing and is kept - never consumed, never deleted.
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat(RetiredGemLine, ChatMessageType.Broadcast));
                                 break;
                             case "Wrath":
                             case "Wrath10":
@@ -3737,42 +3706,16 @@ namespace ACE.Server.WorldObjects.Managers
                                                    moteMessage.EndsWith("10") ? 10 : 1;
                                     var prefix = augCount == 1 ? moteMessage : moteMessage.Substring(0, moteMessage.Length - (augCount == 100 ? 3 : 2));
 
-                                    if (!SchoolCharms.TryGetValue(prefix, out var charm))
+                                    if (!SchoolCharms.Contains(prefix))
                                         break;
 
-                                    // School gems past the cap (owner 2026-11-01): an EARNED +1 gem has its own rules (earner only,
-                                    // the gem's tier ceiling, no charm item, free) - SchoolGems.TryUse; an old unstamped gem falls through
+                                    // An EARNED +1 gem (owner 2026-11-01) adds +1 straight onto the school's augmentations (one stat,
+                                    // 2026-11-22) - SchoolGems.TryUse. Every other gem of these schools (unstamped, the 10 / 50 / 100
+                                    // packs) is RETIRED 2026-11-22: it does nothing and is kept - never consumed, never deleted.
                                     if (augCount == 1 && ACE.Server.Managers.ZoneControl.SchoolGems.TryUse(player, WorldObject))
                                         break;
 
-                                    if (player.GetNumInventoryItemsOfWCID(charm.CharmWcid) == 0)
-                                    {
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must possess a {charm.FullName} to use this gem.", ChatMessageType.Broadcast));
-                                        break;
-                                    }
-
-                                    uint moteId = augCount == 1 ? charm.Mote1 :
-                                                  augCount == 10 ? charm.Mote10 :
-                                                  augCount == 50 ? charm.Mote50 : charm.Mote100;
-
-                                    // No confirmation dialog (owner, 2026-08-15) - see the Triune
-                                    // case above. Consume before granting. The gem being used, not the first of its wcid
-                                    // (2026-11-01): an earned +1 gem shares the wcid and must never be eaten by this path.
-                                    // If something other than the gem ran this emote, take the first UNSTAMPED gem of that wcid - an
-                                    // earned gem only ever pays through SchoolGems.TryUse.
-                                    var usedThis = WorldObject != null && WorldObject.WeenieClassId == moteId;
-                                    var gemToUse = usedThis ? WorldObject
-                                        : player.GetInventoryItemsOfWCID(moteId).FirstOrDefault(g => ACE.Server.Managers.ZoneControl.SchoolGems.Stamp(g) == null);
-                                    if (gemToUse == null || !player.TryConsumeFromInventoryWithNetworking(gemToUse, 1))
-                                    {
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to consume the gem. Please try again.", ChatMessageType.Broadcast));
-                                        break;
-                                    }
-
-                                    var newCount = (player.GetProperty(charm.CountProperty) ?? 0) + augCount;
-                                    player.SetProperty(charm.CountProperty, newCount);
-                                    player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, charm.CountProperty, newCount));
-                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {charm.FullName} has been empowered by {augCount:N0}, and now stands at {newCount:N0}!", ChatMessageType.Broadcast));
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(RetiredGemLine, ChatMessageType.Broadcast));
                                 }
                                 break;
                             default:

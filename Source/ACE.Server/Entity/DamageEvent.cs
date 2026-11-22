@@ -257,7 +257,7 @@ namespace ACE.Server.Entity
             // T11+ HIT GATE (owner 2026-08-31): an under-augmented player cannot land on a
             // tier-11+ monster at all. Checked BEFORE Overpower on purpose - Overpower bypasses
             // evade, so leaving it first would let it punch straight through the gate.
-            if (!ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(attacker, defender))
+            if (!ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(attacker, defender, ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(CombatType)))
             {
                 Evaded = true;
                 return 0.0f;

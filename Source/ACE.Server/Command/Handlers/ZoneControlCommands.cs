@@ -5799,7 +5799,7 @@ namespace ACE.Server.Command.Handlers
             if (verb.Equals("curves", StringComparison.OrdinalIgnoreCase))
             {
                 Msg("Aug ladder - the interpolation basis for --curve augs:");
-                Msg("  tier   creature    item  triune    life   TOTAL   fraction");
+                Msg("  tier   creature    item    life   TOTAL   fraction");
                 var p11 = AugPowerAt(MinBoundedTier);
                 var p25 = AugPowerAt(MaxTunedTier);
                 for (var t = MinBoundedTier; t <= MaxTunedTier; t++)
@@ -5807,10 +5807,10 @@ namespace ACE.Server.Command.Handlers
                     var row = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(t);
                     var pw = AugPowerAt(t);
                     var frac = p25 > p11 ? (pw - p11) / (double)(p25 - p11) : 0.0;
-                    Msg($"  T{t,-4} {row?.MinWieldCreature ?? 0,8} {row?.MinWieldAugs ?? 0,7} {row?.MinWieldTriune ?? 0,7} {LifeAugCap,7} {pw,7}   {frac,7:0.000}");
+                    Msg($"  T{t,-4} {row?.MinWieldCreature ?? 0,8} {row?.MinWieldAugs ?? 0,7} {row?.MinWieldLife ?? 0,7} {pw,7}   {frac,7:0.000}");
                 }
-                Msg($"  Life is a CONSTANT {LifeAugCap} - a real capped player is 6000 + 4000 + 4000 = 14000 augs,");
-                Msg("  then 500 Triune per tier from T16 (owner 2026-09-01). It shifts the curve, not its shape.");
+                Msg("  TOTAL keeps the curve these tiers were tuned on: Creature + Item + a flat 4000 Life, plus ONE 500 per tier past");
+                Msg("  T15 (the old Triune step) - not the three 500s each school now climbs. It shifts the curve, not its shape.");
                 return;
             }
 
@@ -5909,6 +5909,10 @@ namespace ACE.Server.Command.Handlers
         /// (WeaponScalingManager, the same rows TierHitGate gates on, so the tuning basis and the gate
         /// can never drift) plus the flat Life cap.
         ///
+        /// Since the 2026-11-22 Triune retire a T16+ row asks Creature / Item / Life each +N where it used to ask N Triune.
+        /// The basis keeps the OLD numbers (one N, not three) so every curve authored with --curve augs reads the same:
+        /// N = the part of all three above 6,000 / 4,000 / 4,000, and C + I + 4,000 - N = the old C0 + I0 + N + 4,000.
+        ///
         /// The shape this produces is why the default curve is not linear: Creature and Item climb to
         /// their caps by T15 and then stop, and from T16 every remaining point is Triune. Growth is
         /// therefore about +1,000 per tier to T15 and +500 per tier after it.
@@ -5918,7 +5922,8 @@ namespace ACE.Server.Command.Handlers
             var row = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier);
             if (row == null)
                 return LifeAugCap;
-            return row.MinWieldCreature + row.MinWieldAugs + row.MinWieldTriune + LifeAugCap;
+            var pastCaps = Math.Max(0, Math.Min(row.MinWieldCreature - 6000, Math.Min(row.MinWieldAugs - 4000, row.MinWieldLife - 4000)));
+            return row.MinWieldCreature + row.MinWieldAugs + row.MinWieldTriune - pastCaps + LifeAugCap;
         }
 
         private static void HandleMobCheck(string zoneName, uint mobWcid, Action<string> Msg)

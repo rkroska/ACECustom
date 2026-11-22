@@ -96,6 +96,10 @@ namespace ACE.Server.WorldObjects
             // item's ItemUseable from that first look)
             ItemBounties.OnLogin(this);
 
+            // the Triune retire (2026-11-22): the one-time move of the retired counters onto the augmentations, the gem renames
+            // and the hunting numbers - before the description goes out, so it carries the new counts and none of the old
+            ACE.Server.Managers.ZoneControl.AugMove.OnLogin(this);
+
             // SendSelf will trigger the entrance into portal space
             SendSelf();
             MarkPortalSpaceEntered();

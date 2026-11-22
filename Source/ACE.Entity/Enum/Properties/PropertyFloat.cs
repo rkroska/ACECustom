@@ -416,12 +416,17 @@ namespace ACE.Entity.Enum.Properties
         /// The first coin kill 60 minutes or more after it starts a new hour. Server-only. See TierRewardScale.FalloffHour.</summary>
         PrestigeCoinHourStart = 57004,
 
-        /// <summary>Triune earning (owner 2026-11-01), on a CHARACTER: the part of a Triune Weave point earned from own-tier kills
-        /// that has not yet made a whole point (0 .. 1). Whole points go straight onto TriuneWeaveCount. Server-only.</summary>
+        /// <summary>RETIRED 2026-11-22 (Triune retire): the part of a Triune Weave point not yet whole. Nothing reads or writes it
+        /// any more (rewards carry their part in AugDripFraction); a stored value is left alone. Server-only.</summary>
         TriuneFraction = 57010,
 
-        /// <summary>Triune earning: own-tier kills counted this week (the week in PropertyInt64.TriuneWeekStart). Server-only.</summary>
+        /// <summary>Hunting rewards (Triune earning until 2026-11-22): own-tier kills counted this week (the week in
+        /// PropertyInt64.TriuneWeekStart). Server-only; the client gets a whole-number copy in PropertyInt64.AugHuntWeekKills.</summary>
         TriuneWeekKills = 57011,
+
+        /// <summary>Hunting rewards (owner 2026-11-08 for T11-T14, T11-T25 since 2026-11-22), on a CHARACTER: the part of the
+        /// next reward (+1 to one of Creature / Item / Life) earned from own-tier kills that is not yet whole (0 .. 1). Server-only.</summary>
+        AugDripFraction = 57020,
 
         // REFLECTION BOSS ids: 59200+ (moved 2026-11-10 from 58000-58001 here and 58000-58004 in PropertyInt, which sit in
         // the Zone loot property block 58000-58999, ZoneLootProps). Weenies set ReflectionLives / Wcid / DamageRatingStep /

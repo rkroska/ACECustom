@@ -463,39 +463,15 @@ namespace ACE.Server.Network.Structure
                 (wo.WeenieClassId >= 777700051 && wo.WeenieClassId <= 777700070))
                 PropertiesBool.Remove(PropertyBool.UnlimitedUse);
 
-            // Charm of the Triune Weave - progress lives on the examiner's character, so a
-            // replacement charm always shows the true totals. Appraisal output only, never persisted.
-            if (wo.WeenieClassId == 777700030 && examiner != null)
+            // The Triune Weave charm and the four attack school charms are keepsakes since the Triune retire (owner 2026-11-22):
+            // what they held now sits on the augmentation counts. Appraisal output only, never persisted; levelled charms are
+            // other weenies and keep their own text.
+            if (wo.WeenieClassId == 777700030 || wo.WeenieClassId == 777700051 || wo.WeenieClassId == 777700056
+                || wo.WeenieClassId == 777700061 || wo.WeenieClassId == 777700066)
             {
-                var weave = examiner.GetProperty(PropertyInt64.TriuneWeaveCount) ?? 0;
-                var msg = weave > 0
-                    ? $"The weave has been empowered {weave:N0} times:\n   +{weave:N0} Creature Augmentations\n   +{weave:N0} Item Augmentations\n   +{weave:N0} Life Augmentations\n\nFeed it Gems of the Triune Weave to empower it further."
-                    : "The weave is dormant. Feed it Gems of the Triune Weave to empower it, granting +1 Creature, Item, and Life augmentation per point.";
-
-                if (PropertiesString.ContainsKey(PropertyString.LongDesc))
-                    PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
-                else
-                    PropertiesString[PropertyString.LongDesc] = msg;
-            }
-
-            // School charms (War/Void/Melee/Missile) - counters accumulate toward future ability
-            // unlocks; like the Triune Weave, progress lives on the examiner's character.
-            PropertyInt64? schoolCharmProp =
-                wo.WeenieClassId == 777700051 ? PropertyInt64.BattlemagesWrathCharmCount :
-                wo.WeenieClassId == 777700056 ? PropertyInt64.NetherVeilCharmCount :
-                wo.WeenieClassId == 777700061 ? PropertyInt64.CrashingSteelCharmCount :
-                wo.WeenieClassId == 777700066 ? PropertyInt64.TrueShotCharmCount :
-                (PropertyInt64?)null;
-
-            if (schoolCharmProp != null && examiner != null)
-            {
-                var count = examiner.GetProperty(schoolCharmProp.Value) ?? 0;
-                var msg = count > 0
-                    ? $"The charm has been empowered {count:N0} times. Its deeper powers remain sealed."
-                    : "The charm is dormant. Feed it Gems to empower it.";
-
-                if (PropertiesString.ContainsKey(PropertyString.LongDesc))
-                    PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                const string msg = "This charm's power now lives in your augmentations.";
+                if (PropertiesString.TryGetValue(PropertyString.LongDesc, out var charmLd) && !string.IsNullOrEmpty(charmLd))
+                    PropertiesString[PropertyString.LongDesc] = charmLd + "\n\n" + msg;
                 else
                     PropertiesString[PropertyString.LongDesc] = msg;
             }

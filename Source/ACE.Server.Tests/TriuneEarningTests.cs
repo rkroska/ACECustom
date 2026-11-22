@@ -34,10 +34,11 @@ namespace ACE.Server.Tests
             Assert.IsFalse(cfg.Enabled, "ships OFF");
             Assert.AreEqual((int)DayOfWeek.Friday, cfg.ResetDay);
             Assert.AreEqual(12, cfg.ResetHour);
-            Assert.AreEqual(11, cfg.Tiers.Count);
-            Assert.AreEqual(15, cfg.Tiers.First().Tier);
+            Assert.IsFalse(cfg.DripEnabled, "the T11-T14 drip ships OFF");
+            Assert.AreEqual(15, cfg.Tiers.Count, "T11-T14 drip rows + T15-T25 Triune rows");
+            Assert.AreEqual(11, cfg.Tiers.First().Tier);
             Assert.AreEqual(25, cfg.Tiers.Last().Tier);
-            foreach (var r in cfg.Tiers)
+            foreach (var r in cfg.Tiers.Where(r => r.Tier >= TriuneEarning.MinTier))
             {
                 Assert.AreEqual(200, r.FloorKph); Assert.AreEqual(400, r.CeilingKph);
                 Assert.AreEqual(6, r.SlowWeeks); Assert.AreEqual(4, r.FastWeeks); Assert.AreEqual(500, r.Points);
@@ -102,7 +103,7 @@ namespace ACE.Server.Tests
             var r = cfg.Tiers.Single(t => t.Tier == 15);
             Assert.IsTrue(r.CeilingKph > r.FloorKph, "ceiling above the floor");
             Assert.IsTrue(r.FastWeeks <= r.SlowWeeks, "fast never slower than slow");
-            Assert.AreEqual(11, cfg.Tiers.Count, "T15..T25 only, each once");
+            Assert.AreEqual(15, cfg.Tiers.Count, "T11..T25 only, each once");
         }
 
         // -- the weekly reset --
@@ -196,10 +197,11 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Gem_Qualifies_Only_Bought_To_The_Base_And_Under_The_Ceiling()
         {
-            Assert.IsFalse(SchoolGems.Qualifies(3999, 4400, 4000, 4500), "under the bought base");
-            Assert.IsTrue(SchoolGems.Qualifies(4000, 4000, 4000, 4500));
-            Assert.IsTrue(SchoolGems.Qualifies(4000, 4499, 4000, 4500));
-            Assert.IsFalse(SchoolGems.Qualifies(4000, 4500, 4000, 4500), "full for the tier");
+            // one stat (2026-11-22): the aug count itself against the tier's floor and ceiling
+            Assert.IsFalse(SchoolGems.Qualifies(3999, 4000, 4500), "under the floor");
+            Assert.IsTrue(SchoolGems.Qualifies(4000, 4000, 4500));
+            Assert.IsTrue(SchoolGems.Qualifies(4499, 4000, 4500));
+            Assert.IsFalse(SchoolGems.Qualifies(4500, 4000, 4500), "full for the tier");
         }
 
         [TestMethod]

@@ -108,7 +108,7 @@ namespace ACE.Server.Command.Handlers
             if (!GuardWipe(session, player)) return;
 
             var augs = PresetAugs(tier, row, max);
-            Msg($"testchar preset: T{tier} {style.Label}, {(max ? "max" : "entry")}, charm level {charmLevel}. Augs (creature,item,life,war,void,duration,specialize,summon,melee,missile) = {augs.Augs}; charms (weave,wrath,nether,steel,trueshot) = {augs.Charms}.");
+            Msg($"testchar preset: T{tier} {style.Label}, {(max ? "max" : "entry")}, charm level {charmLevel}. Augs (creature,item,life,war,void,duration,specialize,summon,melee,missile) = {augs}.");
 
             // 1. the character - the plugin's preset batch, in its order (attributes and enlightenment before vitals).
             // The reset destroys the charm items but not the abilities they switched on, so turn those off first, or the
@@ -125,8 +125,7 @@ namespace ACE.Server.Command.Handlers
             HandleCharacterSetter(session, player, new[] { "set", "level", PresetLevel.ToString() });
             HandleCharacterSetter(session, player, new[] { "set", "enl", PresetEnlightenment.ToString() });
             HandleCharacterSetter(session, player, new[] { "set", "vitals", PresetVitals });
-            HandleCharacterSetter(session, player, new[] { "set", "augs", augs.Augs });
-            HandleCharacterSetter(session, player, new[] { "set", "charms", augs.Charms });
+            HandleCharacterSetter(session, player, new[] { "set", "augs", augs });
             HandleCharacterSetter(session, player, new[] { "set", "raugs", "max" });
             HandleCharacterSetter(session, player, new[] { "apply", "skills,spells,aetheria,manastone" });
 
@@ -148,35 +147,32 @@ namespace ACE.Server.Command.Handlers
             Msg($"testchar preset: done. LOG OUT AND BACK IN (the spellbook refreshes), buff, then stand in a T{tier} zone (Tou Tou: @televariant {tier}). Check hits with @debugdamage attack|defense and /nearbyhealth; change the charm with /charm level <name> <1-100>.");
         }
 
-        /// <summary>The aug and counter CSVs for /testchar set augs / set charms (see the header for where they come from).</summary>
-        internal static (string Augs, string Charms) PresetAugs(int tier, WeaponScalingTier row, bool max)
+        /// <summary>
+        /// The aug CSV for /testchar set augs (one stat since the 2026-11-22 Triune retire: every count is the real number).
+        /// Entry = the tier's gates; max = the top of the tier's aug curves, never below the gates. The attack schools sit at
+        /// the hit gate's school number (never below the item count, up to the 4,000 buy cap).
+        /// </summary>
+        internal static string PresetAugs(int tier, WeaponScalingTier row, bool max)
         {
-            long creature, item, life, school, triune, skillCharm;
+            long creature, item, life, school;
             if (!max)
             {
                 item = row.MinWieldAugs;
                 creature = row.MinWieldCreature;
                 life = row.MinWieldLife;
-                triune = row.MinWieldTriune;
-                skillCharm = row.MinWieldSkillCharm;
+                school = Math.Max(Math.Min(4000, item), row.MinWieldSkillCharm);
             }
             else
             {
-                // the top of the tier's aug curves; raw augs stop at the buy caps, Triune (counted as item AND life augs)
-                // carries the rest
                 var zp = ZoneControlManager.EvaluateTierDefault(tier);
                 double CurveMax(string stat) => zp != null && zp.Has(stat) ? zp.Get(stat) : 0;
-                var top = Math.Max(CurveMax(ZoneStat.AugArmorMax), Math.Max(CurveMax(ZoneStat.AugProtMax), CurveMax(ZoneStat.ReliefAugMax)));
-                item = 4000;
-                life = 4000;
-                creature = 6000;
-                triune = Math.Max(row.MinWieldTriune, (long)Math.Ceiling(Math.Max(0, top - 4000)));
-                skillCharm = Math.Max(row.MinWieldSkillCharm, triune);
+                var top = (long)Math.Ceiling(Math.Max(CurveMax(ZoneStat.AugArmorMax), Math.Max(CurveMax(ZoneStat.AugProtMax), CurveMax(ZoneStat.ReliefAugMax))));
+                item = Math.Max(row.MinWieldAugs, Math.Max(4000, top));
+                life = Math.Max(row.MinWieldLife, item);
+                creature = Math.Max(row.MinWieldCreature, item + 2000);
+                school = Math.Max(row.MinWieldSkillCharm, item);
             }
-            school = Math.Min(4000, item);
-            var augsCsv = string.Join(",", creature, item, life, school, school, school, 0, 0, school, school);
-            var charmsCsv = string.Join(",", triune, skillCharm, skillCharm, skillCharm, skillCharm);
-            return (augsCsv, charmsCsv);
+            return string.Join(",", creature, item, life, school, school, school, 0, 0, school, school);
         }
 
         /// <summary>Puts the six levelled charms in the Ability Charms Pack, skipping any the character already holds

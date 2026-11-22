@@ -2859,51 +2859,52 @@ namespace ACE.Server.WorldObjects
             set
             {
                 if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLuminance); else SetProperty(PropertyInt64.BankedLuminance, value.Value);
-                QueueBankedLuminanceUpdate();
+                QueueBankUpdate(PropertyInt64.BankedLuminance);
             }
         }
 
+        // Every bank balance below sends its new value the same way (owner 2026-11-22): QueueBankUpdate in each setter.
         // Banked luminance to the client (owner 2026-09-23). Every luminance award is banked (Player_Luminance.AddLuminance)
         // and the client was never told the bank changed - ILT turned the update off on 2025-02-03 as spam - so a plugin
         // meter only saw a fellowship / Zone Share payment at its next once-a-minute /b. Every change now rides the XP batch
-        // (Player_Xp.QueueBankedLuminanceUpdate): the luminance value only, once per batch window at most. Set in the one
+        // (Player_Xp.QueueBankUpdate): the luminance value only, once per batch window at most. Set in the one
         // setter, so kills, shares, quests, transfers, spending and the card tables are all covered.
 
         public long? BankedPyreals
         {
             get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedPyreals) ?? 0);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPyreals); else SetProperty(PropertyInt64.BankedPyreals, value.Value); }
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPyreals); else SetProperty(PropertyInt64.BankedPyreals, value.Value); QueueBankUpdate(PropertyInt64.BankedPyreals); }
         }
 
         public long? BankedLegendaryKeys
         {
             get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLegendaryKeys); else SetProperty(PropertyInt64.BankedLegendaryKeys, value.Value); }
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLegendaryKeys); else SetProperty(PropertyInt64.BankedLegendaryKeys, value.Value); QueueBankUpdate(PropertyInt64.BankedLegendaryKeys); }
         }
         public long? BankedEnlightenedCoins
         {
             get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedEnlightenedCoins) ?? 0);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenedCoins); else SetProperty(PropertyInt64.BankedEnlightenedCoins, value.Value); }
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenedCoins); else SetProperty(PropertyInt64.BankedEnlightenedCoins, value.Value); QueueBankUpdate(PropertyInt64.BankedEnlightenedCoins); }
         }
         public long? BankedWeaklyEnlightenedCoins
         {
             get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins) ?? 0);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedWeaklyEnlightenedCoins); else SetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins, value.Value); }
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedWeaklyEnlightenedCoins); else SetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins, value.Value); QueueBankUpdate(PropertyInt64.BankedWeaklyEnlightenedCoins); }
         }
         public long? BankedPrestigeCoins
         {
             get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedPrestigeCoins) ?? 0);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPrestigeCoins); else SetProperty(PropertyInt64.BankedPrestigeCoins, value.Value); }
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPrestigeCoins); else SetProperty(PropertyInt64.BankedPrestigeCoins, value.Value); QueueBankUpdate(PropertyInt64.BankedPrestigeCoins); }
         }
         public long? BankedEnlightenmentTokens
         {
             get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedEnlightenmentTokens) ?? 0);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenmentTokens); else SetProperty(PropertyInt64.BankedEnlightenmentTokens, value.Value); }
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenmentTokens); else SetProperty(PropertyInt64.BankedEnlightenmentTokens, value.Value); QueueBankUpdate(PropertyInt64.BankedEnlightenmentTokens); }
         }
         public long? BankedMythicalKeys
         {
             get => IsBankLocked ? 0L : (GetProperty(PropertyInt64.BankedMythicalKeys) ?? 0);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedMythicalKeys); else SetProperty(PropertyInt64.BankedMythicalKeys, value.Value); }
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedMythicalKeys); else SetProperty(PropertyInt64.BankedMythicalKeys, value.Value); QueueBankUpdate(PropertyInt64.BankedMythicalKeys); }
         }
     }
 }

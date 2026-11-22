@@ -532,39 +532,53 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugLifeCount); else SetProperty(PropertyInt64.LumAugLifeCount, value.Value); }
         }
 
-        public long? TriuneWeaveCount
+        // ── Augmentation counts: ONE stat per school (owner 2026-11-22, Triune retire) ─────────────
+        //
+        // Every augmentation a player has - bought with luminance, earned from kills, from an earned school gem, or moved
+        // there from the retired Triune Weave / school charms at login (AugMove) - lives on the LumAug* count. There is no
+        // second counter any more, so "Effective" is simply that count. The names stay because every power site reads them.
+        //
+        // Buying with luminance still stops at the cap (EmoteManager.AugmentationCaps); kills and earned gems carry a count
+        // past it (T15+). Nothing may ever clamp a LumAug count back to the cap.
+        public long EffectiveCreatureAugCount => LuminanceAugmentCreatureCount ?? 0;
+
+        public long EffectiveItemAugCount => LuminanceAugmentItemCount ?? 0;
+
+        public long EffectiveLifeAugCount => LuminanceAugmentLifeCount ?? 0;
+
+        public long EffectiveWarAugCount => LuminanceAugmentWarCount ?? 0;
+
+        public long EffectiveVoidAugCount => LuminanceAugmentVoidCount ?? 0;
+
+        public long EffectiveMeleeAugCount => LuminanceAugmentMeleeCount ?? 0;
+
+        public long EffectiveMissileAugCount => LuminanceAugmentMissileCount ?? 0;
+
+        /// <summary>The luminance cap a school sits on before T15 growth (Creature 6,000; Item / Life / attack schools 4,000).</summary>
+        public const long CreatureAugBase = 6000, SchoolAugBase = 4000;
+
+        /// <summary>
+        /// "Growth past T15" (owner 2026-11-22, the Triune safety net): the smallest of Creature - 6,000, Item - 4,000 and
+        /// Life - 4,000, never below 0. For every character the login move touched this equals their old Triune Weave, so any
+        /// gate still naming Triune asks exactly what it asked before.
+        /// </summary>
+        public long GrowthPastT15 => Math.Max(0, Math.Min(EffectiveCreatureAugCount - CreatureAugBase,
+            Math.Min(EffectiveItemAugCount - SchoolAugBase, EffectiveLifeAugCount - SchoolAugBase)));
+
+        /// <summary>
+        /// A gate's read of an Int64 stat (gear WieldRequirement.Int64Stat, quest emote InqInt64Stat, portal checks). The
+        /// retired counters read what replaced them: Triune Weave = GrowthPastT15, a school charm = that school past 4,000.
+        /// Every other property reads as stored (null when unset, so a "no quality" test still works).
+        /// </summary>
+        public long? GetInt64ForGate(PropertyInt64 prop) => prop switch
         {
-            get => GetProperty(PropertyInt64.TriuneWeaveCount) ?? 0;
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.TriuneWeaveCount); else SetProperty(PropertyInt64.TriuneWeaveCount, value.Value); }
-        }
-
-        // ── Effective augmentation counts: purchased gems PLUS the growth charms ────────────────
-        //
-        // Passing the 6,000 and 4,000 caps is the POINT of the charms - the caps bound what
-        // luminance can buy, and a charm is a separate, uncapped path bought with Prestige Coins.
-        //
-        // Use these at bonus-application sites ONLY. Gem purchases, the caps themselves, portal
-        // gates, aggro totals and the raw /aug lines all read the underlying LumAug counts, so a
-        // charm can never eat a player's purchase headroom or unlock content gated on bought augs.
-        //
-        // The Triune Weave feeds three schools at once; each school charm feeds only its own.
-        public long EffectiveCreatureAugCount => (LuminanceAugmentCreatureCount ?? 0) + (TriuneWeaveCount ?? 0);
-
-        public long EffectiveItemAugCount => (LuminanceAugmentItemCount ?? 0) + (TriuneWeaveCount ?? 0);
-
-        public long EffectiveLifeAugCount => (LuminanceAugmentLifeCount ?? 0) + (TriuneWeaveCount ?? 0);
-
-        public long EffectiveWarAugCount =>
-            (LuminanceAugmentWarCount ?? 0) + (GetProperty(PropertyInt64.BattlemagesWrathCharmCount) ?? 0);
-
-        public long EffectiveVoidAugCount =>
-            (LuminanceAugmentVoidCount ?? 0) + (GetProperty(PropertyInt64.NetherVeilCharmCount) ?? 0);
-
-        public long EffectiveMeleeAugCount =>
-            (LuminanceAugmentMeleeCount ?? 0) + (GetProperty(PropertyInt64.CrashingSteelCharmCount) ?? 0);
-
-        public long EffectiveMissileAugCount =>
-            (LuminanceAugmentMissileCount ?? 0) + (GetProperty(PropertyInt64.TrueShotCharmCount) ?? 0);
+            PropertyInt64.TriuneWeaveCount => GrowthPastT15,
+            PropertyInt64.BattlemagesWrathCharmCount => Math.Max(0, EffectiveWarAugCount - SchoolAugBase),
+            PropertyInt64.NetherVeilCharmCount => Math.Max(0, EffectiveVoidAugCount - SchoolAugBase),
+            PropertyInt64.CrashingSteelCharmCount => Math.Max(0, EffectiveMeleeAugCount - SchoolAugBase),
+            PropertyInt64.TrueShotCharmCount => Math.Max(0, EffectiveMissileAugCount - SchoolAugBase),
+            _ => GetProperty(prop),
+        };
 
         public long? LuminanceAugmentVoidCount
         {

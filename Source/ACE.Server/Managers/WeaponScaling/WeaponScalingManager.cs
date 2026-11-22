@@ -21,28 +21,31 @@ namespace ACE.Server.Managers.WeaponScaling
         public int Cap { get; set; }
         public int MinWieldAugs { get; set; }
 
-        // Charm wield gates (owner 2026-08-15): item augs purchase-cap at 4,000, so T16+ weapons
-        // can't keep climbing the item-aug ladder. From T16 the item req FREEZES at 4,000 and
-        // these two climb instead, +500/tier each: Triune Weave, plus the weapon-family charm
-        // (Crashing Steel melee / True Shot launchers / Battlemage's Wrath elemental casters /
-        // Nether Veil nether casters). 0 = no charm gate (all tiers through T15).
+        // Triune retire (owner 2026-11-22): every tier asks the augmentation counts themselves - Creature, Item and Life climb
+        // +500 a tier with no freeze at T15 (kills carry them past the luminance cap), and from T16 the hit gate also asks
+        // the attack's school (MinWieldSkillCharm). The Triune column is folded into them once (Normalize, TriuneFolded).
         /// <summary>
         /// CREATURE aug requirement (owner 2026-08-31) for the T11+ hit gate - whether your swings and spells can LAND on a
         /// monster at this variation (TierHitGate) - and, since 2026-10-05, also a WIELD requirement on T11-T15 zone gear
         /// (wield slot 3, LootGenerationFactory_ZoneSet). 0 at T11+ = unset (Normalize re-seeds it; the command refuses 0).
-        /// 4,000 at T11, +500/tier, frozen at the 6,000 purchase cap from T15 - above which TRIUNE
-        /// carries the ladder, exactly as it does for the item-aug wield gate.
+        /// 4,000 at T11, +500/tier (6,500 at T16 ... 11,000 at T25 since the 2026-11-22 Triune fold).
         /// </summary>
         public int MinWieldCreature { get; set; }
 
-        /// <summary>LIFE aug wield requirement (owner 2026-10-05): T11-T15 gear asks Creature + Item + Life augs, the same numbers
-        /// as that tier's portal gem (Life 2,000 at T11, +500/tier, 4,000 at T15). T16+ gear asks Triune only, so a T16+ row's
-        /// value is shown but never stamped. 0 at T11+ = unset (Normalize re-seeds it; the command refuses 0).</summary>
+        /// <summary>LIFE aug wield requirement (owner 2026-10-05): gear asks Creature + Item + Life augs, the same numbers as that
+        /// tier's portal gem (Life 2,000 at T11, +500/tier: 4,500 at T16 ... 9,000 at T25 since the 2026-11-22 fold). From T16
+        /// the hit gate asks it too. 0 at T11+ = unset (Normalize re-seeds it; the command refuses 0).</summary>
         public int MinWieldLife { get; set; }
+
+        /// <summary>RETIRED 2026-11-22 (Triune retire): the Triune Weave requirement. Normalize folds a stored value into Creature /
+        /// Item / Life once and leaves 0; nothing reads it after that. Kept so stored configs and older plugins still load.</summary>
         public int MinWieldTriune { get; set; }
 
-        /// <summary>RETIRED 2026-10-05 (owner: T16+ gear asks Triune only): the weapon-family charm count. Kept so stored configs and
-        /// older plugins still load it; no drop stamps it any more.</summary>
+        /// <summary>
+        /// The ATTACK SCHOOL augmentation count the T16+ hit gate asks (owner 2026-11-22): Melee for a swing, Missile for a shot,
+        /// War / Void for a spell - 4,500 at T16, +500/tier, 9,000 at T25. 0 = not asked (every tier through T15). Until
+        /// 2026-11-22 this column held the retired school CHARM count (500 at T16); the fold adds the 4,000 base once.
+        /// </summary>
         public int MinWieldSkillCharm { get; set; }
     }
 
@@ -78,6 +81,10 @@ namespace ACE.Server.Managers.WeaponScaling
     public class WeaponScalingConfig
     {
         public bool Enabled { get; set; }
+
+        /// <summary>True once the T16+ rows' Triune column has been folded into Creature / Item / Life and the school column
+        /// moved onto the augmentation scale (2026-11-22). Saved with the store, so the fold runs exactly once.</summary>
+        public bool TriuneFolded { get; set; }
 
         public List<WeaponScalingTier> Tiers { get; set; } = new();
 
@@ -277,6 +284,7 @@ namespace ACE.Server.Managers.WeaponScaling
             var cfg = new WeaponScalingConfig
             {
                 Enabled = false,
+                TriuneFolded = true,   // the defaults below are already on the folded ladder
                 KcMin = 0.60,
                 KcMax = 0.80,
             };
@@ -287,19 +295,18 @@ namespace ACE.Server.Managers.WeaponScaling
             // requires it, and ApplyZoneWieldRequirement now reads this table per tier.
             for (var tier = 11; tier <= 25; tier++)
             {
-                // Item augs purchase-cap at 4,000 (EmoteManager.AugmentationCaps), which the
-                // ladder reaches at T15. T16+ freezes the item req there and gates on charm
-                // counters instead: Triune Weave + the weapon-family charm, 500 each at T16,
-                // +500/tier (owner 2026-08-15).
+                // One ladder for every tier (owner 2026-11-22, Triune retire): Creature 4,000 + 500 a tier, Item and Life
+                // 2,000 + 500 a tier, no freeze at T15 (kills carry the counts past the luminance cap). The hit gate also asks
+                // the attack school at every tier, on the Item / Life ladder (owner 2026-11-22: uniform T11-T25).
                 cfg.Tiers.Add(new WeaponScalingTier
                 {
                     Tier = tier,
                     Cap = 2500 + 500 * (tier - 11),
-                    MinWieldAugs = tier == 11 ? 2000 : Math.Min(4000, 2500 + 500 * (tier - 12)),
-                    MinWieldCreature = Math.Min(6000, 4000 + 500 * (tier - 11)),
+                    MinWieldAugs = 2000 + 500 * (tier - 11),
+                    MinWieldCreature = DefaultMinWieldCreature(tier),
                     MinWieldLife = DefaultMinWieldLife(tier),
-                    MinWieldTriune = tier >= 16 ? 500 * (tier - 15) : 0,
-                    MinWieldSkillCharm = tier >= 16 ? 500 * (tier - 15) : 0,
+                    MinWieldTriune = 0,
+                    MinWieldSkillCharm = DefaultMinWieldSchool(tier),
                 });
             }
 
@@ -424,6 +431,25 @@ namespace ACE.Server.Managers.WeaponScaling
                 Normalize(clone);
                 Save(clone);
                 _current = clone;
+            }
+        }
+
+        /// <summary>
+        /// Rollback of the Triune fold (owner 2026-11-22), for the move undo just before the OLD build goes back on: SAVES the
+        /// store with the T16+ rows unfolded (Triune back, Creature / Item / Life at the caps) and TriuneFolded off, so the old
+        /// build reads the rows it knows. The running config stays folded - this build would fold the store again on its next
+        /// load, which is right while it is still the one running. Returns the rows changed.
+        /// </summary>
+        public static int SaveUnfoldedForRollback()
+        {
+            Initialize();
+            lock (_lock)
+            {
+                var clone = Clone(_current);
+                var changed = UnfoldTriune(clone.Tiers);
+                clone.TriuneFolded = false;
+                Save(clone);
+                return changed;
             }
         }
 
@@ -607,15 +633,8 @@ namespace ACE.Server.Managers.WeaponScaling
                 t.MinWieldTriune = Math.Max(0, t.MinWieldTriune);
                 t.MinWieldSkillCharm = Math.Max(0, t.MinWieldSkillCharm);
 
-                // Migration for stores saved before the charm gates existed (owner 2026-08-15):
-                // a T16+ row with BOTH charm fields 0 predates the feature — seed the +500/tier
-                // ladders and pull the item req back to the 4,000 purchase cap it can't exceed.
-                if (t.Tier >= 16 && t.MinWieldTriune == 0 && t.MinWieldSkillCharm == 0)
-                {
-                    t.MinWieldTriune = 500 * (t.Tier - 15);
-                    t.MinWieldSkillCharm = 500 * (t.Tier - 15);
-                    t.MinWieldAugs = Math.Min(4000, t.MinWieldAugs);
-                }
+                // (2026-11-22) The old migration that RE-SEEDED Triune on any T16+ row holding 0 Triune and 0 charm is gone:
+                // Triune is retired, and the fold below leaves every row at 0 Triune on purpose.
 
                 // Migration for stores saved before MinWieldCreature existed (the column was added
                 // 2026-08-31 with the T11+ hit gate). The FRESH-config seed above authors this ladder,
@@ -629,12 +648,25 @@ namespace ACE.Server.Managers.WeaponScaling
                 // charm migration above makes: no stored 0 can be deliberate - /weaponscale tier <t> minwieldcreature
                 // (and minwieldlife, 2026-10-05) refuse 0 at T11+.
                 if (t.Tier >= 11 && t.MinWieldCreature == 0)
-                    t.MinWieldCreature = Math.Min(6000, 4000 + 500 * (t.Tier - 11));
+                    t.MinWieldCreature = DefaultMinWieldCreature(t.Tier);
 
                 // Same migration for MinWieldLife (added 2026-10-05): a stored 0 is UNSET - seed the portal-gem ladder.
                 if (t.Tier >= 11 && t.MinWieldLife == 0)
                     t.MinWieldLife = DefaultMinWieldLife(t.Tier);
             }
+
+            if (!cfg.TriuneFolded)
+            {
+                FoldTriune(cfg.Tiers);
+                cfg.TriuneFolded = true;
+            }
+
+            // The attack school at every tier (owner 2026-11-22: uniform T11-T25). AFTER the fold, so a T16+ row's school is
+            // already in aug units: a stored 0 is UNSET (T11-T15 rows held 0 while only T16+ asked a school) - seed the ladder.
+            // /weaponscale refuses minwieldskillcharm 0 at T11+, so no stored 0 is deliberate.
+            foreach (var t in cfg.Tiers)
+                if (t.Tier >= 11 && t.MinWieldSkillCharm == 0)
+                    t.MinWieldSkillCharm = DefaultMinWieldSchool(t.Tier);
 
             var scripts = new Dictionary<string, WeaponScalingScript>(StringComparer.OrdinalIgnoreCase);
             if (cfg.Scripts != null)
@@ -722,8 +754,68 @@ namespace ACE.Server.Managers.WeaponScaling
 
         // ── Resolve helpers (consumed by the step-3 combat wire-in; pure math is static for tests) ──
 
-        /// <summary>The Tou Tou portal gem's Life aug requirement for a tier: 2,000 at T11, +500/tier, 4,000 from T15.</summary>
-        public static int DefaultMinWieldLife(int tier) => tier < 11 ? 0 : Math.Min(4000, 2000 + 500 * (tier - 11));
+        /// <summary>The Life aug requirement for a tier (the Tou Tou portal gem's too): 2,000 at T11, +500/tier, 9,000 at T25.</summary>
+        public static int DefaultMinWieldLife(int tier) => tier < 11 ? 0 : 2000 + 500 * (tier - 11);
+
+        /// <summary>The Creature aug requirement for a tier: 4,000 at T11, +500/tier, 11,000 at T25.</summary>
+        public static int DefaultMinWieldCreature(int tier) => tier < 11 ? 0 : 4000 + 500 * (tier - 11);
+
+        /// <summary>The attack school requirement of the hit gate, on the Item / Life ladder (owner 2026-11-22: uniform T11-T25):
+        /// 2,000 at T11, +500/tier, 4,500 at T16, 9,000 at T25; 0 below T11.</summary>
+        public static int DefaultMinWieldSchool(int tier) => tier < 11 ? 0 : 2000 + 500 * (tier - 11);
+
+        /// <summary>
+        /// The Triune fold (owner 2026-11-22), once per store: a T16+ row asking N Triune now asks Creature, Item and Life N
+        /// higher (Triune meant +N on all three) and 0 Triune; its school column moves from the charm count (500 at T16) to the
+        /// augmentation count (4,500 at T16) - a row with no school number gets the default. Pure, tested.
+        /// </summary>
+        public static void FoldTriune(IEnumerable<WeaponScalingTier> rows)
+        {
+            foreach (var t in rows)
+            {
+                if (t == null || t.Tier < 16)
+                    continue;
+                var n = Math.Max(0, t.MinWieldTriune);
+                t.MinWieldCreature += n;
+                t.MinWieldAugs += n;
+                t.MinWieldLife += n;
+                t.MinWieldTriune = 0;
+                t.MinWieldSkillCharm = t.MinWieldSkillCharm > 0 ? t.MinWieldSkillCharm + 4000 : DefaultMinWieldSchool(t.Tier);
+            }
+        }
+
+        /// <summary>
+        /// The undo of FoldTriune (the Triune move rollback): T16+ rows go back to Creature / Item / Life at the luminance caps
+        /// (6,000 / 4,000 / 4,000), the part above them back to Triune, and the school column back to the charm count. Returns
+        /// the rows changed. Pure, tested. The caller saves it with TriuneFolded = false for the old build. T11-T15 rows go back
+        /// to no school number (the old build never asked a school below T16).
+        /// </summary>
+        public static int UnfoldTriune(IEnumerable<WeaponScalingTier> rows)
+        {
+            var changed = 0;
+            foreach (var t in rows)
+            {
+                if (t == null)
+                    continue;
+                if (t.Tier < 16)
+                {
+                    if (t.Tier >= 11 && t.MinWieldSkillCharm != 0)
+                    {
+                        t.MinWieldSkillCharm = 0;
+                        changed++;
+                    }
+                    continue;
+                }
+                var n = Math.Max(0, Math.Min(t.MinWieldCreature - 6000, Math.Min(t.MinWieldAugs - 4000, t.MinWieldLife - 4000)));
+                t.MinWieldCreature -= n;
+                t.MinWieldAugs -= n;
+                t.MinWieldLife -= n;
+                t.MinWieldTriune += n;
+                t.MinWieldSkillCharm = Math.Max(0, t.MinWieldSkillCharm - 4000);
+                changed++;
+            }
+            return changed;
+        }
 
         public static WeaponScalingTier GetTier(int tier)
         {
