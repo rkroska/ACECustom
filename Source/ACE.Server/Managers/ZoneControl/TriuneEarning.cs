@@ -871,7 +871,7 @@ namespace ACE.Server.Managers.ZoneControl
         ///       After 33,600 kills:    1 reward per 269 kills
         ///       Beyond 67,200 kills:   no rewards until the week resets
         ///     Week resets Friday 12:00 Eastern (in 2 days 4 hours).
-        ///     This tier so far: Creature 312 of 500, Item 298 of 500, Life 305 of 500.
+        ///     This tier so far: Creature 6,312 of 6,500, Item 4,298 of 4,500, Life 4,305 of 4,500.
         /// </summary>
         public static List<string> StatusLines(Player player)
         {
@@ -917,11 +917,10 @@ namespace ACE.Server.Managers.ZoneControl
             var (when, left) = NextResetParts(cfg, kills > 0 ? storedStart : 0);
             lines.Add($"  Week resets {when} (in {left}).");
 
+            // each school's count against where this tier ends (owner 2026-11-22): always true, also after the own tier changed
+            // and came back (the roll counts restart then, so "312 of 500 rolls" would read as 0 of 500 with only 188 to go)
             if (on)
-            {
-                var rolls = RollsTaken(player, own);
-                lines.Add($"  This tier so far: {string.Join(", ", DripSchools.Select((s, i) => $"{s.Name} {rolls[i]:N0} of {row.Points:N0}"))}.");
-            }
+                lines.Add($"  This tier so far: {string.Join(", ", DripSchools.Select(s => $"{s.Name} {s.Count(player):N0} of {DripCeiling(cfg, own, s):N0}"))}.");
 
             return lines;
         }
