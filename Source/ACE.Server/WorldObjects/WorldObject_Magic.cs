@@ -128,7 +128,10 @@ namespace ACE.Server.WorldObjects
         /// If this spell has a chance to be resisted, rolls for a chance
         /// Returns TRUE if spell is resistable and was resisted for this attempt
         /// </summary>
-        public bool TryResistSpell(WorldObject target, Spell spell, WorldObject itemCaster = null, bool projectileHit = false)
+        /// <param name="gateSchool">the attack school the T11+ hit gate asks; null = from the spell and <paramref name="itemCaster"/>
+        /// (TierHitGate.SchoolOf). A caller whose resist item is not the item that fired the spell (a ring proc) passes it.</param>
+        public bool TryResistSpell(WorldObject target, Spell spell, WorldObject itemCaster = null, bool projectileHit = false,
+            ACE.Server.Managers.ZoneControl.TierHitGate.AttackSchool? gateSchool = null)
         {
             // fix hermetic void?
             if (!spell.IsResistable && spell.Category != SpellCategory.ManaConversionModLowering || spell.IsSelfTargeted)
@@ -193,7 +196,7 @@ namespace ACE.Server.WorldObjects
             // outright by a tier-11+ monster, whatever the skill check said. Same all-or-nothing
             // rule as melee/missile in DamageEvent.
             if (!resisted && this is Creature gateCaster
-                && !ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(gateCaster, targetCreature, ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, itemCaster)))
+                && !ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(gateCaster, targetCreature, gateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, itemCaster)))
                 resisted = true;
 
             var player = this as Player;

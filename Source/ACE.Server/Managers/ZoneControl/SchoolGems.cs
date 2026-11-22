@@ -60,6 +60,17 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>A school's count (the one stat).</summary>
         public static long Total(Player p, School s) => p.GetProperty(s.AugCount) ?? 0;
 
+        /// <summary>The school's count as power and the gates read it: the stored count plus a retired charm still held (not
+        /// moved yet; 0 once moved). Floors and ceilings test this; a gem still writes Total + 1.</summary>
+        public static long Power(Player p, School s) => s.AugCount switch
+        {
+            PropertyInt64.LumAugWarCount => p.EffectiveWarAugCount,
+            PropertyInt64.LumAugVoidCount => p.EffectiveVoidAugCount,
+            PropertyInt64.LumAugMeleeCount => p.EffectiveMeleeAugCount,
+            PropertyInt64.LumAugMissileCount => p.EffectiveMissileAugCount,
+            _ => Total(p, s),
+        };
+
         /// <summary>Do gems drop at <paramref name="tier"/>? T11-T14 need the drip on as well as the gems.</summary>
         public static bool GemsDropAt(TriuneEarning.Config cfg, int tier) =>
             cfg.GemsEnabled && tier >= TriuneEarning.DripMinTier && (!TriuneEarning.IsDripTier(tier) || cfg.DripEnabled);
@@ -113,7 +124,7 @@ namespace ACE.Server.Managers.ZoneControl
                     return;
 
                 var cfg = TriuneEarning.Current;
-                if (!cfg.GemsEnabled)
+                if (!cfg.GemsEnabled || AugMove.Undone)
                     return;
 
                 var killTier = TierRewardScale.KillTier(victim);
@@ -132,6 +143,8 @@ namespace ACE.Server.Managers.ZoneControl
                 var player = PlayerManager.GetOnlinePlayer(new ObjectGuid(corpse.KillerId.Value));
                 if (player == null || player.IsLoggingOut || player.IsMule || player.IsOlthoiPlayer)
                     return;
+                if (AugMove.AwaitsMove(player))
+                    return;   // old counters not moved yet: no gem on them (the move adds them later)
                 if (TierRewardScale.OwnTier(player) != killTier)
                     return;
 
@@ -146,7 +159,7 @@ namespace ACE.Server.Managers.ZoneControl
                 var floor = TriuneEarning.GemFloor(cfg, killTier);
                 foreach (var school in Schools)
                 {
-                    if (!Qualifies(Total(player, school), floor, ceiling))
+                    if (!Qualifies(Power(player, school), floor, ceiling))
                         continue;
                     if (ThreadSafeRandom.Next(0.0f, 1.0f) >= chance)
                         continue;
@@ -189,9 +202,12 @@ namespace ACE.Server.Managers.ZoneControl
                 if (school == null || stamp == null || stamp.Value.Earner != player.Guid.Full || !TriuneEarning.Current.GemsEnabled)
                     return false;
 
+                if (AugMove.AwaitsMove(player))
+                    return false;   // old counters not moved yet: never destroy a gem on a count about to change
+
                 var cfg = TriuneEarning.Current;
                 var ceiling = TriuneEarning.GemCeiling(cfg, stamp.Value.Tier);
-                var total = Total(player, school);
+                var total = Power(player, school);
                 var carried = player.GetInventoryItemsOfWCID(school.GemWcid)
                     .Select(g => g != item ? Stamp(g) : null)
                     .Where(s => s is { } st && st.Earner == player.Guid.Full && st.Tier <= stamp.Value.Tier)
@@ -240,6 +256,19 @@ namespace ACE.Server.Managers.ZoneControl
             if (player == null || school == null || stamp == null)
                 return false;
 
+            if (AugMove.Undone)
+            {
+                // the undo ran: the old build turns gems back into charms, so the gem waits (kept) until the restart
+                player.SendMessage("The gem is quiet for now. It will answer after the server restart.", ChatMessageType.Broadcast);
+                return true;
+            }
+            if (AugMove.AwaitsMove(player))
+            {
+                // old counters not moved yet: the gem waits (kept) until the move has run
+                player.SendMessage("The gem is quiet for now - your augmentations are being brought up to date.", ChatMessageType.Broadcast);
+                return true;
+            }
+
             var cfg = TriuneEarning.Current;
 
             // someone else's gem: it is used up and gives nothing
@@ -250,7 +279,7 @@ namespace ACE.Server.Managers.ZoneControl
                 return true;
             }
 
-            var total = Total(player, school);
+            var total = Power(player, school);
             var gemFloor = TriuneEarning.GemFloor(cfg, stamp.Value.Tier);
             if (total < gemFloor)
             {
@@ -275,7 +304,7 @@ namespace ACE.Server.Managers.ZoneControl
             }
 
             // +1 straight onto the school's count, at every tier (one stat, owner 2026-11-22)
-            var newCount = total + 1;
+            var newCount = Total(player, school) + 1;   // the stored count (Power also adds a held charm: never written back)
             player.SetProperty(school.AugCount, newCount);
             player.Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, school.AugCount, newCount));
             player.SendMessage($"Your {school.Name} augmentations grow to {newCount:N0}.", ChatMessageType.Broadcast);

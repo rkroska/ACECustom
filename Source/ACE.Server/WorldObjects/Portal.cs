@@ -382,8 +382,9 @@ namespace ACE.Server.WorldObjects
 
                 case PortalRequirement.TriuneWeave:
                     // Triune is retired (2026-11-22): a portal still asking N reads "growth past T15" (Creature - 6,000, Item -
-                    // 4,000, Life - 4,000, the smallest), which is the same ask as Creature 6,000 + N, Item and Life 4,000 + N
-                    var growth = player.GrowthPastT15;
+                    // 4,000, Life - 4,000, the smallest), which is the same ask as Creature 6,000 + N, Item and Life 4,000 + N -
+                    // and never less than the Triune the login move took (GetInt64ForGate)
+                    var growth = player.GetInt64ForGate(PropertyInt64.TriuneWeaveCount) ?? 0;
                     if (growth < reqValue)
                         message = $"You must augment your creature magic {Creature.CreatureAugBase + (long)reqValue:N0} times and your item and life magic {Creature.SchoolAugBase + (long)reqValue:N0} times each to interact with that portal!";
                     else if (reqMaxValue > reqValue && reqMaxValue != 999 && growth > reqMaxValue)

@@ -224,7 +224,7 @@ namespace ACE.Entity.Enum.Properties
         PersonalLifestoneTieSpot = 59101,
         /// <summary>Triune retire (owner 2026-11-22), on a CHARACTER: what the one-time login move added onto the augmentation
         /// counts and which old counters it removed (AugMove owns the format). Its presence = moved; the admin undo reads it to
-        /// put everything back before a rollback to the old build. Server-only. 50667, free in EVERY Property enum.</summary>
+        /// put everything back before a rollback to the old build. Server-only. 50667 (PropertyString ids are their own table: PropertyInt64 50667 = AugRollTier is a different property).</summary>
         TriuneMoveRecord = 50667,
     }
 }

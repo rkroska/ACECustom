@@ -535,50 +535,76 @@ namespace ACE.Server.WorldObjects
         // ── Augmentation counts: ONE stat per school (owner 2026-11-22, Triune retire) ─────────────
         //
         // Every augmentation a player has - bought with luminance, earned from kills, from an earned school gem, or moved
-        // there from the retired Triune Weave / school charms at login (AugMove) - lives on the LumAug* count. There is no
-        // second counter any more, so "Effective" is simply that count. The names stay because every power site reads them.
+        // there from the retired Triune Weave / school charms at login (AugMove) - lives on the LumAug* count. After the move there is no
+        // second counter. A character NOT moved yet (the move off, the settings unreadable, the hours after an undo) still
+        // holds the old counter, so it is still added here, as before the retire - nobody's power changes in that window. The
+        // move removes the old counters, so for a moved character this adds 0 (never counted twice).
         //
         // Buying with luminance still stops at the cap (EmoteManager.AugmentationCaps); kills and earned gems carry a count
         // past it (T15+). Nothing may ever clamp a LumAug count back to the cap.
-        public long EffectiveCreatureAugCount => LuminanceAugmentCreatureCount ?? 0;
+        public long EffectiveCreatureAugCount => (LuminanceAugmentCreatureCount ?? 0) + UnmovedTriune;
 
-        public long EffectiveItemAugCount => LuminanceAugmentItemCount ?? 0;
+        public long EffectiveItemAugCount => (LuminanceAugmentItemCount ?? 0) + UnmovedTriune;
 
-        public long EffectiveLifeAugCount => LuminanceAugmentLifeCount ?? 0;
+        public long EffectiveLifeAugCount => (LuminanceAugmentLifeCount ?? 0) + UnmovedTriune;
 
-        public long EffectiveWarAugCount => LuminanceAugmentWarCount ?? 0;
+        public long EffectiveWarAugCount => (LuminanceAugmentWarCount ?? 0) + Unmoved(PropertyInt64.BattlemagesWrathCharmCount);
 
-        public long EffectiveVoidAugCount => LuminanceAugmentVoidCount ?? 0;
+        public long EffectiveVoidAugCount => (LuminanceAugmentVoidCount ?? 0) + Unmoved(PropertyInt64.NetherVeilCharmCount);
 
-        public long EffectiveMeleeAugCount => LuminanceAugmentMeleeCount ?? 0;
+        public long EffectiveMeleeAugCount => (LuminanceAugmentMeleeCount ?? 0) + Unmoved(PropertyInt64.CrashingSteelCharmCount);
 
-        public long EffectiveMissileAugCount => LuminanceAugmentMissileCount ?? 0;
+        public long EffectiveMissileAugCount => (LuminanceAugmentMissileCount ?? 0) + Unmoved(PropertyInt64.TrueShotCharmCount);
+
+        /// <summary>A retired counter still held (not moved yet): 0 for every moved character.</summary>
+        private long Unmoved(PropertyInt64 retired) => Math.Max(0, GetProperty(retired) ?? 0);
+
+        private long UnmovedTriune => Unmoved(PropertyInt64.TriuneWeaveCount);
 
         /// <summary>The luminance cap a school sits on before T15 growth (Creature 6,000; Item / Life / attack schools 4,000).</summary>
         public const long CreatureAugBase = 6000, SchoolAugBase = 4000;
 
         /// <summary>
         /// "Growth past T15" (owner 2026-11-22, the Triune safety net): the smallest of Creature - 6,000, Item - 4,000 and
-        /// Life - 4,000, never below 0. For every character the login move touched this equals their old Triune Weave, so any
-        /// gate still naming Triune asks exactly what it asked before.
+        /// Life - 4,000, never below 0. For a character the login move touched while its bought counts sat at the caps this
+        /// equals their old Triune Weave; GetInt64ForGate also reads the moved value itself, for one whose counts did not.
         /// </summary>
         public long GrowthPastT15 => Math.Max(0, Math.Min(EffectiveCreatureAugCount - CreatureAugBase,
             Math.Min(EffectiveItemAugCount - SchoolAugBase, EffectiveLifeAugCount - SchoolAugBase)));
 
         /// <summary>
         /// A gate's read of an Int64 stat (gear WieldRequirement.Int64Stat, quest emote InqInt64Stat, portal checks). The
-        /// retired counters read what replaced them: Triune Weave = GrowthPastT15, a school charm = that school past 4,000.
-        /// Every other property reads as stored (null when unset, so a "no quality" test still works).
+        /// retired counters read what replaced them - Triune Weave = GrowthPastT15, a school charm = that school past 4,000 -
+        /// and never less than the value the login move took (AugMove.MovedOld), so every gate the old counter opened stays
+        /// open. A retired counter reads null when the character never held it and has nothing past the caps (as the unset
+        /// property did, so a "no quality" test still works); every other property reads as stored.
         /// </summary>
-        public long? GetInt64ForGate(PropertyInt64 prop) => prop switch
+        public long? GetInt64ForGate(PropertyInt64 prop)
         {
-            PropertyInt64.TriuneWeaveCount => GrowthPastT15,
-            PropertyInt64.BattlemagesWrathCharmCount => Math.Max(0, EffectiveWarAugCount - SchoolAugBase),
-            PropertyInt64.NetherVeilCharmCount => Math.Max(0, EffectiveVoidAugCount - SchoolAugBase),
-            PropertyInt64.CrashingSteelCharmCount => Math.Max(0, EffectiveMeleeAugCount - SchoolAugBase),
-            PropertyInt64.TrueShotCharmCount => Math.Max(0, EffectiveMissileAugCount - SchoolAugBase),
-            _ => GetProperty(prop),
-        };
+            long past;
+            switch (prop)
+            {
+                case PropertyInt64.TriuneWeaveCount: past = GrowthPastT15; break;
+                case PropertyInt64.BattlemagesWrathCharmCount: past = Math.Max(0, EffectiveWarAugCount - SchoolAugBase); break;
+                case PropertyInt64.NetherVeilCharmCount: past = Math.Max(0, EffectiveVoidAugCount - SchoolAugBase); break;
+                case PropertyInt64.CrashingSteelCharmCount: past = Math.Max(0, EffectiveMeleeAugCount - SchoolAugBase); break;
+                case PropertyInt64.TrueShotCharmCount: past = Math.Max(0, EffectiveMissileAugCount - SchoolAugBase); break;
+                // a school count (T16+ gear is stamped on these) reads as power does: a retired counter still held counts too
+                case PropertyInt64.LumAugCreatureCount: return GetProperty(prop).HasValue || UnmovedTriune > 0 ? EffectiveCreatureAugCount : null;
+                case PropertyInt64.LumAugItemCount: return GetProperty(prop).HasValue || UnmovedTriune > 0 ? EffectiveItemAugCount : null;
+                case PropertyInt64.LumAugLifeCount: return GetProperty(prop).HasValue || UnmovedTriune > 0 ? EffectiveLifeAugCount : null;
+                case PropertyInt64.LumAugWarCount: return GetProperty(prop).HasValue || Unmoved(PropertyInt64.BattlemagesWrathCharmCount) > 0 ? EffectiveWarAugCount : null;
+                case PropertyInt64.LumAugVoidCount: return GetProperty(prop).HasValue || Unmoved(PropertyInt64.NetherVeilCharmCount) > 0 ? EffectiveVoidAugCount : null;
+                case PropertyInt64.LumAugMeleeCount: return GetProperty(prop).HasValue || Unmoved(PropertyInt64.CrashingSteelCharmCount) > 0 ? EffectiveMeleeAugCount : null;
+                case PropertyInt64.LumAugMissileCount: return GetProperty(prop).HasValue || Unmoved(PropertyInt64.TrueShotCharmCount) > 0 ? EffectiveMissileAugCount : null;
+                default: return GetProperty(prop);
+            }
+            // a character not moved yet still holds the old counter itself
+            var held = GetProperty(prop) ?? ACE.Server.Managers.ZoneControl.AugMove.MovedOld(this, prop);
+            if (held == null && past == 0)
+                return null;
+            return Math.Max(past, held ?? 0);
+        }
 
         public long? LuminanceAugmentVoidCount
         {

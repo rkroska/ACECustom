@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -170,6 +171,63 @@ namespace ACE.Server.Tests
 
             // a row that asks for nothing is met by anyone
             Assert.IsTrue(TierHitGate.MeetsTier(0, 0, 0, 0, new WeaponScalingTier { Tier = 11 }));
+        }
+
+        [TestMethod]
+        public void Normalize_SeedsAnUnfoldedStoreOnTheOldLadders_BeforeTheFold()
+        {
+            // review 2026-11-22: an old-build store saved before MinWieldLife / MinWieldCreature existed holds 0 there. The
+            // seed must be the OLD clamped ladder (6,000 / 4,000), so the fold adds the row's Triune only once.
+            var old = WeaponScalingManager.BuildDefaults();
+            old.TriuneFolded = false;
+            var t16 = old.Tiers.Single(r => r.Tier == 16);
+            var t25 = old.Tiers.Single(r => r.Tier == 25);
+            (t16.MinWieldCreature, t16.MinWieldAugs, t16.MinWieldLife, t16.MinWieldTriune, t16.MinWieldSkillCharm) = (0, 4000, 0, 500, 500);
+            (t25.MinWieldCreature, t25.MinWieldAugs, t25.MinWieldLife, t25.MinWieldTriune, t25.MinWieldSkillCharm) = (0, 4000, 0, 5000, 5000);
+            WeaponScalingManager.Normalize(old);
+            Assert.AreEqual((6500, 4500, 4500, 0, 4500), (t16.MinWieldCreature, t16.MinWieldAugs, t16.MinWieldLife, t16.MinWieldTriune, t16.MinWieldSkillCharm));
+            Assert.AreEqual((11000, 9000, 9000, 0, 9000), (t25.MinWieldCreature, t25.MinWieldAugs, t25.MinWieldLife, t25.MinWieldTriune, t25.MinWieldSkillCharm));
+        }
+
+        [TestMethod]
+        public void Normalize_OfTheRealOldStore_GivesTheUniformLadder_AndUnfoldGivesItBack()
+        {
+            // review 2026-11-22: the shape of the 11-09 live copy - no Creature / Life at all, Item 2000-4000 then 4000, T16+
+            // Triune = school = 500 * (N - 15), T11-T15 school 0
+            var old = WeaponScalingManager.BuildDefaults();
+            old.TriuneFolded = false;
+            foreach (var r in old.Tiers.Where(r => r.Tier >= 11))
+            {
+                r.MinWieldCreature = 0;
+                r.MinWieldLife = 0;
+                r.MinWieldAugs = r.Tier <= 15 ? 2000 + 500 * (r.Tier - 11) : 4000;
+                r.MinWieldTriune = r.MinWieldSkillCharm = r.Tier <= 15 ? 0 : 500 * (r.Tier - 15);
+            }
+            WeaponScalingManager.Normalize(old);
+            foreach (var r in old.Tiers.Where(r => r.Tier >= 11))
+            {
+                var step = 500 * (r.Tier - 11);
+                Assert.AreEqual((4000 + step, 2000 + step, 2000 + step, 0, 2000 + step),
+                    (r.MinWieldCreature, r.MinWieldAugs, r.MinWieldLife, r.MinWieldTriune, r.MinWieldSkillCharm), $"T{r.Tier}");
+            }
+
+            WeaponScalingManager.UnfoldTriune(old.Tiers);
+            foreach (var r in old.Tiers.Where(r => r.Tier >= 11))
+            {
+                var step = 500 * (r.Tier - 11);
+                var triune = r.Tier <= 15 ? 0 : 500 * (r.Tier - 15);
+                Assert.AreEqual((r.Tier <= 15 ? 2000 + step : 4000, triune, triune), (r.MinWieldAugs, r.MinWieldTriune, r.MinWieldSkillCharm), $"T{r.Tier} unfolded");
+                Assert.AreEqual((Math.Min(6000, 4000 + step), Math.Min(4000, 2000 + step)), (r.MinWieldCreature, r.MinWieldLife), $"T{r.Tier} unfolded C/L");
+            }
+        }
+
+        [TestMethod]
+        public void SchoolOf_AnAttack_AsksItsSchool_AndNothingElse()
+        {
+            Assert.AreEqual(TierHitGate.AttackSchool.Melee, TierHitGate.SchoolOf(ACE.Server.WorldObjects.CombatType.Melee));
+            Assert.AreEqual(TierHitGate.AttackSchool.Missile, TierHitGate.SchoolOf(ACE.Server.WorldObjects.CombatType.Missile));
+            Assert.AreEqual(TierHitGate.AttackSchool.None, TierHitGate.SchoolOf(ACE.Server.WorldObjects.CombatType.Magic), "a spell's school comes from the spell");
+            Assert.AreEqual(TierHitGate.AttackSchool.None, TierHitGate.SchoolOf((ACE.Server.Entity.Spell)null, null), "no spell, no item: no school");
         }
 
         [TestMethod]

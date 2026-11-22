@@ -1161,7 +1161,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (targetObject != null)
                     {
-                        // an aug school on a creature reads used gems + the T11-T14 drip (GetInt64ForGate)
+                        // a retired counter (Triune Weave, a school charm) on a creature reads what replaced it (GetInt64ForGate)
                         var stat = targetObject is Creature gateCreature
                             ? gateCreature.GetInt64ForGate((PropertyInt64)emote.Stat)
                             : targetObject.GetProperty((PropertyInt64)emote.Stat);
@@ -2848,7 +2848,7 @@ namespace ACE.Server.WorldObjects.Managers
                                             }
 
                                             // Apply the augmentations
-                                            player.LuminanceAugmentCreatureCount = creatureAugs + augCount;
+                                            player.LuminanceAugmentCreatureCount = (player.LuminanceAugmentCreatureCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             // Consume the correct augmentation item based on the number of augmentations
                                             int itemId = augCount == 1 ? 300005 :
@@ -2940,7 +2940,7 @@ namespace ACE.Server.WorldObjects.Managers
                                             }
 
                                             // Apply the augmentations
-                                            player.LuminanceAugmentItemCount = itemAugs + augCount;
+                                            player.LuminanceAugmentItemCount = (player.LuminanceAugmentItemCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             // Consume the correct item based on augCount
                                             int itemId = augCount == 1 ? 300006 :
@@ -3031,7 +3031,7 @@ namespace ACE.Server.WorldObjects.Managers
                                             }
 
                                             // Apply the augmentations
-                                            player.LuminanceAugmentLifeCount = lifeAugs + augCount;
+                                            player.LuminanceAugmentLifeCount = (player.LuminanceAugmentLifeCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             // Consume the correct item based on augCount
                                             int itemId = augCount == 1 ? 300007 :
@@ -3122,7 +3122,7 @@ namespace ACE.Server.WorldObjects.Managers
                                             }
 
                                             // Apply the augmentations
-                                            player.LuminanceAugmentWarCount = warAugs + augCount;
+                                            player.LuminanceAugmentWarCount = (player.LuminanceAugmentWarCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             // Consume the correct item based on augCount
                                             int itemId = augCount == 1 ? 300008 :
@@ -3212,7 +3212,7 @@ namespace ACE.Server.WorldObjects.Managers
                                             }
 
                                             // Apply the augmentations
-                                            player.LuminanceAugmentVoidCount = voidAugs + augCount;
+                                            player.LuminanceAugmentVoidCount = (player.LuminanceAugmentVoidCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             // Consume the correct item based on augCount
                                             int itemId = augCount == 1 ? 300009 :
@@ -3302,7 +3302,7 @@ namespace ACE.Server.WorldObjects.Managers
                                             }
 
                                             // Apply the augmentations
-                                            player.LuminanceAugmentMeleeCount = meleeAugs + augCount;
+                                            player.LuminanceAugmentMeleeCount = (player.LuminanceAugmentMeleeCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             // Consume the correct item based on augCount
                                             int itemId = augCount == 1 ? 2003002 :
@@ -3392,7 +3392,7 @@ namespace ACE.Server.WorldObjects.Managers
                                             }
 
                                             // Apply the augmentations
-                                            player.LuminanceAugmentMissileCount = missileAugs + augCount;
+                                            player.LuminanceAugmentMissileCount = (player.LuminanceAugmentMissileCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             // Consume the correct item based on augCount
                                             int itemId = augCount == 1 ? 2003003 :

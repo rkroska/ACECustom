@@ -164,6 +164,19 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void The_Seed_Per_School_Never_Passes_How_Far_That_School_Climbed()
+        {
+            var cfg = TriuneEarning.Defaults();
+            // review 2026-11-22: Life 3,900 + Triune 300 moved to 4,200 at T15 (entry 4,000): 200 rolls taken, not 300 -
+            // the 300 left carry Life to the tier's end (4,500); a 300 seed would leave it stuck at 4,400 for good
+            Assert.AreEqual(200, TriuneEarning.SeedRolls(cfg, 15, 300, 4200, cfg.DripBaseItem));
+            Assert.AreEqual(300, TriuneEarning.SeedRolls(cfg, 15, 300, 4300, cfg.DripBaseItem), "a capped school: the Triune seed");
+            Assert.AreEqual(300, TriuneEarning.SeedRolls(cfg, 15, 300, 6300, cfg.DripBaseCreature), "Creature from its own ladder (entry 6,000)");
+            Assert.AreEqual(0, TriuneEarning.SeedRolls(cfg, 15, 300, 3900, cfg.DripBaseItem), "below the entry: 0, never negative");
+            Assert.AreEqual(0, TriuneEarning.SeedRolls(cfg, 14, 300, 3800, cfg.DripBaseItem), "drip tiers never earned Triune");
+        }
+
+        [TestMethod]
         public void Kills_Per_Reward_Is_A_Third_Of_Kills_Per_Point()
         {
             // one reward = one point on each of three schools' worth of pace

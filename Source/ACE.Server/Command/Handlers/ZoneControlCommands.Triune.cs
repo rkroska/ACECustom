@@ -82,7 +82,9 @@ namespace ACE.Server.Command.Handlers
                 {
                     if (args.Count < 3 || !int.TryParse(args[2], out var b) || b < 0 || b > TriuneEarning.MaxGemBaseCap)
                     { Msg($"Usage: triune gembase <0-{TriuneEarning.MaxGemBaseCap:N0}>   (bought school augs a gem needs; 4000 default)"); return; }
-                    ShowTriune(TriuneEarning.Mutate(c => c.GemBaseCap = b), Msg);
+                    var cfg = TriuneEarning.Mutate(c => c.GemBaseCap = b);
+                    ShowTriune(cfg, Msg);
+                    WarnTriuneVsHitGate(cfg, Msg);   // the T15+ gem ladder starts here: it must still meet what T16+ asks
                     return;
                 }
 
@@ -119,11 +121,14 @@ namespace ACE.Server.Command.Handlers
                     // "confirm" it only lists what it would do.
                     var apply = args.Count > 2 && args[2].Equals("confirm", StringComparison.OrdinalIgnoreCase);
                     var r = AugMove.UndoAll(apply);
-                    Msg($"Triune move undo {(apply ? "DONE" : "(dry run - add 'confirm' to apply)")}: {r.Players:N0} characters read, {r.Undone:N0} moved back (only characters the move changed; the rest are left as they are).");
+                    Msg($"Triune move undo {(apply ? "DONE" : "(dry run - add 'confirm' to apply)")}: {r.Players:N0} characters read, {r.Undone:N0} moved back (only characters the move changed; the rest are left as they are)."
+                        + (r.Failed > 0 ? $" {r.Failed:N0} FAILED - run it again (they keep their move record)." : ""));
                     foreach (var line in r.Lines)
                         Msg(line);
-                    if (apply)
-                        Msg("The move is now OFF on this build (nobody is moved again) and the weapon scaling rows are saved in the old Triune form. Switch to the old build next; '/zonecontrol triune move on' undoes the switch only.");
+                    if (apply && r.Failed > 0)
+                        Msg($"PARTIAL: {r.Failed:N0} characters could not be moved back. Stay on THIS build and run '/zonecontrol triune undomove confirm' again until none fail - do NOT switch to the old build yet.");
+                    else if (apply)
+                        Msg("The move is now OFF on this build (nobody is moved again) and the weapon scaling rows are saved in the old Triune form. Hunting rewards and school gems are off. Switch to the old build next ('/zonecontrol triune move on' cancels all this to stay; when THIS build starts more than 24 h after the undo it clears it on its own).");
                     return;
                 }
 
@@ -132,8 +137,19 @@ namespace ACE.Server.Command.Handlers
                     var onOff = args.Count < 3 ? "" : args[2].ToLowerInvariant();
                     if (onOff != "on" && onOff != "off") { Msg("Usage: triune move on|off   (the login move of the retired Triune / charm counts; the undo turns it off)"); return; }
                     var off = onOff == "off";
-                    TriuneEarning.Mutate(c => c.MoveOff = off);
-                    Msg($"Triune move at login: {(off ? "OFF" : "ON")}.");
+                    var cancelled = !off && AugMove.Undone;
+                    var movedNow = 0;
+                    if (cancelled)
+                        movedNow = AugMove.CancelUndo();   // the weapon rows first, then the switches in one save, then the online moves
+                    else
+                    {
+                        TriuneEarning.Mutate(c => c.MoveOff = off);
+                        if (!off)
+                            movedNow = AugMove.MoveOnline();   // online characters held back while it was off move now
+                    }
+                    Msg($"Triune move at login: {(off ? "OFF" : "ON")}."
+                        + (cancelled ? " The undo is cancelled: hunting rewards and school gems are back, the weapon scaling rows are saved for this build again." : "")
+                        + (!off ? $" {movedNow:N0} online characters were moved now; the rest move at their next login." : ""));
                     return;
                 }
 
@@ -226,6 +242,9 @@ namespace ACE.Server.Command.Handlers
         /// </summary>
         private static void WarnTriuneVsHitGate(TriuneEarning.Config cfg, Action<string> Msg)
         {
+            // the coin-bought Triune and charms are retired: past the luminance caps only rewards and school gems climb
+            if (!cfg.Enabled || !cfg.GemsEnabled)
+                Msg($"  WARNING: hunting rewards {(cfg.Enabled ? "ON" : "OFF")}, school gems {(cfg.GemsEnabled ? "ON" : "OFF")} - with either OFF nobody new can climb past T15 (T16 asks past the luminance caps).");
             for (var t = TriuneEarning.FirstTier; t < TriuneEarning.MaxTier; t++)
             {
                 var next = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(t + 1);
@@ -283,7 +302,7 @@ namespace ACE.Server.Command.Handlers
         private static void ShowTriune(TriuneEarning.Config cfg, Action<string> Msg)
         {
             Msg($"Hunting rewards T15-T25 ('on' / 'off'): {(cfg.Enabled ? "ON" : "OFF")}. T11-T14 ('drip on' / 'drip off'): {(cfg.DripEnabled ? "ON" : "OFF")}. Own-tier kills only, top damager; each reward +1 to ONE of Creature / Item / Life at random (Points rolls per school per tier), straight onto the aug count, up to the tier's end.");
-            Msg($"  Ladder from Creature {cfg.DripBaseCreature:N0} / Item-Life {cfg.DripBaseItem:N0} at T11 ('dripbase'). Login move of the retired Triune / charm counts: {(cfg.MoveOff ? "OFF (undo ran)" : "ON")}.");
+            Msg($"  Ladder from Creature {cfg.DripBaseCreature:N0} / Item-Life {cfg.DripBaseItem:N0} at T11 ('dripbase'). Login move of the retired Triune / charm counts: {(cfg.MoveOff ? (cfg.UndoRan ? "OFF (undo saved - rewards and gems off too; 'triune move on' resumes)" : "OFF") : "ON")}.");
             Msg($"Attack school gems: {(cfg.GemsEnabled ? "ON" : "OFF")}. On the top damager's corpse, a roll per school at the tier's floor (T15+: {cfg.GemBaseCap:N0}) and under its ceiling. T11-T14 gems need drip AND gems on.");
             Msg($"  Week turns {(DayOfWeek)cfg.ResetDay} {cfg.ResetHour:00}:00 {cfg.ResetTimeZone} (next: {TriuneEarning.NextResetText(cfg)}).");
             foreach (var r in cfg.Tiers)

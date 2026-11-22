@@ -235,7 +235,12 @@ namespace ACE.Server.Command.Handlers
                                      PropertyInt64.AugDripWarCount, PropertyInt64.AugDripVoidCount, PropertyInt64.AugDripMeleeCount,
                                      PropertyInt64.AugDripMissileCount,
                                      PropertyInt64.AugRollTier, PropertyInt64.AugRollsCreature, PropertyInt64.AugRollsItem,
-                                     PropertyInt64.AugRollsLife };
+                                     PropertyInt64.AugRollsLife,
+                                     // the hunting week and its client copy
+                                     PropertyInt64.TriuneWeekStart, PropertyInt64.AugHuntWeekKills, PropertyInt64.AugHuntWeekResetAt,
+                                     PropertyInt64.AugHuntBand1Kills, PropertyInt64.AugHuntBand2Kills,
+                                     PropertyInt64.AugHuntKillsPerReward1, PropertyInt64.AugHuntKillsPerReward2,
+                                     PropertyInt64.AugHuntRollsPerSchool };
             foreach (var charmProp in charmProps)
             {
                 player.RemoveProperty(charmProp);
@@ -243,6 +248,8 @@ namespace ACE.Server.Command.Handlers
             }
             player.RemoveProperty(PropertyString.TriuneMoveRecord);
             player.RemoveProperty(PropertyFloat.AugDripFraction);
+            player.RemoveProperty(PropertyFloat.TriuneFraction);
+            player.RemoveProperty(PropertyFloat.TriuneWeekKills);
 
             // 8. Reset Retail Augmentations to 0
             foreach (var kvp in AugmentationDevice.MaxAugs)
@@ -667,9 +674,11 @@ namespace ACE.Server.Command.Handlers
                 }
                 case "charms":
                 {
-                    // The RETIRED counters (PropertyInt64 50000-50004: Triune, then the four attack schools). Nothing
-                    // reads them any more except the login move, which adds them onto the augs at the next login of a
-                    // character with no move record - this setter is how TEST makes an old-style holder to prove it.
+                    // The RETIRED counters (PropertyInt64 50000-50004: Triune, then the four attack schools). A held counter
+                    // counts in power and gates AT ONCE (Effective counts add it: Triune 10 = +10 Creature / Item / Life),
+                    // and the login move adds it onto the augs at the next login of a character with no move record. A
+                    // character that already has a real move record keeps it held (never moved again) - this setter is how
+                    // TEST makes an old-style holder to prove the move.
                     if (!ParseCsv(arg, 5, out var v))
                     {
                         Msg("set charms: need 5 csv values (weave,wrath,nether,steel,trueshot)");
@@ -683,7 +692,7 @@ namespace ACE.Server.Command.Handlers
                         player.SetProperty(props[i], v[i]);
                         player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, props[i], v[i]));
                     }
-                    Msg("set charms: " + arg + " (retired counters - they move onto the augs at the next login if this character has no move record)");
+                    Msg("set charms: " + arg + " (retired counters - they count in power now, and move onto the augs at the next login only if this character has no move record)");
                     return;
                 }
                 case "raugs":

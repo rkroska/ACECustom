@@ -61,6 +61,23 @@ namespace ACE.Server.Managers.ZoneControl
             if (attacker is not Player player || target == null)
                 return true;
 
+            // The MONSTER's layer decides the requirement, not the weapon.
+            //
+            // GOVERNED MONSTERS ONLY (owner 2026-09-01, before shipping the gate ON). This used to key
+            // on target.Location.Variation alone, which meant the gate fired on ANY creature standing at
+            // v11+ - including one carrying ExemptFromZoneScaling, and including landblocks no enabled
+            // zone covers. An exempt vendor or quest NPC was therefore UNATTACKABLE by an
+            // under-augmented player, with no way to opt out, the moment the gate was switched on.
+            //
+            // ResolveForCreature is the single "may Zone Control touch this creature" gate and answers
+            // all four questions at once: not a Player, not a Pet, not ExemptFromZoneScaling, an ENABLED
+            // zone covers the landblock, and that zone's variation matches the creature's. If Zone
+            // Control does not govern the monster, the gate has no business gating it. Lock-free hot
+            // path (a hashset probe then a dictionary lookup), the same call the combat sites already
+            // make - see ZoneControlManager.ResolveForCreature.
+            if (ZoneControlManager.ResolveForCreature(target) == null)
+                return true;
+
             // GetEffectiveVariation, not raw Location.Variation - every other Zone Control consumer
             // resolves through it, and it is what honours the ForceEndgameSystems test hook. Reading
             // the raw value here made the gate the one consumer that disagreed with the rest.

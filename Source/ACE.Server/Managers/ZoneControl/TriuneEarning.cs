@@ -88,7 +88,16 @@ namespace ACE.Server.Managers.ZoneControl
             public List<TriuneTierRow> Tiers { get; set; } = new();
             /// <summary>Set by the admin undo of the Triune move (AugMove.UndoAll): no character is moved again on this build.</summary>
             public bool MoveOff { get; set; }
+            /// <summary>Set by an applied undo (AugMove.UndoAll), SAVED so a restart onto this build keeps it: no hunting reward
+            /// or school gem, and the weapon rows stay in the old build's shape. Cleared only by 'triune move on'.</summary>
+            public bool UndoRan { get; set; }
+            /// <summary>Unix seconds of that undo. A start more than UndoKeepHours later clears UndoRan and MoveOff: this build is
+            /// back after the rollback (the old build ignores both fields, so they would otherwise keep the lane off for good).</summary>
+            public long UndoAt { get; set; }
         }
+
+        /// <summary>How long a saved undo holds across restarts of THIS build (a crash between the undo and the switch).</summary>
+        public const int UndoKeepHours = 24;
 
         // limits for every number a command or a hand-edited store can set (review 2026-11-01: finite and bounded, never NaN /
         // Infinity / 1e308): kills an hour, weeks, points per tier, the bought school base
@@ -99,6 +108,8 @@ namespace ACE.Server.Managers.ZoneControl
         private static Config _current;
         /// <summary>True while the stored JSON could not be read: the running settings stay, and no edit may save over the store.</summary>
         private static bool _loadFailed;
+        /// <summary>The stored settings could not be read (defaults or the last good copy are running).</summary>
+        public static bool LoadFailed => _loadFailed;
         /// <summary>When a failed FIRST load is next retried on its own (a brief DB error must not leave earning off until a reload).</summary>
         private static DateTime _retryLoadAt;
         /// <summary>The failure was the first load (the defaults are running) - only then is the store re-read on its own.</summary>
@@ -122,7 +133,7 @@ namespace ACE.Server.Managers.ZoneControl
                 {
                     if (_current == null || (_loadFailed && _firstLoadFailed && DateTime.UtcNow >= _retryLoadAt))
                     {
-                        try { _current = Load(); _loadFailed = false; _firstLoadFailed = false; }
+                        try { _current = ExpireStaleUndo(Load()); _loadFailed = false; _firstLoadFailed = false; }
                         catch (Exception ex)
                         {
                             // the defaults run (earning OFF) but are never saved over the store; retried once a minute
@@ -211,6 +222,39 @@ namespace ACE.Server.Managers.ZoneControl
             return string.IsNullOrWhiteSpace(json) ? Defaults() : Normalize(JsonConvert.DeserializeObject<Config>(json));
         }
 
+        /// <summary>
+        /// A loaded store with a saved undo (AugMove.UndoAll): kept for UndoKeepHours (a restart of this build before the switch
+        /// to the old one - logged as an ERROR every start), cleared after that (this build is deployed again after a rollback:
+        /// the login move and earning come back). Call with _lock held.
+        /// </summary>
+        private static Config ExpireStaleUndo(Config cfg)
+        {
+            if (cfg == null || !cfg.UndoRan)
+                return cfg;
+            // a hand-edited UndoAt outside the date range reads as "long ago" (cleared), never as a load failure
+            var at = DateTimeOffset.FromUnixTimeSeconds(Math.Clamp(cfg.UndoAt, 0, DateTimeOffset.MaxValue.ToUnixTimeSeconds())).UtcDateTime;
+            if (cfg.UndoAt > 0 && DateTime.UtcNow - at < TimeSpan.FromHours(UndoKeepHours))
+            {
+                log.Error($"[TriuneEarning] the Triune move UNDO is saved ({at:yyyy-MM-dd HH:mm} UTC): hunting rewards, school gems and the login move are OFF on this build - switch to the old build, or '/zonecontrol triune move on' to stay.");
+                return cfg;
+            }
+            cfg.UndoRan = false;
+            cfg.MoveOff = false;
+            log.Warn($"[TriuneEarning] a Triune move undo from {at:yyyy-MM-dd HH:mm} UTC is older than {UndoKeepHours} h: this build is back after the rollback - the login move and earning are ON again.");
+            try { SaveStore(cfg); }
+            catch (Exception ex) { log.Error($"[TriuneEarning] clearing the old undo could not be saved (it is cleared for this run): {ex}"); }
+            return cfg;
+        }
+
+        private static void SaveStore(Config cfg)
+        {
+            var jsonOut = JsonConvert.SerializeObject(cfg);
+            if (DatabaseManager.ShardConfig.StringExists(StoreKey))
+                DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = StoreKey, Value = jsonOut, Description = "Triune earning per tier (JSON)" });
+            else
+                DatabaseManager.ShardConfig.AddString(StoreKey, jsonOut, "Triune earning per tier (JSON)");
+        }
+
         /// <summary>Edit a clone, save it, publish it. Returns the new config.</summary>
         public static Config Mutate(Action<Config> edit)
         {
@@ -238,7 +282,7 @@ namespace ACE.Server.Managers.ZoneControl
             lock (_lock)
             {
                 Config fresh;
-                try { fresh = Load(); }
+                try { fresh = ExpireStaleUndo(Load()); }
                 catch
                 {
                     // the running settings stay; no edit may now save over the unreadable store until a reload reads it
@@ -396,6 +440,15 @@ namespace ACE.Server.Managers.ZoneControl
             return Math.Clamp(triune - TierCap(cfg, ownTier - 1), 0, row.Points);
         }
 
+        /// <summary>
+        /// The seed for ONE school (review 2026-11-22): never more than the school actually climbed into the own tier,
+        /// clamp(count - the tier's entry, 0, Points), and never more than the Triune seed above. A Triune holder whose bought
+        /// count sat below its luminance cap (Triune gems had no cap check) is seeded only by how far that school really is,
+        /// so its rolls can still carry it to the tier's end. Pure, tested.
+        /// </summary>
+        public static long SeedRolls(Config cfg, int ownTier, long triune, long count, long entryBase)
+            => Math.Min(SeedRolls(cfg, ownTier, triune), Math.Max(0, count - DripEntry(cfg, ownTier, entryBase)));
+
         /// <summary>The rolls this player has taken on each school this tier (0 for a tier they have not earned in yet).</summary>
         public static long[] RollsTaken(Player player, int tier)
         {
@@ -503,7 +556,8 @@ namespace ACE.Server.Managers.ZoneControl
         public static double RewardValue(TriuneTierRow r, double killsBefore) => KillValue(r, killsBefore) * DripSchools.Length;
 
         /// <summary>Kills per reward in each band (rounded; 0 when the band pays nothing).</summary>
-        public static long KillsPerReward(double pointRate) => pointRate > 0 ? (long)Math.Round(1.0 / (pointRate * DripSchools.Length)) : 0;
+        public static long KillsPerReward(double pointRate) =>
+            pointRate > 0 ? Math.Max(1, (long)Math.Round(1.0 / (pointRate * DripSchools.Length))) : 0;   // a paying band is never "0" (= no rewards)
 
         /// <summary>How much of the kill [k, k + 1) falls inside the band [from, to) - 1 inside, 0 outside, the share at an edge.</summary>
         private static double Overlap(double k, double from, double to) => Math.Max(0, Math.Min(k + 1, to) - Math.Max(k, from));
@@ -572,6 +626,8 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 if (victim == null || victim is Player || victim is Pet)
                     return;
+                if (AugMove.Undone)
+                    return;   // the admin undo ran: nothing more is earned on this build before the old one is back
 
                 var cfg = Current;
                 if (!cfg.Enabled && !cfg.GemsEnabled && !cfg.DripEnabled)   // the weekly count also paces the school gems
@@ -617,6 +673,10 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 if (player.IsLoggingOut || !ReferenceEquals(PlayerManager.GetOnlinePlayer(player.Guid), player))
                     return;
+                if (AugMove.Undone)
+                    return;   // queued before the undo ran: the undo already wrote this character's old-build counts
+                if (AugMove.AwaitsMove(player))
+                    return;   // old counters not moved yet: nothing earned on them (the move adds them later)
 
                 // the tier you are in: one tier below earns nothing
                 if (TierRewardScale.OwnTier(player) != killTier)
@@ -701,7 +761,9 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!RollAdds(count, DripCeiling(cfg, tier, s)))
                     continue;   // lost on a full school: no line (owner 2026-11-21)
 
-                var newCount = count + 1;
+                // the stored count + 1: Count is the Effective count, which also adds a retired counter still held - writing that
+                // back would fold the held counter in again at every reward
+                var newCount = (player.GetProperty(s.AugProperty) ?? 0) + 1;
                 player.SetProperty(s.AugProperty, newCount);
                 player.Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, s.AugProperty, newCount));
                 player.SendMessage($"Your {s.Name} augmentations grow to {newCount:N0}.", ChatMessageType.Broadcast);
@@ -728,14 +790,20 @@ namespace ACE.Server.Managers.ZoneControl
         /// counts are moved to the own tier here too, so a plugin never shows another tier's rolls. <paramref name="send"/>
         /// false = only write them (at login, where the description that follows carries them - they are [SendOnLogin]).
         /// </summary>
+        private static readonly PropertyInt64[] RollProps = DripSchools.Select(s => s.RollsProperty).ToArray();
+
         public static void PushHuntState(Player player, bool full, bool send = true)
         {
             if (player == null)
                 return;
             var cfg = Current;
             var own = TierRewardScale.OwnTier(player);
+            // below T11 and never shown any: nothing to write (no rows of zeros on every retail character, every login)
+            if (own < FirstTier && !player.GetProperty(PropertyInt64.AugHuntWeekKills).HasValue)
+                return;
             var row = own >= FirstTier ? cfg.Tiers.FirstOrDefault(r => r.Tier == own) : null;
-            var on = row != null && row.Points > 0 && RewardsOn(cfg, own);
+            // paused (an undo saved, or old counters waiting for the move) shows as off: kills grant nothing then
+            var on = row != null && row.Points > 0 && RewardsOn(cfg, own) && !AugMove.Undone && !AugMove.AwaitsMove(player);
 
             if (on && EnsureRollTier(player, own))
                 full = true;
@@ -759,7 +827,7 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var (prop, v) in values)
             {
                 // the roll counts and the roll tier are the real bookkeeping - written where they change; the rest is a copy
-                if (prop != PropertyInt64.AugRollTier && Array.IndexOf(DripSchools.Select(s => s.RollsProperty).ToArray(), prop) < 0)
+                if (prop != PropertyInt64.AugRollTier && Array.IndexOf(RollProps, prop) < 0)
                     player.SetProperty(prop, v);
                 if (send)
                     player.Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, prop, v));
@@ -816,7 +884,15 @@ namespace ACE.Server.Managers.ZoneControl
             var now = DateTime.UtcNow;
             var next = NextResetUtc(cfg, storedStart, now);
             var local = TimeZoneInfo.ConvertTimeFromUtc(next, ResetZone(cfg));
-            return ($"{local.ToString("dddd H:mm", CultureInfo.InvariantCulture)} {ZoneShortName(cfg.ResetTimeZone)}", LeftText(next - now));
+            // the zone the week really turns in (an unknown id falls back to UTC - show UTC, not the bad id)
+            return ($"{local.ToString("dddd H:mm", CultureInfo.InvariantCulture)} {ZoneShortName(ResetZone(cfg).Id)}", LeftText(next - now));
+        }
+
+        /// <summary>"1 reward per 134 kills", or "no rewards" for a band that pays nothing (never "1 reward per 0 kills").</summary>
+        public static string RewardPace(double pointRate)
+        {
+            var k = KillsPerReward(pointRate);
+            return k > 0 ? $"1 reward per {k:N0} kills" : "no rewards";
         }
 
         /// <summary>One kill per point, rounded: "403".</summary>
@@ -852,6 +928,16 @@ namespace ACE.Server.Managers.ZoneControl
                 lines.Add("Hunting rewards: none in these lands right now.");
                 return lines;
             }
+            if (AugMove.Undone)
+            {
+                lines.Add("Hunting rewards: paused for now - they come back after the server restart.");
+                return lines;
+            }
+            if (AugMove.AwaitsMove(player))
+            {
+                lines.Add("Hunting rewards: paused for now - your augmentations are being brought up to date.");
+                return lines;
+            }
 
             lines.Add("Hunting rewards this week:");
             lines.Add(on && gems ? "  Each reward adds 1 to Creature, Item or Life at random. Attack school gems drop on their own"
@@ -864,8 +950,8 @@ namespace ACE.Server.Managers.ZoneControl
             lines.Add($"  Kills this week: {kills:N0}");
             if (on)
             {
-                lines.Add($"    First {b1:N0} kills:    1 reward per {KillsPerReward(Rate1(row)):N0} kills{Here(kills < b1, b1 - kills)}");
-                lines.Add($"    After {b1:N0} kills:    1 reward per {KillsPerReward(Rate2(row)):N0} kills{Here(kills >= b1 && kills < b2, b2 - kills)}");
+                lines.Add($"    First {b1:N0} kills:    {RewardPace(Rate1(row))}{Here(kills < b1, b1 - kills)}");
+                lines.Add($"    After {b1:N0} kills:    {RewardPace(Rate2(row))}{Here(kills >= b1 && kills < b2, b2 - kills)}");
                 lines.Add($"    Beyond {b2:N0} kills:   no rewards until the week resets{Here(kills >= b2, 0)}");
             }
             var storedStart = player.GetProperty(PropertyInt64.TriuneWeekStart) ?? 0;

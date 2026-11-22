@@ -64,10 +64,11 @@ namespace ACE.Server.Managers.ZoneControl
             public int V { get; set; } = RecordVersion;
             /// <summary>Unix seconds of the move.</summary>
             public long At { get; set; }
-            /// <summary>Added per school (PropertyInt64 id -> amount).</summary>
-            public Dictionary<ushort, long> Added { get; set; } = new();
-            /// <summary>The moved counters as they were (PropertyInt64 id -> value).</summary>
-            public Dictionary<ushort, long> Old { get; set; } = new();
+            private Dictionary<ushort, long> _added = new(), _old = new();
+            /// <summary>Added per school (PropertyInt64 id -> amount). A hand-edited "null" reads as empty.</summary>
+            public Dictionary<ushort, long> Added { get => _added; set => _added = value ?? new(); }
+            /// <summary>The moved counters as they were (PropertyInt64 id -> value). A hand-edited "null" reads as empty.</summary>
+            public Dictionary<ushort, long> Old { get => _old; set => _old = value ?? new(); }
             /// <summary>The old Triune fraction (PropertyFloat.TriuneFraction), 0 when none.</summary>
             public double OldFraction { get; set; }
         }
@@ -87,6 +88,127 @@ namespace ACE.Server.Managers.ZoneControl
                     add[school] = (add.TryGetValue(school, out var a) ? a : 0) + n;
             }
             return add;
+        }
+
+        /// <summary>
+        /// The value a retired counter held when this character was moved. Gates that still name Triune Weave or a school charm
+        /// read at least this (Creature.GetInt64ForGate), so a holder whose bought counts sat below the luminance caps keeps
+        /// every gate the old counter opened. Null = no move record, or the counter was never set (a quest's "no quality"
+        /// branch still fires); 0 = a record that cannot be read.
+        /// </summary>
+        public static long? MovedOld(WorldObject wo, PropertyInt64 old) => MovedOld(wo?.GetProperty(PropertyString.TriuneMoveRecord), old);
+
+        /// <summary>MovedOld from the stored record JSON (tests).</summary>
+        public static long? MovedOld(string json, PropertyInt64 old)
+        {
+            if (string.IsNullOrEmpty(json))
+                return null;
+            try
+            {
+                var record = JsonConvert.DeserializeObject<Record>(json);
+                // the record lists every counter the character HELD (0 included): one it does not list was never set (null)
+                return record?.Old != null && record.Old.TryGetValue((ushort)old, out var v) ? Math.Max(0, v) : null;
+            }
+            catch (JsonException)
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// An applied undo (saved in the Triune settings, so a restart onto this build keeps it): no hunting reward and no school
+        /// gem is handed out after it, so nothing earned on this build between the undo and the switch to the old build is
+        /// counted twice there (the undo already turned the earned-past-the-caps part back into Triune / charm counts).
+        /// </summary>
+        public static bool Undone => TriuneEarning.Current.UndoRan;
+
+        /// <summary>
+        /// '/zonecontrol triune move on' after an undo: the admin stays on THIS build. The weapon rows are saved folded again
+        /// FIRST, then earning comes back and the move is on again (one save) - a failed rows save changes nothing. The undone
+        /// characters are moved again at their next login.
+        /// </summary>
+        public static int CancelUndo()
+        {
+            // unreadable Triune settings would refuse the second save after the rows were already folded: refuse first
+            if (TriuneEarning.LoadFailed)
+                throw new InvalidOperationException("the stored Triune settings could not be read - fix them, then /zonecontrol triune reload (nothing was changed)");
+            WeaponScalingManager.CancelRollback();
+            try
+            {
+                TriuneEarning.Mutate(c => { c.MoveOff = false; c.UndoRan = false; });
+            }
+            catch (Exception ex)
+            {
+                // the undo stays saved: put the weapon rows back in the old build's shape, so a switch to it still reads them right
+                log.Error($"[AugMove] 'move on' could not clear the saved undo - restoring the weapon rollback copy: {ex}");
+                try { WeaponScalingManager.SaveUnfoldedForRollback(); }
+                catch (Exception ex2) { log.Error($"[AugMove] the weapon rollback copy could NOT be restored - do not switch builds: {ex2}"); }
+                throw;
+            }
+            return MoveOnline();
+        }
+
+        /// <summary>
+        /// Move the characters ONLINE now (the move was just turned on, or an undo cancelled), not at their next login: until
+        /// moved they earn nothing (AwaitsMove). Each moved client gets its new school counts and the old counters at 0, so a
+        /// plugin never sees both. Runs from an in-game command, on the world thread. Returns how many were moved.
+        /// </summary>
+        public static int MoveOnline()
+        {
+            var moved = 0;
+            foreach (var p in PlayerManager.GetAllOnline())
+            {
+                try
+                {
+                    var held = Moves.Select(m => m.Old).Where(old => p.GetProperty(old).HasValue).ToList();
+                    if (!RunMove(p))
+                        continue;
+                    moved++;
+                    foreach (var s in Schools)
+                        p.Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(p, s.Prop, p.GetProperty(s.Prop) ?? 0));
+                    foreach (var old in held)
+                        if (!p.GetProperty(old).HasValue)
+                            p.Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(p, old, 0));
+                    TriuneEarning.PushHuntState(p, full: true);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[AugMove] move of {p?.Name} after 'move on': {ex}");
+                }
+            }
+            return moved;
+        }
+
+        /// <summary>
+        /// The character still holds a retired counter the login move has not taken (the move was off or skipped): it earns no
+        /// hunting reward and no school gem until it is moved, so nothing is earned twice (on the old counts, then the move).
+        /// </summary>
+        public static bool AwaitsMove(WorldObject wo)
+        {
+            if (wo == null)
+                return false;
+            // per kill: the cheap reads first - a moved character holds none of these, so the record is never parsed for it
+            var holds = (wo.GetProperty(PropertyFloat.TriuneFraction) ?? 0) > 0;
+            foreach (var (old, _) in Moves)
+                holds |= (wo.GetProperty(old) ?? 0) > 0;
+            if (!holds)
+                return false;
+            var json = wo.GetProperty(PropertyString.TriuneMoveRecord);
+            return string.IsNullOrEmpty(json) || ZeroOnlyRecord(json) != null;
+        }
+
+        /// <summary>The record when it only kept stray 0 counters (nothing added, no fraction), else null.</summary>
+        private static Record ZeroOnlyRecord(string json)
+        {
+            try
+            {
+                var r = JsonConvert.DeserializeObject<Record>(json);
+                return r != null && r.Added.Count == 0 && !(r.OldFraction > 0) && r.Old.Values.All(v => v <= 0) ? r : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         /// <summary>"Creature +141, Item +141, Life +141, War +227" - the schools that gained, in the fixed order.</summary>
@@ -113,6 +235,15 @@ namespace ACE.Server.Managers.ZoneControl
             }
             try
             {
+                if (Undone && player.Session?.AccessLevel >= AccessLevel.Admin)
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("ADMIN: the Triune move undo is saved - hunting rewards, school gems and the login move are OFF on this build. Switch to the old build, or '/zonecontrol triune move on' to stay.", ChatMessageType.Broadcast));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[AugMove] undo notice for {player.Name}: {ex}");
+            }
+            try
+            {
                 SchoolGems.RenameHeldGems(player);
                 TriuneEarning.PushHuntState(player, full: true, send: false);
             }
@@ -125,20 +256,48 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>The move, when this character has no record and holds something to move. True when it moved.</summary>
         public static bool RunMove(Player player)
         {
-            if (TriuneEarning.Current.MoveOff)
-                return false;   // the admin undo ran: nothing moves again until the old build is back (or the switch is reset)
-            if (!string.IsNullOrEmpty(player.GetProperty(PropertyString.TriuneMoveRecord)))
+            // the undo switches the move off under the same lock: a login is either moved (record written) before the undo's
+            // character loop reads it, or sees MoveOff - never moved after the loop passed it by
+            lock (MoveLock)
+                return RunMoveLocked(player);
+        }
+
+        /// <summary>Held by RunMove and by the undo while it switches the move off.</summary>
+        private static readonly object MoveLock = new object();
+
+        private static bool RunMoveLocked(Player player)
+        {
+            // the admin undo ran: nothing moves again until the old build is back (or the switch is reset). Settings that could
+            // not be read may hide a saved MoveOff: no move then - it runs at a later login once they read again.
+            var cfg0 = TriuneEarning.Current;
+            if (TriuneEarning.LoadFailed || cfg0.MoveOff)
+                return false;
+            // moved once - unless that record only kept stray 0 counters: a counter set since (an admin) still moves
+            Record zeroOnly = null;
+            var existing = player.GetProperty(PropertyString.TriuneMoveRecord);
+            if (!string.IsNullOrEmpty(existing) && (zeroOnly = ZeroOnlyRecord(existing)) == null)
                 return false;
 
             long Read(PropertyInt64 p) => player.GetProperty(p) ?? 0;
             var add = Plan(Read);
             var oldFraction = player.GetProperty(PropertyFloat.TriuneFraction) ?? 0;
+            if (add.Count == 0 && !(oldFraction > 0) && zeroOnly != null)
+                return false;   // still nothing but zeros: the record already keeps them
             if (add.Count == 0 && !(oldFraction > 0))
             {
-                // nothing to move - but a stray zero counter still goes, so nothing old is ever sent to a client
-                foreach (var (old, _) in Moves)
-                    if (player.GetProperty(old).HasValue)
-                        player.RemoveProperty(old);
+                // nothing to move - but a stray zero counter still goes, so nothing old is ever sent to a client. A record keeps
+                // it, so a gate still reads it as held at 0 (not "never set") and the undo puts it back.
+                var held = Moves.Select(m => m.Old).Where(old => player.GetProperty(old).HasValue).ToList();
+                if (held.Count == 0)
+                    return false;
+                var zeroRecord = new Record { At = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+                foreach (var old in held)
+                    zeroRecord.Old[(ushort)old] = player.GetProperty(old) ?? 0;
+                var zeroJson = JsonConvert.SerializeObject(zeroRecord);
+                foreach (var old in held)
+                    player.RemoveProperty(old);
+                player.SetProperty(PropertyString.TriuneMoveRecord, zeroJson);
+                player.CharacterChangesDetected = true;
                 return false;
             }
 
@@ -148,30 +307,41 @@ namespace ACE.Server.Managers.ZoneControl
                     record.Old[(ushort)old] = v;
             foreach (var (school, n) in add)
                 record.Added[(ushort)school] = n;
+            if (zeroOnly != null)
+                foreach (var (id, v) in zeroOnly.Old)
+                    record.Old.TryAdd(id, v);
 
             var triune = Read(PropertyInt64.TriuneWeaveCount);
-            foreach (var (school, n) in add)
-                player.SetProperty(school, Read(school) + n);
+            // everything that can throw is worked out before the first write, so the writes below never stop half-way
+            var recordJson = JsonConvert.SerializeObject(record);
+            var newCounts = add.ToDictionary(kv => kv.Key, kv => Read(kv.Key) + kv.Value);
+            foreach (var (school, v) in newCounts)
+                player.SetProperty(school, v);
             foreach (var (old, _) in Moves)
                 player.RemoveProperty(old);
             player.RemoveProperty(PropertyFloat.TriuneFraction);
-            player.SetProperty(PropertyString.TriuneMoveRecord, JsonConvert.SerializeObject(record));
+            player.SetProperty(PropertyString.TriuneMoveRecord, recordJson);
 
-            // the rolls the moved Triune already covers at the own tier (read with the NEW counts)
+            // the rolls the moved Triune already covers at the own tier (read with the NEW counts), per school: never more than
+            // that school really climbed into the tier (a Triune holder below a luminance cap keeps the rolls to reach the end)
             var cfg = TriuneEarning.Current;
             var own = TierRewardScale.OwnTier(player);
-            var seed = TriuneEarning.SeedRolls(cfg, own, triune);
             TriuneEarning.EnsureRollTier(player, own);
-            if (seed > 0)
-                foreach (var s in TriuneEarning.DripSchools)
+            var seeds = new List<string>();
+            foreach (var s in TriuneEarning.DripSchools)
+            {
+                var seed = TriuneEarning.SeedRolls(cfg, own, triune, s.Count(player), s.IsCreature ? cfg.DripBaseCreature : cfg.DripBaseItem);
+                seeds.Add($"{s.Name} {seed}");
+                if (seed > 0)
                     player.SetProperty(s.RollsProperty, Math.Max(player.GetProperty(s.RollsProperty) ?? 0, seed));
+            }
             // a Triune point was 3 rewards (one per school): the part-way point carries over, kept below a whole reward
             if (oldFraction > 0)
                 player.SetProperty(PropertyFloat.AugDripFraction, Math.Min(0.999, (player.GetProperty(PropertyFloat.AugDripFraction) ?? 0) + 3 * oldFraction));
 
             player.CharacterChangesDetected = true;
             var text = AddedText(add);
-            log.Info($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved {text}; T{own} rolls seeded {seed}.");
+            log.Info($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved {text}; T{own} rolls seeded {string.Join(", ", seeds)}.");
             if (text.Length > 0)
                 player.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your Triune Weave and charm counts now live in your augmentations: {text}.", ChatMessageType.Broadcast));
             return true;
@@ -181,7 +351,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         public sealed class UndoResult
         {
-            public int Players, Undone;
+            public int Players, Undone, Failed;
             public List<string> Lines = new();
         }
 
@@ -201,9 +371,9 @@ namespace ACE.Server.Managers.ZoneControl
             foreach (var (id, n) in record.Added)
                 if (counts.ContainsKey((PropertyInt64)id))
                     counts[(PropertyInt64)id] = Math.Max(0, counts[(PropertyInt64)id] - n);
+            // every counter the record held comes back, a 0 included (a quest reads "held at 0" and "never set" differently)
             foreach (var (id, v) in record.Old)
-                if (v != 0)
-                    oldCounters[(PropertyInt64)id] = v;
+                oldCounters[(PropertyInt64)id] = v;
 
             // the old build never had the drip: a restored drip counter would sit unread, so it is folded into its school FIRST (then the
             // conversion below sees it)
@@ -238,12 +408,34 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// /zonecontrol triune undomove: every MOVED character (a move record), online and offline; never-moved ones are untouched. Saves the weapon rows unfolded for the old build
-        /// and switches the move off (MoveOff) so nobody is moved again before the restart.
+        /// /zonecontrol triune undomove: every MOVED character (a move record), online and offline; never-moved ones are
+        /// untouched. Saves the weapon rows unfolded for the old build and switches the move off (MoveOff) so nobody is moved
+        /// again before the restart - both FIRST: when either save fails it throws before any character is changed. From then
+        /// on (Undone) this build hands out no hunting reward and no school gem.
         /// </summary>
         public static UndoResult UndoAll(bool apply)
         {
             var result = new UndoResult();
+            if (apply)
+            {
+                var before = TriuneEarning.Current;
+                var (wasOff, wasUndo) = (before.MoveOff, before.UndoRan);
+                lock (MoveLock)
+                    TriuneEarning.Mutate(c => { c.MoveOff = true; c.UndoRan = true; c.UndoAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(); });
+                try
+                {
+                    WeaponScalingManager.SaveUnfoldedForRollback();
+                }
+                catch (Exception ex)
+                {
+                    // nothing was undone: the switches go back to what they were. A failed put-back is logged (the move then
+                    // stays OFF and earning stopped - 'triune movestatus' shows it) and the FIRST error is the one reported.
+                    log.Error($"[AugMove] undo: the weapon rows could not be saved - no character was changed: {ex}");
+                    try { TriuneEarning.Mutate(c => { c.MoveOff = wasOff; c.UndoRan = wasUndo; }); }
+                    catch (Exception revert) { log.Error($"[AugMove] undo: the move switches could not be put back (move OFF, earning stopped): {revert}"); }
+                    throw;
+                }
+            }
             foreach (var p in PlayerManager.GetAllPlayers())
             {
                 if (p == null || p.IsDeleted)
@@ -254,7 +446,13 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!string.IsNullOrEmpty(json))
                 {
                     try { record = JsonConvert.DeserializeObject<Record>(json); }
-                    catch (Exception ex) { result.Lines.Add($"  {p.Name}: unreadable move record ({ex.Message}) - skipped"); continue; }
+                    catch (Exception ex)
+                    {
+                        // its counts may be moved: never "safe to switch" - counted as FAILED (fix the record, run it again)
+                        result.Failed++;
+                        result.Lines.Add($"  {p.Name}: FAILED - unreadable move record ({ex.Message}), nothing changed");
+                        continue;
+                    }
                 }
 
                 long Read(PropertyInt64 prop) => p.GetProperty(prop) ?? 0;
@@ -269,14 +467,36 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!apply)
                     continue;
 
+                try
+                {
+                    WriteUndo(p, record, counts, oldCounters);
+                }
+                catch (Exception ex)
+                {
+                    // one bad character never stops the rest; it keeps its record, so a re-run undoes it
+                    result.Undone--;
+                    result.Failed++;
+                    result.Lines.Add($"  {p.Name}: FAILED ({ex.Message}) - re-run the undo");
+                    log.Error($"[AugMove] undo of {p.Name} (0x{p.Guid.Full:X8}) failed: {ex}");
+                }
+            }
+            return result;
+        }
+
+        private static void WriteUndo(IPlayer p, Record record, Dictionary<PropertyInt64, long> counts, Dictionary<PropertyInt64, long> oldCounters)
+        {
+            {
                 foreach (var (prop, v) in counts)
                     p.SetProperty(prop, v);
                 foreach (var (old, _) in Moves)
                     p.RemoveProperty(old);
                 foreach (var (prop, v) in oldCounters)
                     p.SetProperty(prop, v);
-                if (record?.OldFraction > 0)
-                    p.SetProperty(PropertyFloat.TriuneFraction, record.OldFraction);
+                // the part-way reward goes back as the part-way Triune point it was (a Triune point = 3 rewards). The move turned
+                // OldFraction into the drip fraction, which this build may have spent since: what is LEFT goes back, never both.
+                var leftFraction = Math.Min(0.999, (p.GetProperty(PropertyFloat.AugDripFraction) ?? 0) / 3);
+                if (leftFraction > 0)
+                    p.SetProperty(PropertyFloat.TriuneFraction, leftFraction);
                 p.RemoveProperty(PropertyString.TriuneMoveRecord);
                 foreach (var prop in new[] { PropertyInt64.AugRollTier, PropertyInt64.AugRollsCreature, PropertyInt64.AugRollsItem, PropertyInt64.AugRollsLife })
                     p.RemoveProperty(prop);
@@ -292,13 +512,6 @@ namespace ACE.Server.Managers.ZoneControl
                 else if (p is OfflinePlayer offline)
                     offline.SaveBiotaToDatabase();
             }
-
-            if (apply)
-            {
-                TriuneEarning.Mutate(c => c.MoveOff = true);
-                WeaponScalingManager.SaveUnfoldedForRollback();
-            }
-            return result;
         }
 
         /// <summary>/zonecontrol triune movestatus: how many characters are moved, still to move, and hold retired counters.</summary>
@@ -310,18 +523,23 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 if (p == null || p.IsDeleted)
                     continue;
-                if (!string.IsNullOrEmpty(p.GetProperty(PropertyString.TriuneMoveRecord)))
+                // the same "still to move" test as the login move: no record, or a zero-only record with something new to move
+                var json = p.GetProperty(PropertyString.TriuneMoveRecord);
+                var add = Plan(prop => p.GetProperty(prop) ?? 0);
+                var frac = p.GetProperty(PropertyFloat.TriuneFraction) ?? 0;
+                var pending = add.Count > 0 || frac > 0;
+                if (!string.IsNullOrEmpty(json) && !(pending && ZeroOnlyRecord(json) != null))
                 {
                     moved++;
                     continue;
                 }
-                var add = Plan(prop => p.GetProperty(prop) ?? 0);
-                if (add.Count == 0)
+                if (!pending)
                     continue;
                 toMove++;
-                lines.Add($"  to move at next login: {p.Name} - {AddedText(add)}");
+                lines.Add($"  to move at next login: {p.Name} - {AddedText(add)}{(frac > 0 ? $" (+ a part-way Triune point {frac:0.###})" : "")}");
             }
-            lines.Insert(0, $"Triune move: {moved:N0} moved, {toMove:N0} still to move{(TriuneEarning.Current.MoveOff ? " - MOVE IS OFF (undo ran)" : "")}.");
+            lines.Insert(0, $"Triune move: {moved:N0} moved, {toMove:N0} still to move{(TriuneEarning.Current.MoveOff ? " - MOVE IS OFF" : "")}"
+                + $"{(Undone ? $" - UNDO SAVED: no hunting rewards, school gems or login move on this build ('triune move on' resumes; a start {TriuneEarning.UndoKeepHours} h after the undo clears it)" : "")}.");
             return lines;
         }
     }

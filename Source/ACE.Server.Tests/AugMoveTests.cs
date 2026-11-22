@@ -80,7 +80,7 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Undo_Turns_Augs_Earned_Since_Past_The_Caps_Back_Into_Triune_And_Charms()
         {
-            // moved with nothing (a fresh T15 player) and since earned Creature 6100 / Item 6000+... past the caps
+            // an empty record (PlanUndo only - RunMove writes a record only for a character that held a counter) and since earned Creature 6100 / Item 6000+... past the caps
             var now = new Dictionary<PropertyInt64, long>
             {
                 [PropertyInt64.LumAugCreatureCount] = 6120, [PropertyInt64.LumAugItemCount] = 4090, [PropertyInt64.LumAugLifeCount] = 4100,
@@ -113,6 +113,32 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void MovedOld_Reads_What_Was_Held_And_Null_For_What_Never_Was()
+        {
+            var record = new AugMove.Record();
+            record.Old[(ushort)PropertyInt64.TriuneWeaveCount] = 141;
+            record.Old[(ushort)PropertyInt64.NetherVeilCharmCount] = 0;
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(record);
+            Assert.AreEqual(141L, AugMove.MovedOld(json, PropertyInt64.TriuneWeaveCount));
+            Assert.AreEqual(0L, AugMove.MovedOld(json, PropertyInt64.NetherVeilCharmCount), "held at 0: reads 0");
+            Assert.IsNull(AugMove.MovedOld(json, PropertyInt64.TrueShotCharmCount), "never set: null, so TestNoQuality still fires");
+            Assert.IsNull(AugMove.MovedOld((string)null, PropertyInt64.TriuneWeaveCount), "no record");
+            Assert.AreEqual(0L, AugMove.MovedOld("{not json", PropertyInt64.TriuneWeaveCount), "unreadable record");
+        }
+
+        [TestMethod]
+        public void Undo_Gives_Back_A_Counter_Held_At_Zero()
+        {
+            // CodeRabbit 2026-11-22: a stray 0 counter is recorded at the move and comes back as 0, not "never set"
+            var record = new AugMove.Record();
+            record.Old[(ushort)PropertyInt64.NetherVeilCharmCount] = 0;
+            var plan = AugMove.PlanUndo(From(Gom()), record);
+            Assert.IsNotNull(plan);
+            Assert.IsTrue(plan.Value.OldCounters.TryGetValue(PropertyInt64.NetherVeilCharmCount, out var v) && v == 0);
+            Assert.AreEqual(4000, plan.Value.Counts[PropertyInt64.LumAugVoidCount], "nothing was added: the count stays");
+        }
+
+        [TestMethod]
         public void Undo_Of_A_Never_Moved_Player_Changes_Nothing()
         {
             Assert.IsNull(AugMove.PlanUndo(From(new() { [PropertyInt64.LumAugCreatureCount] = 5000, [PropertyInt64.LumAugItemCount] = 4000 }), null));
@@ -123,6 +149,16 @@ namespace ACE.Server.Tests
                 [PropertyInt64.LumAugCreatureCount] = 10000, [PropertyInt64.LumAugItemCount] = 10000, [PropertyInt64.LumAugLifeCount] = 10000,
                 [PropertyInt64.LumAugMeleeCount] = 31500,
             }), null));
+        }
+
+        [TestMethod]
+        public void A_Hand_Edited_Null_Record_Reads_As_Empty()
+        {
+            var r = Newtonsoft.Json.JsonConvert.DeserializeObject<AugMove.Record>("{\"Added\":null,\"Old\":null}");
+            Assert.IsNotNull(r.Added);
+            Assert.IsNotNull(r.Old);
+            Assert.AreEqual(0, r.Added.Count + r.Old.Count);
+            Assert.IsNull(AugMove.MovedOld("{\"Added\":null,\"Old\":null}", PropertyInt64.TriuneWeaveCount));
         }
     }
 }
