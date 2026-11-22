@@ -1,17 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 
 using log4net;
 using Newtonsoft.Json;
 
-using ACE.Database;
-using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
-using ACE.Server.Managers.WeaponScaling;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 
@@ -27,7 +23,7 @@ namespace ACE.Server.Managers.ZoneControl
     ///   - the rolls already taken at the own tier are seeded from Triune (clamp(Triune - the Triune the tiers below asked,
     ///     0, Points)), so the move hands out no second tier of rewards;
     ///   - what was added and the old values go in PropertyString.TriuneMoveRecord (server-only JSON): its presence = moved,
-    ///     and the offline undo (RunOfflineUndo, at startup) reads it.
+    ///     and the gates that still name a retired counter read the old value from it (MovedOld).
     /// It rides the character's normal save: a crash before the save runs it again from the same old values, nothing doubled.
     /// </summary>
     public static class AugMove
@@ -116,89 +112,6 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 return 0;
             }
-        }
-
-        /// <summary>
-        /// The switch that ARMS the offline undo (owner 2026-11-22: the undo runs with nobody online, not live). A shard bool in
-        /// config_properties_boolean, read directly (not a server property, so the old build never sees it). Set by
-        /// '/zonecontrol triune undomove confirm' or one line of SQL with the server off; it STAYS on after the undo, so a
-        /// restart of this build (a crash restarter) never lets anyone in to be moved again. Once this build has stopped on it,
-        /// only SQL turns it off (UPDATE ... value = 0: this build stops before commands run, the old build cannot set it).
-        /// </summary>
-        public const string UndoAtStartKey = "zc_triune_undo_at_start";
-
-        /// <summary>The startup read (Program): throws when the row cannot be read - the server must not open on a guess.</summary>
-        public static bool ReadUndoAtStart() => DatabaseManager.ShardConfig.GetBool(UndoAtStartKey)?.Value == true;
-
-        /// <summary>For status lines only: a read error shows as not armed.</summary>
-        public static bool IsUndoAtStartArmed()
-        {
-            try { return ReadUndoAtStart(); }
-            catch (Exception ex) { log.Error($"[AugMove] {UndoAtStartKey} could not be read: {ex}"); return false; }
-        }
-
-        public static void ArmUndoAtStart(bool on)
-        {
-            const string description = "Triune retire rollback: when 1, this build runs the move undo at startup (nobody online), saves, and stops - every start, until set to 0. The old build ignores it.";
-            if (DatabaseManager.ShardConfig.BoolExists(UndoAtStartKey))
-                DatabaseManager.ShardConfig.SaveBool(new ConfigPropertiesBoolean { Key = UndoAtStartKey, Value = on, Description = description });
-            else
-                DatabaseManager.ShardConfig.AddBool(UndoAtStartKey, on, description);
-        }
-
-        /// <summary>
-        /// The OFFLINE undo (Program, at startup, after every character is loaded and before the network opens): moves every
-        /// moved character back for the old build and saves the weapon rows in the old shape, then waits until every save is
-        /// written. The caller stops the server. Returns true only when nothing failed AND the database holds no move record on
-        /// a live character any more (a character the server could not load at start is never seen by the loop, but its record
-        /// is). A character whose undo or save failed keeps its move record in the database (nothing half-done is ever saved),
-        /// so the next start of this build re-runs it for exactly those.
-        /// </summary>
-        public static bool RunOfflineUndo()
-        {
-            log.Warn($"[AugMove] OFFLINE UNDO ({UndoAtStartKey} = 1): moving every moved character back for the old build. Nobody can log in; the server stops when it is done.");
-            var saveFailed = 0;
-            UndoResult r;
-            try
-            {
-                r = UndoAll(apply: true, onSaved: ok => { if (!ok) Interlocked.Increment(ref saveFailed); });
-            }
-            catch (Exception ex)
-            {
-                // only the weapon rows save throws out of UndoAll (each character's error is its own FAILED line)
-                log.Fatal($"[AugMove] OFFLINE UNDO stopped before any character was changed: {ex}. Do NOT start the old build: fix it, then start THIS build again - the undo runs again.");
-                return false;
-            }
-            foreach (var line in r.Lines.Where(l => l.Contains("FAILED")))
-                log.Error("[AugMove] undo:" + line);
-            // every save went onto the one shard save thread in order: a marker queued after them runs once they are all
-            // written. Not disposed: after a timeout the marker still runs later and sets it.
-            var written = new ManualResetEventSlim();
-            DatabaseManager.Shard.GetCurrentQueueWaitTime(_ => written.Set());
-            var allWritten = written.Wait(TimeSpan.FromMinutes(30));
-            if (!allWritten)
-                log.Error("[AugMove] OFFLINE UNDO: the saves are still being written after 30 minutes - not confirmed (the server stop still waits for them).");
-            var failedSaves = Volatile.Read(ref saveFailed);
-            int? left = null;
-            if (allWritten)
-            {
-                try { left = RecordsLeftInDatabase(); }
-                catch (Exception ex) { log.Error($"[AugMove] OFFLINE UNDO: the move records left could not be counted: {ex}"); }
-            }
-            var ok = allWritten && r.Failed == 0 && failedSaves == 0 && left == 0;
-            if (ok)
-                log.Warn($"[AugMove] OFFLINE UNDO DONE: {r.Undone:N0} of {r.Players:N0} characters moved back, no move record left. Start the OLD build now. {UndoAtStartKey} stays 1: THIS build stops at every start until it is set to 0 by SQL.");
-            else
-                log.Error($"[AugMove] OFFLINE UNDO INCOMPLETE: {r.Failed:N0} characters failed, {failedSaves:N0} saves failed, {(left?.ToString("N0") ?? "unknown")} move records still in the database{(allWritten ? "" : ", saves not confirmed")} (lines above). Do NOT start the old build: fix them and start THIS build again - it re-runs the undo for the ones left.");
-            return ok;
-        }
-
-        /// <summary>Move records still on a non-deleted character, read from the database after the saves are written.</summary>
-        private static int RecordsLeftInDatabase()
-        {
-            var type = (ushort)PropertyString.TriuneMoveRecord;
-            using var ctx = new ShardDbContext();
-            return ctx.BiotaPropertiesString.Count(s => s.Type == type && ctx.Character.Any(c => c.Id == s.ObjectId && !c.IsDeleted));
         }
 
         /// <summary>
@@ -329,7 +242,7 @@ namespace ACE.Server.Managers.ZoneControl
             if (add.Count == 0 && !(oldFraction > 0))
             {
                 // nothing to move - but a stray zero counter still goes, so nothing old is ever sent to a client. A record keeps
-                // it, so a gate still reads it as held at 0 (not "never set") and the undo puts it back.
+                // it, so a gate still reads it as held at 0 (not "never set").
                 var held = Moves.Select(m => m.Old).Where(old => player.GetProperty(old).HasValue).ToList();
                 if (held.Count == 0)
                     return false;
@@ -355,229 +268,49 @@ namespace ACE.Server.Managers.ZoneControl
                     record.Old.TryAdd(id, v);
 
             var triune = Read(PropertyInt64.TriuneWeaveCount);
-            // everything that can throw is worked out before the first write, so the writes below never stop half-way
+            // the record and the counts are worked out before the first write, so the move's own writes never stop half-way
             var recordJson = JsonConvert.SerializeObject(record);
             var newCounts = add.ToDictionary(kv => kv.Key, kv => Read(kv.Key) + kv.Value);
+            // a Triune point was 3 rewards (one per school): the part-way point carries over, kept below a whole reward
+            var newFraction = oldFraction > 0 ? Math.Min(0.999, (player.GetProperty(PropertyFloat.AugDripFraction) ?? 0) + 3 * oldFraction) : (double?)null;
             foreach (var (school, v) in newCounts)
                 player.SetProperty(school, v);
             foreach (var (old, _) in Moves)
                 player.RemoveProperty(old);
             player.RemoveProperty(PropertyFloat.TriuneFraction);
+            if (newFraction is double f)
+                player.SetProperty(PropertyFloat.AugDripFraction, f);
             player.SetProperty(PropertyString.TriuneMoveRecord, recordJson);
+            player.CharacterChangesDetected = true;
 
             // the rolls the moved Triune already covers at the own tier (read with the NEW counts), per school: never more than
-            // that school really climbed into the tier (a Triune holder below a luminance cap keeps the rolls to reach the end)
-            var cfg = TriuneEarning.Current;
-            var own = TierRewardScale.OwnTier(player);
-            TriuneEarning.EnsureRollTier(player, own);
+            // that school really climbed into the tier (a Triune holder below a luminance cap keeps the rolls to reach the end).
+            // This reads the tier settings: an error here is logged and the move above stands (it is saved either way).
+            var own = 0;
             var seeds = new List<string>();
-            foreach (var s in TriuneEarning.DripSchools)
+            try
             {
-                var seed = TriuneEarning.SeedRolls(cfg, own, triune, s.Count(player), s.IsCreature ? cfg.DripBaseCreature : cfg.DripBaseItem);
-                seeds.Add($"{s.Name} {seed}");
-                if (seed > 0)
-                    player.SetProperty(s.RollsProperty, Math.Max(player.GetProperty(s.RollsProperty) ?? 0, seed));
+                var cfg = TriuneEarning.Current;
+                own = TierRewardScale.OwnTier(player);
+                TriuneEarning.EnsureRollTier(player, own);
+                foreach (var s in TriuneEarning.DripSchools)
+                {
+                    var seed = TriuneEarning.SeedRolls(cfg, own, triune, s.Count(player), s.IsCreature ? cfg.DripBaseCreature : cfg.DripBaseItem);
+                    seeds.Add($"{s.Name} {seed}");
+                    if (seed > 0)
+                        player.SetProperty(s.RollsProperty, Math.Max(player.GetProperty(s.RollsProperty) ?? 0, seed));
+                }
             }
-            // a Triune point was 3 rewards (one per school): the part-way point carries over, kept below a whole reward
-            if (oldFraction > 0)
-                player.SetProperty(PropertyFloat.AugDripFraction, Math.Min(0.999, (player.GetProperty(PropertyFloat.AugDripFraction) ?? 0) + 3 * oldFraction));
+            catch (Exception ex)
+            {
+                log.Error($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved, but the T{own} rolls could not be seeded: {ex}");
+            }
 
-            player.CharacterChangesDetected = true;
             var text = AddedText(add);
             log.Info($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved {text}; T{own} rolls seeded {string.Join(", ", seeds)}.");
             if (text.Length > 0)
                 player.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your Triune Weave and charm counts now live in your augmentations: {text}.", ChatMessageType.Broadcast));
             return true;
-        }
-
-        // ---- the undo (offline, at startup, before switching back to the old build) ----------------------------------------------------
-
-        public sealed class UndoResult
-        {
-            public int Players, Undone, Failed;
-            public List<string> Lines = new();
-        }
-
-        /// <summary>
-        /// The pure undo of one character (tested): from the current counts and the record, the counts and old counters to write.
-        /// Only a MOVED character is undone (owner 2026-11-22): no record = never moved = left exactly as it is, whatever it holds. Subtracts what the move added, gives back the old counters, then turns what was EARNED since
-        /// past the T15 caps back into Triune (the part Creature, Item and Life all hold past 6,000 / 4,000 / 4,000) and into
-        /// school charms (each attack school past 4,000), so the old build sees the same power. Returns null only when there is no record.
-        /// </summary>
-        public static (Dictionary<PropertyInt64, long> Counts, Dictionary<PropertyInt64, long> OldCounters)? PlanUndo(
-            Func<PropertyInt64, long> read, Record record)
-        {
-            if (record == null)
-                return null;
-            var counts = Schools.ToDictionary(s => s.Prop, s => read(s.Prop));
-            var oldCounters = new Dictionary<PropertyInt64, long>();
-            foreach (var (id, n) in record.Added)
-                if (counts.ContainsKey((PropertyInt64)id))
-                    counts[(PropertyInt64)id] = Math.Max(0, counts[(PropertyInt64)id] - n);
-            // every counter the record held comes back, a 0 included (a quest reads "held at 0" and "never set" differently)
-            foreach (var (id, v) in record.Old)
-                oldCounters[(PropertyInt64)id] = v;
-            // Triune or a school charm held NOW was set after the move (the old build ran in between, or staff set it) - the move took
-            // every one off, and this build counts it in power unmoved: it goes back on top, never deleted by WriteUndo. A drip
-            // counter held now is NOT in power on this build (the Effective counts skip it), so it is not given back.
-            foreach (var (old, _) in Moves.Where(m => m.Old < PropertyInt64.AugDripCreatureCount || m.Old > PropertyInt64.AugDripMissileCount))
-            {
-                var held = read(old);
-                if (held > 0)
-                    oldCounters[old] = (oldCounters.TryGetValue(old, out var o) ? o : 0) + held;
-            }
-
-            // the old build never had the drip: a restored drip counter would sit unread, so it is folded into its school FIRST (then the
-            // conversion below sees it)
-            foreach (var (old, onto) in Moves.Where(m => m.Old >= PropertyInt64.AugDripCreatureCount && m.Old <= PropertyInt64.AugDripMissileCount))
-                if (oldCounters.Remove(old, out var d) && d > 0)
-                    counts[onto[0]] += d;
-
-            // since-earned past the caps -> the old counters (the drip counters never existed on the old build: they go to the
-            // schools the same way, so only Triune and the charms are written)
-            var excess = Math.Max(0, Math.Min(counts[PropertyInt64.LumAugCreatureCount] - Creature.CreatureAugBase,
-                Math.Min(counts[PropertyInt64.LumAugItemCount] - Creature.SchoolAugBase, counts[PropertyInt64.LumAugLifeCount] - Creature.SchoolAugBase)));
-            if (excess > 0)
-            {
-                counts[PropertyInt64.LumAugCreatureCount] -= excess;
-                counts[PropertyInt64.LumAugItemCount] -= excess;
-                counts[PropertyInt64.LumAugLifeCount] -= excess;
-                oldCounters[PropertyInt64.TriuneWeaveCount] = (oldCounters.TryGetValue(PropertyInt64.TriuneWeaveCount, out var t) ? t : 0) + excess;
-            }
-            foreach (var (school, charm) in new[]
-            {
-                (PropertyInt64.LumAugWarCount, PropertyInt64.BattlemagesWrathCharmCount), (PropertyInt64.LumAugVoidCount, PropertyInt64.NetherVeilCharmCount),
-                (PropertyInt64.LumAugMeleeCount, PropertyInt64.CrashingSteelCharmCount), (PropertyInt64.LumAugMissileCount, PropertyInt64.TrueShotCharmCount),
-            })
-            {
-                var past = counts[school] - Creature.SchoolAugBase;
-                if (past <= 0)
-                    continue;
-                counts[school] -= past;
-                oldCounters[charm] = (oldCounters.TryGetValue(charm, out var c) ? c : 0) + past;
-            }
-            return (counts, oldCounters);
-        }
-
-        /// <summary>
-        /// The move undo over every MOVED character (a move record); never-moved ones are untouched. Without apply it only
-        /// lists what it would do ('/zonecontrol triune undomove', read only). With apply it runs ONLY offline (RunOfflineUndo, at
-        /// startup): the weapon rows are saved unfolded FIRST - a failed save throws before any character is changed - and an
-        /// online character is refused.
-        /// </summary>
-        public static UndoResult UndoAll(bool apply, Action<bool> onSaved = null)
-        {
-            var result = new UndoResult();
-            if (apply)
-                WeaponScalingManager.SaveUnfoldedForRollback();
-            foreach (var p in PlayerManager.GetAllPlayers())
-            {
-                if (p == null)
-                    continue;
-                // ANY error on one character (IsDeleted reads the character row: a biota without one throws) is that
-                // character's FAILED line, never an abort of the run: its changes are never saved and it keeps its record
-                var planned = false;
-                try
-                {
-                    UndoOne(p, apply, onSaved, result, ref planned);
-                }
-                catch (Exception ex)
-                {
-                    if (planned)
-                        result.Undone--;
-                    result.Failed++;
-                    result.Lines.Add($"  {p.Name}: FAILED ({ex.Message}) - nothing saved for it, re-run the undo");
-                    log.Error($"[AugMove] undo of {p.Name} (0x{p.Guid.Full:X8}) failed: {ex}");
-                }
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// Reads a stored move record for the undo (tested). Returns null when it is usable, else what is wrong with it. A record
-        /// that is there counts as moved, an empty one too ("" or "null" by hand): never "never moved", or the DB count of
-        /// records left (RecordsLeftInDatabase) would keep the undo INCOMPLETE without naming the character. Every record the
-        /// move writes has its time and this version (a zero-only one too): "{}" or another version would be deleted without
-        /// putting anything back.
-        /// </summary>
-        public static string ReadUndoRecord(string json, out Record record)
-        {
-            record = null;
-            Record r;
-            try { r = JsonConvert.DeserializeObject<Record>(json ?? ""); }
-            catch (Exception ex) { return $"unreadable move record ({ex.Message})"; }
-            if (r == null)
-                return $"empty move record (\"{json}\")";
-            if (r.At <= 0 || r.V != RecordVersion)
-                return $"incomplete move record (version {r.V}, time {r.At})";
-            record = r;
-            return null;
-        }
-
-        /// <summary>One character of UndoAll. Sets planned once it is counted in Undone (the caller takes it back on an error).</summary>
-        private static void UndoOne(IPlayer p, bool apply, Action<bool> onSaved, UndoResult result, ref bool planned)
-        {
-            var json = p.GetProperty(PropertyString.TriuneMoveRecord);
-            if (json == null)
-            {
-                // never moved: nothing to undo, and never a FAILED line - a biota without a character row (IsDeleted throws)
-                // holds no record, so it must not keep the undo from DONE
-                try { if (!p.IsDeleted) result.Players++; } catch (Exception) { }
-                return;
-            }
-            if (p.IsDeleted)
-                return;
-            result.Players++;
-            var problem = ReadUndoRecord(json, out var record);
-            if (problem != null)
-            {
-                // its counts may be moved: never "safe to switch" - counted as FAILED (fix the record, run it again)
-                result.Failed++;
-                result.Lines.Add($"  {p.Name}: FAILED - {problem}, nothing changed - fix the record, run it again");
-                return;
-            }
-
-            long Read(PropertyInt64 prop) => p.GetProperty(prop) ?? 0;
-            var plan = PlanUndo(Read, record);
-            if (plan == null)
-                return;
-            result.Undone++;
-            planned = true;
-
-            var (counts, oldCounters) = plan.Value;
-            result.Lines.Add($"  {p.Name}: " + string.Join(", ", Schools.Select(s => $"{s.Name} {Read(s.Prop):N0}->{counts[s.Prop]:N0}"))
-                + (oldCounters.Count > 0 ? " | " + string.Join(", ", oldCounters.Select(o => $"{o.Key} {o.Value:N0}")) : ""));
-            if (!apply)
-                return;
-            if (p is not OfflinePlayer offline)
-                throw new InvalidOperationException("online - the undo runs only at startup, with nobody online");
-            // the record is deleted by WriteUndo: the server log keeps what the move did and what the undo wrote
-            log.Info($"[AugMove] undo 0x{p.Guid.Full:X8} record {json} ->{result.Lines[^1]}");
-            // one bad character never stops the rest (the caller counts it): it keeps its record, so a re-run undoes it
-            WriteUndo(offline, counts, oldCounters, onSaved);
-        }
-
-        private static void WriteUndo(OfflinePlayer p, Dictionary<PropertyInt64, long> counts, Dictionary<PropertyInt64, long> oldCounters, Action<bool> onSaved)
-        {
-            {
-                foreach (var (prop, v) in counts)
-                    p.SetProperty(prop, v);
-                foreach (var (old, _) in Moves)
-                    p.RemoveProperty(old);
-                foreach (var (prop, v) in oldCounters)
-                    p.SetProperty(prop, v);
-                // the part-way reward goes back as the part-way Triune point it was (a Triune point = 3 rewards). The move turned
-                // OldFraction into the drip fraction, which this build may have spent since: what is LEFT goes back, never both.
-                var leftFraction = Math.Min(0.999, (p.GetProperty(PropertyFloat.AugDripFraction) ?? 0) / 3);
-                if (leftFraction > 0)
-                    p.SetProperty(PropertyFloat.TriuneFraction, leftFraction);
-                p.RemoveProperty(PropertyString.TriuneMoveRecord);
-                foreach (var prop in new[] { PropertyInt64.AugRollTier, PropertyInt64.AugRollsCreature, PropertyInt64.AugRollsItem, PropertyInt64.AugRollsLife })
-                    p.RemoveProperty(prop);
-                p.RemoveProperty(PropertyFloat.AugDripFraction);
-
-                p.SaveBiotaToDatabase(true, onSaved);
-            }
         }
 
         /// <summary>/zonecontrol triune movestatus: how many characters are moved, still to move, and hold retired counters.</summary>
@@ -587,8 +320,9 @@ namespace ACE.Server.Managers.ZoneControl
             var lines = new List<string>();
             foreach (var p in PlayerManager.GetAllPlayers())
             {
-                if (p == null || p.IsDeleted)
-                    continue;
+                // a biota without a character row throws on IsDeleted: skip it, never fail the whole status
+                try { if (p == null || p.IsDeleted) continue; }
+                catch (Exception) { continue; }
                 // the same "still to move" test as the login move: no record, or a zero-only record with something new to move
                 var json = p.GetProperty(PropertyString.TriuneMoveRecord);
                 var add = Plan(prop => p.GetProperty(prop) ?? 0);
@@ -604,8 +338,7 @@ namespace ACE.Server.Managers.ZoneControl
                 toMove++;
                 lines.Add($"  to move at next login: {p.Name} - {AddedText(add)}{(frac > 0 ? $" (+ a part-way Triune point {frac:0.###})" : "")}");
             }
-            lines.Insert(0, $"Triune move: {moved:N0} moved, {toMove:N0} still to move{(TriuneEarning.Current.MoveOff ? " - MOVE IS OFF" : "")}"
-                + $"{(IsUndoAtStartArmed() ? $" - UNDO ARMED: it runs at the next server start, then the server stops ({UndoAtStartKey})" : "")}.");
+            lines.Insert(0, $"Triune move: {moved:N0} moved, {toMove:N0} still to move{(TriuneEarning.Current.MoveOff ? " - MOVE IS OFF" : "")}.");
             return lines;
         }
     }

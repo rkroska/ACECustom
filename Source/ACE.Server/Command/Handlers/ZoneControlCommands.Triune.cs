@@ -17,10 +17,10 @@ namespace ACE.Server.Command.Handlers
     {
         private const string TriuneUsage =
             "triune [show] | get | on | off | gems on|off | gembase <n> | drip on|off | dripbase <creature> <item/life> | reload | "
-            + "movestatus | undomove [confirm|cancel] | move on|off | "
+            + "movestatus | move on|off | "
             + "reset <day> <hour 0-23> [time zone id...] | tier <11-25|all> [floor <kph>] [ceiling <kph>] [slow <weeks>] [fast <weeks>] [points <n>] [gemslow <weeks>] [gemfast <weeks>]";
 
-        private static readonly HashSet<string> TriuneWriteVerbs = new() { "on", "off", "gems", "gembase", "drip", "dripbase", "reload", "reset", "tier", "undomove", "move" };
+        private static readonly HashSet<string> TriuneWriteVerbs = new() { "on", "off", "gems", "gembase", "drip", "dripbase", "reload", "reset", "tier", "move" };
 
         /// <param name="args">The re-tokenized /zonecontrol arguments: args[0] is "triune", args[1] the verb.</param>
         private static void HandleTriune(Session session, List<string> args, Action<string> Msg)
@@ -115,29 +115,6 @@ namespace ACE.Server.Command.Handlers
                         Msg(line);
                     return;
 
-                case "undomove":
-                {
-                    // the rollback of the Triune retire (owner 2026-11-22) runs OFFLINE: 'confirm' arms it for the next server
-                    // start (before anyone can log in), 'cancel' disarms it (until that start); without either it only lists what it would do
-                    var sub = args.Count > 2 ? args[2].ToLowerInvariant() : "";
-                    if (sub == "confirm" || sub == "cancel")
-                    {
-                        var arm = sub == "confirm";
-                        AugMove.ArmUndoAtStart(arm);
-                        ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session?.Player, $"triune undomove {sub} ({AugMove.UndoAtStartKey} = {(arm ? 1 : 0)})");
-                        Msg(arm
-                            ? $"Triune move undo ARMED ({AugMove.UndoAtStartKey} = 1). Restart THIS build: at startup, before anyone can log in, it moves every moved character back, saves the weapon scaling rows for the old build, and stops. Start the OLD build only when the log says OFFLINE UNDO DONE (exit code 0); on INCOMPLETE fix the FAILED lines and start THIS build again. Before that restart 'undomove cancel' disarms it; after it, only SQL can (UPDATE config_properties_boolean SET value = 0 WHERE `key` = '{AugMove.UndoAtStartKey}')."
-                            : $"Triune move undo disarmed ({AugMove.UndoAtStartKey} = 0).");
-                        return;
-                    }
-                    var r = AugMove.UndoAll(apply: false);
-                    Msg($"Triune move undo (dry run): {r.Players:N0} characters read, {r.Undone:N0} would be moved back (only characters the move changed; the rest are left as they are)."
-                        + (r.Failed > 0 ? $" {r.Failed:N0} have an unreadable move record - fix them first." : "")
-                        + (AugMove.IsUndoAtStartArmed() ? " The undo is ARMED for the next start." : " To run it: 'undomove confirm', then restart this build (the undo runs at startup)."));
-                    foreach (var line in r.Lines)
-                        Msg(line);
-                    return;
-                }
 
                 case "move":
                 {
@@ -305,7 +282,7 @@ namespace ACE.Server.Command.Handlers
         private static void ShowTriune(TriuneEarning.Config cfg, Action<string> Msg)
         {
             Msg($"Hunting rewards T15-T25 ('on' / 'off'): {(cfg.Enabled ? "ON" : "OFF")}. T11-T14 ('drip on' / 'drip off'): {(cfg.DripEnabled ? "ON" : "OFF")}. Own-tier kills only, top damager; each reward +1 to ONE of Creature / Item / Life at random (Points rolls per school per tier), straight onto the aug count, up to the tier's end.");
-            Msg($"  Ladder from Creature {cfg.DripBaseCreature:N0} / Item-Life {cfg.DripBaseItem:N0} at T11 ('dripbase'). Login move of the retired Triune / charm counts: {(cfg.MoveOff ? "OFF" : "ON")}{(AugMove.IsUndoAtStartArmed() ? " - the move UNDO is ARMED for the next start" : "")}.");
+            Msg($"  Ladder from Creature {cfg.DripBaseCreature:N0} / Item-Life {cfg.DripBaseItem:N0} at T11 ('dripbase'). Login move of the retired Triune / charm counts: {(cfg.MoveOff ? "OFF" : "ON")}.");
             Msg($"Attack school gems: {(cfg.GemsEnabled ? "ON" : "OFF")}. On the top damager's corpse, a roll per school at the tier's floor (T15+: {cfg.GemBaseCap:N0}) and under its ceiling. T11-T14 gems need drip AND gems on.");
             Msg($"  Week turns {(DayOfWeek)cfg.ResetDay} {cfg.ResetHour:00}:00 {cfg.ResetTimeZone} (next: {TriuneEarning.NextResetText(cfg)}).");
             foreach (var r in cfg.Tiers)

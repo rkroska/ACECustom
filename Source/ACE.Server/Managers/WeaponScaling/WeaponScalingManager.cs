@@ -269,7 +269,7 @@ namespace ACE.Server.Managers.WeaponScaling
                     return;
 
                 try { Load(); }
-                catch (Exception ex) { _loadFailed = true; log.Error($"WeaponScalingManager: failed to load store, using defaults. {ex}"); }
+                catch (Exception ex) { log.Error($"WeaponScalingManager: failed to load store, using defaults. {ex}"); }
 
                 _initialized = true;
             }
@@ -416,7 +416,6 @@ namespace ACE.Server.Managers.WeaponScaling
             }
 
             var cfg = JsonConvert.DeserializeObject<WeaponScalingConfig>(json);
-            _storeUnfolded = cfg != null && !cfg.TriuneFolded;
             _current = cfg != null ? Normalize(cfg) : BuildDefaults();
         }
 
@@ -431,48 +430,9 @@ namespace ACE.Server.Managers.WeaponScaling
                 edit(clone);
                 Normalize(clone);
                 Save(clone);
-                _storeUnfolded = false;
                 _current = clone;
             }
         }
-
-        /// <summary>
-        /// Rollback of the Triune fold (owner 2026-11-22), for the OFFLINE move undo just before the OLD build goes back on: SAVES
-        /// the store with the T16+ rows unfolded (Triune back, Creature / Item / Life at the caps) and TriuneFolded off, so the old
-        /// build reads the rows it knows. The server stops right after (AugMove.RunOfflineUndo); this build folds the store again
-        /// on its next load. Returns the rows changed.
-        /// </summary>
-        public static int SaveUnfoldedForRollback()
-        {
-            Initialize();
-            lock (_lock)
-            {
-                // the store could not be read at start: the defaults are running, and saving them would replace the real rows
-                if (_loadFailed)
-                    throw new InvalidOperationException("the weapon scaling store could not be read at start - the rollback copy was NOT saved (fix the store, then start this build again - the undo runs again)");
-                // the store is ALREADY in the old build's shape (this build never saved it, or the undo ran before): leave it -
-                // unfold(fold(rows)) does not give back rows stored under the caps
-                if (_storeUnfolded)
-                {
-                    log.Warn("WeaponScalingManager: the stored weapon scaling rows are already in the old build's shape - left as they are.");
-                    return 0;
-                }
-                var clone = Clone(_current);
-                var changed = UnfoldTriune(clone.Tiers);
-                clone.TriuneFolded = false;
-                Save(clone);
-                _storeUnfolded = true;
-                log.Warn($"WeaponScalingManager: weapon scaling rows saved in the old build's shape ({changed} rows unfolded).");
-                return changed;
-            }
-        }
-
-        /// <summary>The store could not be read at start (Initialize): the defaults run.</summary>
-        private static bool _loadFailed;
-
-        /// <summary>The STORED rows are in the old build's shape (TriuneFolded off: never saved by this build, or the rollback
-        /// save ran). Load sets it before Normalize folds the running copy; every folded save clears it.</summary>
-        private static bool _storeUnfolded;
 
         /// <summary>The live config as JSON, exactly what Save writes (settings transfer, /settings export).</summary>
         public static string ExportJson() => JsonConvert.SerializeObject(Current);
@@ -488,9 +448,7 @@ namespace ACE.Server.Managers.WeaponScaling
             {
                 Normalize(cfg);
                 Save(cfg);
-                _storeUnfolded = false;
                 _current = cfg;
-                _loadFailed = false;
             }
             log.Info("WeaponScalingManager: config replaced by a settings import.");
         }
@@ -502,7 +460,6 @@ namespace ACE.Server.Managers.WeaponScaling
             {
                 Load();
                 _initialized = true;
-                _loadFailed = false;
             }
         }
 
@@ -811,41 +768,6 @@ namespace ACE.Server.Managers.WeaponScaling
                 t.MinWieldTriune = 0;
                 t.MinWieldSkillCharm = t.MinWieldSkillCharm > 0 ? t.MinWieldSkillCharm + 4000 : DefaultMinWieldSchool(t.Tier);
             }
-        }
-
-        /// <summary>
-        /// The undo of FoldTriune (the Triune move rollback): T16+ rows go back to Creature / Item / Life at the luminance caps
-        /// (6,000 / 4,000 / 4,000), the part above them back to Triune, and the school column back to the charm count. Returns
-        /// the rows changed. Pure, tested. The caller saves it with TriuneFolded = false for the old build. T11-T15 rows go back
-        /// to no school number (the old build never asked a school below T16).
-        /// </summary>
-        public static int UnfoldTriune(IEnumerable<WeaponScalingTier> rows)
-        {
-            var changed = 0;
-            foreach (var t in rows)
-            {
-                if (t == null)
-                    continue;
-                if (t.Tier < 16)
-                {
-                    if (t.Tier >= 11 && t.MinWieldSkillCharm != 0)
-                    {
-                        t.MinWieldSkillCharm = 0;
-                        changed++;
-                    }
-                    continue;
-                }
-                var n = Math.Max(0, Math.Min(t.MinWieldCreature - 6000, Math.Min(t.MinWieldAugs - 4000, t.MinWieldLife - 4000)));
-                // an uneven tuned row (T16 Creature 7,000 / Item 4,500 / Life 4,500) keeps a part above a cap after the shared
-                // step: the old build would ask Creature 6,500, past what luminance buys - nobody could wield it. Clamp at the caps.
-                t.MinWieldCreature = Math.Min(6000, t.MinWieldCreature - n);
-                t.MinWieldAugs = Math.Min(4000, t.MinWieldAugs - n);
-                t.MinWieldLife = Math.Min(4000, t.MinWieldLife - n);
-                t.MinWieldTriune += n;
-                t.MinWieldSkillCharm = Math.Max(0, t.MinWieldSkillCharm - 4000);
-                changed++;
-            }
-            return changed;
         }
 
         public static WeaponScalingTier GetTier(int tier)

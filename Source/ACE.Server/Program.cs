@@ -413,26 +413,6 @@ namespace ACE.Server
             log.Info("Initializing PlayerManager...");
             PlayerManager.Initialize();
 
-            // the OFFLINE undo of the Triune retire (owner 2026-11-22): armed by zc_triune_undo_at_start, it runs HERE - every
-            // character is loaded and the network is not open yet, so nobody can log in - then the server stops
-            // (exit 0 = DONE, 2 = INCOMPLETE - do not start the old build, 3 = the flag could not be read - the server never opens on a guess)
-            bool undoArmed;
-            try { undoArmed = ACE.Server.Managers.ZoneControl.AugMove.ReadUndoAtStart(); }
-            catch (Exception ex)
-            {
-                log.Fatal($"{ACE.Server.Managers.ZoneControl.AugMove.UndoAtStartKey} could not be read - the server stops (it must not open if the Triune move undo is armed): {ex}");
-                ServerManager.StartupAbort();
-                Environment.Exit(3);
-                return;
-            }
-            if (undoArmed)
-            {
-                var undoOk = ACE.Server.Managers.ZoneControl.AugMove.RunOfflineUndo();
-                ServerManager.StartupAbort();
-                Environment.Exit(undoOk ? 0 : 2);
-                return;
-            }
-
             if (ServerConfig.pyreal_ledger.Value)
             {
                 log.Info("Initializing PyrealLedger...");

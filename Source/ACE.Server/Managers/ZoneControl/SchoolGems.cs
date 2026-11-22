@@ -314,8 +314,9 @@ namespace ACE.Server.Managers.ZoneControl
             if (player == null)
                 return;
             foreach (var school in Schools)
+                // only EARNED gems take the new name: an old vendor gem of the same wcid keeps its name (it is no longer used)
                 foreach (var gem in player.GetInventoryItemsOfWCID(school.GemWcid))
-                    if (gem.Name != school.GemName)
+                    if (Stamp(gem) != null && gem.Name != school.GemName)
                         gem.Name = school.GemName;
         }
     }

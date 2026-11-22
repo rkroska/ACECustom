@@ -190,7 +190,7 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void Normalize_OfTheRealOldStore_GivesTheUniformLadder_AndUnfoldGivesItBack()
+        public void Normalize_OfTheRealOldStore_GivesTheUniformLadder()
         {
             // review 2026-11-22: the shape of the 11-09 live copy - no Creature / Life at all, Item 2000-4000 then 4000, T16+
             // Triune = school = 500 * (N - 15), T11-T15 school 0
@@ -211,14 +211,6 @@ namespace ACE.Server.Tests
                     (r.MinWieldCreature, r.MinWieldAugs, r.MinWieldLife, r.MinWieldTriune, r.MinWieldSkillCharm), $"T{r.Tier}");
             }
 
-            WeaponScalingManager.UnfoldTriune(old.Tiers);
-            foreach (var r in old.Tiers.Where(r => r.Tier >= 11))
-            {
-                var step = 500 * (r.Tier - 11);
-                var triune = r.Tier <= 15 ? 0 : 500 * (r.Tier - 15);
-                Assert.AreEqual((r.Tier <= 15 ? 2000 + step : 4000, triune, triune), (r.MinWieldAugs, r.MinWieldTriune, r.MinWieldSkillCharm), $"T{r.Tier} unfolded");
-                Assert.AreEqual((Math.Min(6000, 4000 + step), Math.Min(4000, 2000 + step)), (r.MinWieldCreature, r.MinWieldLife), $"T{r.Tier} unfolded C/L");
-            }
         }
 
         [TestMethod]
@@ -231,7 +223,7 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void FoldTriune_MovesTheTriuneStepOntoAllThree_AndUnfoldRestoresIt()
+        public void FoldTriune_MovesTheTriuneStepOntoAllThree()
         {
             // an old-style T16 row: Creature / Item / Life at the caps, 500 Triune, 500 charm
             var old = new WeaponScalingTier { Tier = 16, MinWieldCreature = 6000, MinWieldAugs = 4000, MinWieldLife = 4000, MinWieldTriune = 500, MinWieldSkillCharm = 500 };
@@ -244,19 +236,6 @@ namespace ACE.Server.Tests
             Assert.AreEqual(WeaponScalingManager.DefaultMinWieldSchool(20), noSchool.MinWieldSkillCharm, "no school number = the default");
             Assert.AreEqual((8500, 6500, 6500), (noSchool.MinWieldCreature, noSchool.MinWieldAugs, noSchool.MinWieldLife));
 
-            Assert.AreEqual(2, WeaponScalingManager.UnfoldTriune(new[] { old, t15, noSchool }), "only T16+ rows change (t15 has no school number)");
-
-            // a T11-T15 row with the uniform school number goes back to none for the old build
-            var t14 = new WeaponScalingTier { Tier = 14, MinWieldCreature = 5500, MinWieldAugs = 3500, MinWieldLife = 3500, MinWieldSkillCharm = 3500 };
-            Assert.AreEqual(1, WeaponScalingManager.UnfoldTriune(new[] { t14 }));
-            Assert.AreEqual((5500, 3500, 3500, 0, 0), (t14.MinWieldCreature, t14.MinWieldAugs, t14.MinWieldLife, t14.MinWieldTriune, t14.MinWieldSkillCharm));
-            Assert.AreEqual((6000, 4000, 4000, 500, 500), (old.MinWieldCreature, old.MinWieldAugs, old.MinWieldLife, old.MinWieldTriune, old.MinWieldSkillCharm));
-            Assert.AreEqual((6000, 4000, 4000, 2500), (noSchool.MinWieldCreature, noSchool.MinWieldAugs, noSchool.MinWieldLife, noSchool.MinWieldTriune));
-
-            // an uneven tuned row never unfolds past a luminance cap (the old build could not be wielded at Creature 6,500)
-            var uneven = new WeaponScalingTier { Tier = 16, MinWieldCreature = 7000, MinWieldAugs = 4500, MinWieldLife = 4500, MinWieldSkillCharm = 4500 };
-            WeaponScalingManager.UnfoldTriune(new[] { uneven });
-            Assert.AreEqual((6000, 4000, 4000, 500, 500), (uneven.MinWieldCreature, uneven.MinWieldAugs, uneven.MinWieldLife, uneven.MinWieldTriune, uneven.MinWieldSkillCharm));
         }
     }
 }

@@ -536,7 +536,7 @@ namespace ACE.Server.WorldObjects
         //
         // Every augmentation a player has - bought with luminance, earned from kills, from an earned school gem, or moved
         // there from the retired Triune Weave / school charms at login (AugMove) - lives on the LumAug* count. After the move there is no
-        // second counter. A character NOT moved yet (the move off, the settings unreadable, the hours after an undo) still
+        // second counter. A character NOT moved yet (the move off, the settings unreadable) still
         // holds the old counter, so it is still added here, as before the retire - nobody's power changes in that window. The
         // move removes the old counters, so for a moved character this adds 0 (never counted twice).
         //
@@ -600,7 +600,7 @@ namespace ACE.Server.WorldObjects
                 default: return GetProperty(prop);
             }
             // a character not moved yet still holds the old counter itself; a moved one that holds it again (set after the move)
-            // has both - the power counts both and so does the undo (AugMove.PlanUndo), so the gate adds them too
+            // has both - the power counts both, so the gate adds them too
             var stored = GetProperty(prop);
             var moved = ACE.Server.Managers.ZoneControl.AugMove.MovedOld(this, prop);
             long? held = stored == null && moved == null ? null : Math.Max(0, stored ?? 0) + (moved ?? 0);
