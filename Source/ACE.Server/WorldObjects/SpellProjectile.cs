@@ -42,6 +42,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool FromProc { get; set; }
 
+        /// <summary>The hit-gate school worked out at LAUNCH (CreateSpellProjectiles): a proc streak asks the school of the attack
+        /// that fired it, even when its caster changed combat mode or took the jewel off before it landed.</summary>
+        public ACE.Server.Managers.ZoneControl.TierHitGate.AttackSchool? GateSchool { get; set; }
+
         public int DebugVelocity;
 
         /// <summary>True for Fork-spawned secondary projectiles — prevents recursive forking.</summary>
@@ -481,8 +485,23 @@ namespace ACE.Server.WorldObjects
                     }
 
                     if (threadSafe)
+                    {
                         // This can result in spell projectiles being added to either sourceCreature or creatureTargets landblock.
-                        sourceCreature.TryProcEquippedItems(sourceCreature, creatureTarget, false, ProjectileLauncher);
+                        // a jewel that procs off this bolt asks the bolt's school (Player.ProcTriggerSchool)
+                        var triggerPlayer = sourceCreature as Player;
+                        var prevTriggerSchool = triggerPlayer?.ProcTriggerSchool;
+                        if (triggerPlayer != null)
+                            triggerPlayer.ProcTriggerSchool = ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(Spell, null);
+                        try
+                        {
+                            sourceCreature.TryProcEquippedItems(sourceCreature, creatureTarget, false, ProjectileLauncher);
+                        }
+                        finally
+                        {
+                            if (triggerPlayer != null)
+                                triggerPlayer.ProcTriggerSchool = prevTriggerSchool;
+                        }
+                    }
                     else
                     {
                         // sourceCreature and creatureTarget are now in different landblock groups.
@@ -623,7 +642,7 @@ namespace ACE.Server.WorldObjects
                 return null;
             }
 
-            var resisted = source.TryResistSpell(target, Spell, resistSource, true);
+            var resisted = source.TryResistSpell(target, Spell, resistSource, true, GateSchool);
             if (tr != null)
             {
                 tr.Resisted = resisted;

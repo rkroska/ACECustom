@@ -189,6 +189,10 @@ namespace ACE.Server.Tests
             Assert.AreEqual(12.5, ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("radius", "12.5"));
             Assert.ThrowsExactly<FormatException>(() => ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("bank", "charm"));
             Assert.IsFalse(NetherFractureManager.IsClearable("fracture"), "clear on fracture is refused by SetZone.");
+            // "on" (= 1) is a damage word: on bank it would be 1%, on targets 1 - refused
+            foreach (var s in new[] { "bank", "Window", "targets", "radius", "cooldown" })
+                Assert.ThrowsExactly<ArgumentException>(() => ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue(s, "on"), s);
+            Assert.AreEqual(0d, ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("bank", "off"));
         }
 
         [TestMethod]

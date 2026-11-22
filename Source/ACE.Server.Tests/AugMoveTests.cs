@@ -113,6 +113,35 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Undo_Keeps_A_Retired_Counter_Set_After_The_Move()
+        {
+            // moved Triune 100; then (old build in between, or staff) Triune 30 and a 7 War charm were set again: the undo must
+            // give them back on top of the record, never delete them
+            var record = new AugMove.Record();
+            foreach (var p in new[] { PropertyInt64.LumAugCreatureCount, PropertyInt64.LumAugItemCount, PropertyInt64.LumAugLifeCount })
+                record.Added[(ushort)p] = 100;
+            record.Old[(ushort)PropertyInt64.TriuneWeaveCount] = 100;
+            var undo = AugMove.PlanUndo(From(new()
+            {
+                [PropertyInt64.LumAugCreatureCount] = 5100, [PropertyInt64.LumAugItemCount] = 3100, [PropertyInt64.LumAugLifeCount] = 3100,
+                [PropertyInt64.TriuneWeaveCount] = 30, [PropertyInt64.BattlemagesWrathCharmCount] = 7,
+            }), record);
+            Assert.IsNotNull(undo);
+            Assert.AreEqual(5000, undo.Value.Counts[PropertyInt64.LumAugCreatureCount]);
+            Assert.AreEqual(130, undo.Value.OldCounters[PropertyInt64.TriuneWeaveCount]);
+            Assert.AreEqual(7, undo.Value.OldCounters[PropertyInt64.BattlemagesWrathCharmCount]);
+
+            // a drip counter held now is not in this build's power: it is not given back (it would add power on the old build)
+            var dripped = AugMove.PlanUndo(From(new()
+            {
+                [PropertyInt64.LumAugCreatureCount] = 5100, [PropertyInt64.LumAugItemCount] = 3100, [PropertyInt64.LumAugLifeCount] = 3100,
+                [PropertyInt64.LumAugWarCount] = 3000, [PropertyInt64.AugDripWarCount] = 50,
+            }), record);
+            Assert.AreEqual(3000, dripped.Value.Counts[PropertyInt64.LumAugWarCount]);
+            Assert.IsFalse(dripped.Value.OldCounters.ContainsKey(PropertyInt64.AugDripWarCount));
+        }
+
+        [TestMethod]
         public void MovedOld_Reads_What_Was_Held_And_Null_For_What_Never_Was()
         {
             var record = new AugMove.Record();
@@ -132,7 +161,10 @@ namespace ACE.Server.Tests
             // CodeRabbit 2026-11-22: a stray 0 counter is recorded at the move and comes back as 0, not "never set"
             var record = new AugMove.Record();
             record.Old[(ushort)PropertyInt64.NetherVeilCharmCount] = 0;
-            var plan = AugMove.PlanUndo(From(Gom()), record);
+            var read = Gom();
+            foreach (var (old, _) in AugMove.Moves)
+                read.Remove(old); // after the move: the move took every retired counter off
+            var plan = AugMove.PlanUndo(From(read), record);
             Assert.IsNotNull(plan);
             Assert.IsTrue(plan.Value.OldCounters.TryGetValue(PropertyInt64.NetherVeilCharmCount, out var v) && v == 0);
             Assert.AreEqual(4000, plan.Value.Counts[PropertyInt64.LumAugVoidCount], "nothing was added: the count stays");

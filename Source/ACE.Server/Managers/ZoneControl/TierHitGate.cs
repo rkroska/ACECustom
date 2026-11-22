@@ -148,6 +148,18 @@ namespace ACE.Server.Managers.ZoneControl
                 return AttackSchool.Melee;
             if (item != null && item.IsMissileWeapon)
                 return AttackSchool.Missile;
+            // a worn Cast on Strike jewel is neither: it fired on its wearer's attack, so it follows that attack - a War / Void spell
+            // hit procing it right now (Player.ProcTriggerSchool), else the attack mode (melee / missile); otherwise the spell's own
+            // school. A projectile proc works this out at launch (SpellProjectile.GateSchool), not when it lands.
+            if (item != null && (item.ItemType & ItemType.Jewelry) != 0 && item.Wielder is Player wearer)
+            {
+                if (wearer.ProcTriggerSchool is AttackSchool.War or AttackSchool.Void)
+                    return wearer.ProcTriggerSchool.Value;
+                if (wearer.CombatMode == CombatMode.Melee)
+                    return AttackSchool.Melee;
+                if (wearer.CombatMode == CombatMode.Missile)
+                    return AttackSchool.Missile;
+            }
             return spell?.School switch
             {
                 MagicSchool.WarMagic => AttackSchool.War,

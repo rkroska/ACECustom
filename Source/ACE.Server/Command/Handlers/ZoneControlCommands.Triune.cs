@@ -120,7 +120,12 @@ namespace ACE.Server.Command.Handlers
                     // the rollback of the Triune retire (owner 2026-11-22): run it, THEN switch back to the old build. Without
                     // "confirm" it only lists what it would do.
                     var apply = args.Count > 2 && args[2].Equals("confirm", StringComparison.OrdinalIgnoreCase);
+                    // the console runs commands on its own thread: the undo writes online players, so it runs in game (world thread)
+                    if (apply && session == null)
+                    { Msg("Run 'triune undomove confirm' in game, not from the server console (it writes online characters)."); return; }
                     var r = AugMove.UndoAll(apply);
+                    if (apply)
+                        ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session?.Player, $"triune undomove confirm: {r.Undone:N0} moved back, {r.Failed:N0} failed");
                     Msg($"Triune move undo {(apply ? "DONE" : "(dry run - add 'confirm' to apply)")}: {r.Players:N0} characters read, {r.Undone:N0} moved back (only characters the move changed; the rest are left as they are)."
                         + (r.Failed > 0 ? $" {r.Failed:N0} FAILED - run it again (they keep their move record)." : ""));
                     foreach (var line in r.Lines)
@@ -136,6 +141,9 @@ namespace ACE.Server.Command.Handlers
                 {
                     var onOff = args.Count < 3 ? "" : args[2].ToLowerInvariant();
                     if (onOff != "on" && onOff != "off") { Msg("Usage: triune move on|off   (the login move of the retired Triune / charm counts; the undo turns it off)"); return; }
+                    if (session == null)
+                    { Msg("Run 'triune move on|off' in game, not from the server console (it moves online characters)."); return; }
+                    ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session.Player, $"triune move {onOff}");
                     var off = onOff == "off";
                     var cancelled = !off && AugMove.Undone;
                     var movedNow = 0;

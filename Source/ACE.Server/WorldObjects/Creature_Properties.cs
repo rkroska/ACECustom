@@ -599,8 +599,11 @@ namespace ACE.Server.WorldObjects
                 case PropertyInt64.LumAugMissileCount: return GetProperty(prop).HasValue || Unmoved(PropertyInt64.TrueShotCharmCount) > 0 ? EffectiveMissileAugCount : null;
                 default: return GetProperty(prop);
             }
-            // a character not moved yet still holds the old counter itself
-            var held = GetProperty(prop) ?? ACE.Server.Managers.ZoneControl.AugMove.MovedOld(this, prop);
+            // a character not moved yet still holds the old counter itself; a moved one that holds it again (set after the move)
+            // has both - the power counts both and so does the undo (AugMove.PlanUndo), so the gate adds them too
+            var stored = GetProperty(prop);
+            var moved = ACE.Server.Managers.ZoneControl.AugMove.MovedOld(this, prop);
+            long? held = stored == null && moved == null ? null : Math.Max(0, stored ?? 0) + (moved ?? 0);
             if (held == null && past == 0)
                 return null;
             return Math.Max(past, held ?? 0);

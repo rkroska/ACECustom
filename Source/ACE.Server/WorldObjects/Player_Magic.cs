@@ -1538,6 +1538,8 @@ namespace ACE.Server.WorldObjects
                             {
                                 // this cast needed no line of sight, so a ring it procs gets no exemption for the target
                                 RingProcTriggerUnreached = true;
+                                var prevTriggerSchool = ProcTriggerSchool;
+                                ProcTriggerSchool = ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, null);
                                 try
                                 {
                                     TryProcEquippedItems(this, targetCreature, false, caster);
@@ -1545,6 +1547,7 @@ namespace ACE.Server.WorldObjects
                                 finally
                                 {
                                     RingProcTriggerUnreached = false;
+                                    ProcTriggerSchool = prevTriggerSchool;
                                 }
                             }
 
@@ -1934,6 +1937,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         internal bool RingProcTriggerUnreached;
 
+        /// <summary>
+        /// The hit-gate school of the War / Void spell whose hit is procing the equipped items right now (set around
+        /// TryProcEquippedItems for a spell hit). A worn Cast on Strike jewel that fires off it asks this school - a Void mage's
+        /// Flame Streak jewel proc asks Void, as the bolt that fired it did. Transient, never persisted.
+        /// </summary>
+        internal ACE.Server.Managers.ZoneControl.TierHitGate.AttackSchool? ProcTriggerSchool;
+
         /// <summary>TRUE if the object stands in an interior cell (dungeon, building interior, basement).</summary>
         internal static bool IsInteriorCell(WorldObject wo)
         {
@@ -2199,7 +2209,7 @@ namespace ACE.Server.WorldObjects
                     // the hit gate asks the school of what FIRED the ring (a proc follows its weapon: a melee weapon -> Melee, a
                     // launcher -> Missile), not the resist item, which is null for a proc with no B value
                     var resisted = TryResistSpell(creature, spell, fromProc && (procBaseDamage > 0 || jewelProc) ? weapon : null, true,
-                        gateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, fromProc ? weapon : null));
+                        gateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, (fromProc ? weapon : null) ?? lowTierItem));   // a retail proc ring (fromProc off, procWeapon null) still follows its real proccing item
                     if (resisted && !(Overpower != null && Creature.GetOverpower(this, creature)))
                     {
                         dbgResist++;

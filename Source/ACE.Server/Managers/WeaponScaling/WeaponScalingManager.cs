@@ -862,9 +862,11 @@ namespace ACE.Server.Managers.WeaponScaling
                     continue;
                 }
                 var n = Math.Max(0, Math.Min(t.MinWieldCreature - 6000, Math.Min(t.MinWieldAugs - 4000, t.MinWieldLife - 4000)));
-                t.MinWieldCreature -= n;
-                t.MinWieldAugs -= n;
-                t.MinWieldLife -= n;
+                // an uneven tuned row (T16 Creature 7,000 / Item 4,500 / Life 4,500) keeps a part above a cap after the shared
+                // step: the old build would ask Creature 6,500, past what luminance buys - nobody could wield it. Clamp at the caps.
+                t.MinWieldCreature = Math.Min(6000, t.MinWieldCreature - n);
+                t.MinWieldAugs = Math.Min(4000, t.MinWieldAugs - n);
+                t.MinWieldLife = Math.Min(4000, t.MinWieldLife - n);
                 t.MinWieldTriune += n;
                 t.MinWieldSkillCharm = Math.Max(0, t.MinWieldSkillCharm - 4000);
                 changed++;

@@ -36,6 +36,9 @@ namespace ACE.Server.Command.Handlers
         internal static double? ParseSetValue(string source, string value)
         {
             var raw = value.ToLowerInvariant();
+            // "on" = native (1) is a damage multiplier word: for radius / bank / window / targets it would set 1 m / 1% / 1 s / 1
+            if (raw == "on" && NetherFractureManager.IsClearable(source))
+                throw new ArgumentException($"'on' is for the damage sources - give {source} a number, or 'clear' for its default.");
             return raw == "clear" || raw == "charm" && source.Equals("radius", StringComparison.OrdinalIgnoreCase) ? null
                 : raw == "off" ? 0 : raw == "on" ? 1 : double.Parse(raw, NumberStyles.Float, CultureInfo.InvariantCulture);
         }

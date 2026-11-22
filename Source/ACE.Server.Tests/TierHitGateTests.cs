@@ -252,6 +252,11 @@ namespace ACE.Server.Tests
             Assert.AreEqual((5500, 3500, 3500, 0, 0), (t14.MinWieldCreature, t14.MinWieldAugs, t14.MinWieldLife, t14.MinWieldTriune, t14.MinWieldSkillCharm));
             Assert.AreEqual((6000, 4000, 4000, 500, 500), (old.MinWieldCreature, old.MinWieldAugs, old.MinWieldLife, old.MinWieldTriune, old.MinWieldSkillCharm));
             Assert.AreEqual((6000, 4000, 4000, 2500), (noSchool.MinWieldCreature, noSchool.MinWieldAugs, noSchool.MinWieldLife, noSchool.MinWieldTriune));
+
+            // an uneven tuned row never unfolds past a luminance cap (the old build could not be wielded at Creature 6,500)
+            var uneven = new WeaponScalingTier { Tier = 16, MinWieldCreature = 7000, MinWieldAugs = 4500, MinWieldLife = 4500, MinWieldSkillCharm = 4500 };
+            WeaponScalingManager.UnfoldTriune(new[] { uneven });
+            Assert.AreEqual((6000, 4000, 4000, 500, 500), (uneven.MinWieldCreature, uneven.MinWieldAugs, uneven.MinWieldLife, uneven.MinWieldTriune, uneven.MinWieldSkillCharm));
         }
     }
 }

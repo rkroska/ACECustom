@@ -930,7 +930,7 @@ namespace ACE.Server.Managers.ZoneControl
             }
             if (AugMove.Undone)
             {
-                lines.Add("Hunting rewards: paused for now - they come back after the server restart.");
+                lines.Add("Hunting rewards: paused for now.");
                 return lines;
             }
             if (AugMove.AwaitsMove(player))

@@ -2536,6 +2536,8 @@ namespace ACE.Server.WorldObjects
 
                 sp.ProjectileLauncher = weapon;
                 sp.IsWeaponSpell = isWeaponSpell;
+                // the hit gate's school, NOW (impact reads it): the same rule TryResistSpell applies to its resist item
+                sp.GateSchool = ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, isWeaponSpell ? weapon : this);
 
                 sp.SetProjectilePhysicsState(sp.ProjectileTarget, useGravity);
                 sp.SpawnPos = new Position(sp.Location);

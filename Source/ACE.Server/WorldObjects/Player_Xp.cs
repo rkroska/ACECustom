@@ -253,7 +253,7 @@ namespace ACE.Server.WorldObjects
                     CheckForLevelup();
                 }
                 foreach (var prop in bankChanged)
-                    Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, prop, IsBankLocked ? 0L : (GetProperty(prop) ?? 0)));   // a locked bank (#618) reads 0, as its getters do
+                    Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, prop, GetProperty(prop) ?? 0));   // the stored number, a locked bank (#618) included - as the login packet sends it (owner 2026-11-22)
                 bankChanged.Clear();
                 xpBatchChain = null;
             }

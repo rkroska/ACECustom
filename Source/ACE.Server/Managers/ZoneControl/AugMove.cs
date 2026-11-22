@@ -359,7 +359,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// The pure undo of one character (tested): from the current counts and the record, the counts and old counters to write.
         /// Only a MOVED character is undone (owner 2026-11-22): no record = never moved = left exactly as it is, whatever it holds. Subtracts what the move added, gives back the old counters, then turns what was EARNED since
         /// past the T15 caps back into Triune (the part Creature, Item and Life all hold past 6,000 / 4,000 / 4,000) and into
-        /// school charms (each attack school past 4,000), so the old build sees the same power. Returns null when nothing changes.
+        /// school charms (each attack school past 4,000), so the old build sees the same power. Returns null only when there is no record.
         /// </summary>
         public static (Dictionary<PropertyInt64, long> Counts, Dictionary<PropertyInt64, long> OldCounters)? PlanUndo(
             Func<PropertyInt64, long> read, Record record)
@@ -374,6 +374,15 @@ namespace ACE.Server.Managers.ZoneControl
             // every counter the record held comes back, a 0 included (a quest reads "held at 0" and "never set" differently)
             foreach (var (id, v) in record.Old)
                 oldCounters[(PropertyInt64)id] = v;
+            // Triune or a school charm held NOW was set after the move (the old build ran in between, or staff set it) - the move took
+            // every one off, and this build counts it in power unmoved: it goes back on top, never deleted by WriteUndo. A drip
+            // counter held now is NOT in power on this build (the Effective counts skip it), so it is not given back.
+            foreach (var (old, _) in Moves.Where(m => m.Old < PropertyInt64.AugDripCreatureCount || m.Old > PropertyInt64.AugDripMissileCount))
+            {
+                var held = read(old);
+                if (held > 0)
+                    oldCounters[old] = (oldCounters.TryGetValue(old, out var o) ? o : 0) + held;
+            }
 
             // the old build never had the drip: a restored drip counter would sit unread, so it is folded into its school FIRST (then the
             // conversion below sees it)
@@ -453,6 +462,13 @@ namespace ACE.Server.Managers.ZoneControl
                         result.Lines.Add($"  {p.Name}: FAILED - unreadable move record ({ex.Message}), nothing changed");
                         continue;
                     }
+                    // a hand-edited "null" record: the move treats it as moved (the record exists), so it is never "never moved"
+                    if (record == null)
+                    {
+                        result.Failed++;
+                        result.Lines.Add($"  {p.Name}: FAILED - empty move record (\"{json}\"), nothing changed - fix the record, run it again");
+                        continue;
+                    }
                 }
 
                 long Read(PropertyInt64 prop) => p.GetProperty(prop) ?? 0;
@@ -466,6 +482,8 @@ namespace ACE.Server.Managers.ZoneControl
                     + (oldCounters.Count > 0 ? " | " + string.Join(", ", oldCounters.Select(o => $"{o.Key} {o.Value:N0}")) : ""));
                 if (!apply)
                     continue;
+                // the record is deleted by WriteUndo: the server log keeps what the move did and what the undo wrote
+                log.Info($"[AugMove] undo 0x{p.Guid.Full:X8} record {json} ->{result.Lines[^1]}");
 
                 try
                 {
