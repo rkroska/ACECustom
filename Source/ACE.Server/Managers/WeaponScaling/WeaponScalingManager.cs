@@ -416,6 +416,7 @@ namespace ACE.Server.Managers.WeaponScaling
             }
 
             var cfg = JsonConvert.DeserializeObject<WeaponScalingConfig>(json);
+            _storeUnfolded = cfg != null && !cfg.TriuneFolded;
             _current = cfg != null ? Normalize(cfg) : BuildDefaults();
         }
 
@@ -429,16 +430,17 @@ namespace ACE.Server.Managers.WeaponScaling
                 var clone = Clone(_current);
                 edit(clone);
                 Normalize(clone);
-                SaveInStoreShape(clone);
+                Save(clone);
+                _storeUnfolded = false;
                 _current = clone;
             }
         }
 
         /// <summary>
-        /// Rollback of the Triune fold (owner 2026-11-22), for the move undo just before the OLD build goes back on: SAVES the
-        /// store with the T16+ rows unfolded (Triune back, Creature / Item / Life at the caps) and TriuneFolded off, so the old
-        /// build reads the rows it knows. The running config stays folded - this build would fold the store again on its next
-        /// load, which is right while it is still the one running. Returns the rows changed.
+        /// Rollback of the Triune fold (owner 2026-11-22), for the OFFLINE move undo just before the OLD build goes back on: SAVES
+        /// the store with the T16+ rows unfolded (Triune back, Creature / Item / Life at the caps) and TriuneFolded off, so the old
+        /// build reads the rows it knows. The server stops right after (AugMove.RunOfflineUndo); this build folds the store again
+        /// on its next load. Returns the rows changed.
         /// </summary>
         public static int SaveUnfoldedForRollback()
         {
@@ -447,59 +449,30 @@ namespace ACE.Server.Managers.WeaponScaling
             {
                 // the store could not be read at start: the defaults are running, and saving them would replace the real rows
                 if (_loadFailed)
-                    throw new InvalidOperationException("the weapon scaling store could not be read at start - the rollback copy was NOT saved (fix the store, restart, then undo)");
+                    throw new InvalidOperationException("the weapon scaling store could not be read at start - the rollback copy was NOT saved (fix the store, then start this build again - the undo runs again)");
+                // the store is ALREADY in the old build's shape (this build never saved it, or the undo ran before): leave it -
+                // unfold(fold(rows)) does not give back rows stored under the caps
+                if (_storeUnfolded)
+                {
+                    log.Warn("WeaponScalingManager: the stored weapon scaling rows are already in the old build's shape - left as they are.");
+                    return 0;
+                }
                 var clone = Clone(_current);
                 var changed = UnfoldTriune(clone.Tiers);
                 clone.TriuneFolded = false;
                 Save(clone);
-                _rolledBack = true;
+                _storeUnfolded = true;
+                log.Warn($"WeaponScalingManager: weapon scaling rows saved in the old build's shape ({changed} rows unfolded).");
                 return changed;
             }
         }
 
-        /// <summary>Set by SaveUnfoldedForRollback for the rest of this run: the store must stay in the OLD build's shape.</summary>
-        private static bool _rolledBack;
-
         /// <summary>The store could not be read at start (Initialize): the defaults run.</summary>
         private static bool _loadFailed;
 
-        /// <summary>The store stays in the old build's shape: the rollback save ran this run, or an undo was saved (a restart
-        /// onto this build after the undo keeps the rollback copy).</summary>
-        private static bool RolledBack => _rolledBack || ACE.Server.Managers.ZoneControl.TriuneEarning.Current.UndoRan
-            || ACE.Server.Managers.ZoneControl.TriuneEarning.LoadFailed;   // read AFTER Current (it loads): unreadable settings keep the rollback shape
-
-        /// <summary>The move undo was cancelled (this build stays): the store goes back to the folded rows this build runs.</summary>
-        public static void CancelRollback()
-        {
-            Initialize();
-            lock (_lock)
-            {
-                if (!RolledBack)
-                    return;
-                if (_loadFailed)
-                    throw new InvalidOperationException("the weapon scaling store could not be read at start - nothing was saved (fix the store, then reload)");
-                Save(_current);         // a failed save keeps the rollback state (a later 'move on' tries again)
-                _rolledBack = false;
-            }
-        }
-
-        /// <summary>
-        /// Saves an edited config (Mutate, ImportJson). After the rollback save the store keeps the old build's shape - an edit
-        /// made between the undo and the restart is saved unfolded too, so it can never write the folded rows over the
-        /// rollback copy (the old build would read a T16 school column of 4,500 as a charm count). Call with _lock held.
-        /// </summary>
-        private static void SaveInStoreShape(WeaponScalingConfig cfg)
-        {
-            if (!RolledBack)
-            {
-                Save(cfg);
-                return;
-            }
-            var unfolded = Clone(cfg);
-            UnfoldTriune(unfolded.Tiers);
-            unfolded.TriuneFolded = false;
-            Save(unfolded);
-        }
+        /// <summary>The STORED rows are in the old build's shape (TriuneFolded off: never saved by this build, or the rollback
+        /// save ran). Load sets it before Normalize folds the running copy; every folded save clears it.</summary>
+        private static bool _storeUnfolded;
 
         /// <summary>The live config as JSON, exactly what Save writes (settings transfer, /settings export).</summary>
         public static string ExportJson() => JsonConvert.SerializeObject(Current);
@@ -514,7 +487,8 @@ namespace ACE.Server.Managers.WeaponScaling
             lock (_lock)
             {
                 Normalize(cfg);
-                SaveInStoreShape(cfg);
+                Save(cfg);
+                _storeUnfolded = false;
                 _current = cfg;
                 _loadFailed = false;
             }

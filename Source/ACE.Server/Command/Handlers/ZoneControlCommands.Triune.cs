@@ -17,7 +17,7 @@ namespace ACE.Server.Command.Handlers
     {
         private const string TriuneUsage =
             "triune [show] | get | on | off | gems on|off | gembase <n> | drip on|off | dripbase <creature> <item/life> | reload | "
-            + "movestatus | undomove [confirm] | move on|off | "
+            + "movestatus | undomove [confirm|cancel] | move on|off | "
             + "reset <day> <hour 0-23> [time zone id...] | tier <11-25|all> [floor <kph>] [ceiling <kph>] [slow <weeks>] [fast <weeks>] [points <n>] [gemslow <weeks>] [gemfast <weeks>]";
 
         private static readonly HashSet<string> TriuneWriteVerbs = new() { "on", "off", "gems", "gembase", "drip", "dripbase", "reload", "reset", "tier", "undomove", "move" };
@@ -117,46 +117,41 @@ namespace ACE.Server.Command.Handlers
 
                 case "undomove":
                 {
-                    // the rollback of the Triune retire (owner 2026-11-22): run it, THEN switch back to the old build. Without
-                    // "confirm" it only lists what it would do.
-                    var apply = args.Count > 2 && args[2].Equals("confirm", StringComparison.OrdinalIgnoreCase);
-                    // the console runs commands on its own thread: the undo writes online players, so it runs in game (world thread)
-                    if (apply && session == null)
-                    { Msg("Run 'triune undomove confirm' in game, not from the server console (it writes online characters)."); return; }
-                    var r = AugMove.UndoAll(apply);
-                    if (apply)
-                        ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session?.Player, $"triune undomove confirm: {r.Undone:N0} moved back, {r.Failed:N0} failed");
-                    Msg($"Triune move undo {(apply ? "DONE" : "(dry run - add 'confirm' to apply)")}: {r.Players:N0} characters read, {r.Undone:N0} moved back (only characters the move changed; the rest are left as they are)."
-                        + (r.Failed > 0 ? $" {r.Failed:N0} FAILED - run it again (they keep their move record)." : ""));
+                    // the rollback of the Triune retire (owner 2026-11-22) runs OFFLINE: 'confirm' arms it for the next server
+                    // start (before anyone can log in), 'cancel' disarms it (until that start); without either it only lists what it would do
+                    var sub = args.Count > 2 ? args[2].ToLowerInvariant() : "";
+                    if (sub == "confirm" || sub == "cancel")
+                    {
+                        var arm = sub == "confirm";
+                        AugMove.ArmUndoAtStart(arm);
+                        ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session?.Player, $"triune undomove {sub} ({AugMove.UndoAtStartKey} = {(arm ? 1 : 0)})");
+                        Msg(arm
+                            ? $"Triune move undo ARMED ({AugMove.UndoAtStartKey} = 1). Restart THIS build: at startup, before anyone can log in, it moves every moved character back, saves the weapon scaling rows for the old build, and stops. Then start the OLD build. Before that restart 'undomove cancel' disarms it; after it, only SQL can (UPDATE config_properties_boolean SET value = 0 WHERE `key` = '{AugMove.UndoAtStartKey}')."
+                            : $"Triune move undo disarmed ({AugMove.UndoAtStartKey} = 0).");
+                        return;
+                    }
+                    var r = AugMove.UndoAll(apply: false);
+                    Msg($"Triune move undo (dry run): {r.Players:N0} characters read, {r.Undone:N0} would be moved back (only characters the move changed; the rest are left as they are)."
+                        + (r.Failed > 0 ? $" {r.Failed:N0} have an unreadable move record - fix them first." : "")
+                        + (AugMove.IsUndoAtStartArmed() ? " The undo is ARMED for the next start." : " To run it: 'undomove confirm', then restart this build (the undo runs at startup)."));
                     foreach (var line in r.Lines)
                         Msg(line);
-                    if (apply && r.Failed > 0)
-                        Msg($"PARTIAL: {r.Failed:N0} characters could not be moved back. Stay on THIS build and run '/zonecontrol triune undomove confirm' again until none fail - do NOT switch to the old build yet.");
-                    else if (apply)
-                        Msg("The move is now OFF on this build (nobody is moved again) and the weapon scaling rows are saved in the old Triune form. Hunting rewards and school gems are off. Switch to the old build next ('/zonecontrol triune move on' cancels all this to stay; when THIS build starts more than 24 h after the undo it clears it on its own).");
                     return;
                 }
 
                 case "move":
                 {
                     var onOff = args.Count < 3 ? "" : args[2].ToLowerInvariant();
-                    if (onOff != "on" && onOff != "off") { Msg("Usage: triune move on|off   (the login move of the retired Triune / charm counts; the undo turns it off)"); return; }
+                    if (onOff != "on" && onOff != "off") { Msg("Usage: triune move on|off   (the login move of the retired Triune / charm counts)"); return; }
                     if (session == null)
                     { Msg("Run 'triune move on|off' in game, not from the server console (it moves online characters)."); return; }
                     ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session.Player, $"triune move {onOff}");
                     var off = onOff == "off";
-                    var cancelled = !off && AugMove.Undone;
                     var movedNow = 0;
-                    if (cancelled)
-                        movedNow = AugMove.CancelUndo();   // the weapon rows first, then the switches in one save, then the online moves
-                    else
-                    {
-                        TriuneEarning.Mutate(c => c.MoveOff = off);
-                        if (!off)
-                            movedNow = AugMove.MoveOnline();   // online characters held back while it was off move now
-                    }
+                    TriuneEarning.Mutate(c => c.MoveOff = off);
+                    if (!off)
+                        movedNow = AugMove.MoveOnline();   // online characters held back while it was off move now
                     Msg($"Triune move at login: {(off ? "OFF" : "ON")}."
-                        + (cancelled ? " The undo is cancelled: hunting rewards and school gems are back, the weapon scaling rows are saved for this build again." : "")
                         + (!off ? $" {movedNow:N0} online characters were moved now; the rest move at their next login." : ""));
                     return;
                 }
@@ -310,7 +305,7 @@ namespace ACE.Server.Command.Handlers
         private static void ShowTriune(TriuneEarning.Config cfg, Action<string> Msg)
         {
             Msg($"Hunting rewards T15-T25 ('on' / 'off'): {(cfg.Enabled ? "ON" : "OFF")}. T11-T14 ('drip on' / 'drip off'): {(cfg.DripEnabled ? "ON" : "OFF")}. Own-tier kills only, top damager; each reward +1 to ONE of Creature / Item / Life at random (Points rolls per school per tier), straight onto the aug count, up to the tier's end.");
-            Msg($"  Ladder from Creature {cfg.DripBaseCreature:N0} / Item-Life {cfg.DripBaseItem:N0} at T11 ('dripbase'). Login move of the retired Triune / charm counts: {(cfg.MoveOff ? (cfg.UndoRan ? "OFF (undo saved - rewards and gems off too; 'triune move on' resumes)" : "OFF") : "ON")}.");
+            Msg($"  Ladder from Creature {cfg.DripBaseCreature:N0} / Item-Life {cfg.DripBaseItem:N0} at T11 ('dripbase'). Login move of the retired Triune / charm counts: {(cfg.MoveOff ? "OFF" : "ON")}{(AugMove.IsUndoAtStartArmed() ? " - the move UNDO is ARMED for the next start" : "")}.");
             Msg($"Attack school gems: {(cfg.GemsEnabled ? "ON" : "OFF")}. On the top damager's corpse, a roll per school at the tier's floor (T15+: {cfg.GemBaseCap:N0}) and under its ceiling. T11-T14 gems need drip AND gems on.");
             Msg($"  Week turns {(DayOfWeek)cfg.ResetDay} {cfg.ResetHour:00}:00 {cfg.ResetTimeZone} (next: {TriuneEarning.NextResetText(cfg)}).");
             foreach (var r in cfg.Tiers)

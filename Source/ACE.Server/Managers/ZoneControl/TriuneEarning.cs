@@ -86,18 +86,10 @@ namespace ACE.Server.Managers.ZoneControl
             public int DripBaseCreature { get; set; } = 4000;
             public int DripBaseItem { get; set; } = 2000;
             public List<TriuneTierRow> Tiers { get; set; } = new();
-            /// <summary>Set by the admin undo of the Triune move (AugMove.UndoAll): no character is moved again on this build.</summary>
+            /// <summary>'/zonecontrol triune move off': nobody is moved at login (a character still holding the old counters
+            /// keeps them, counted in power, and earns nothing until moved).</summary>
             public bool MoveOff { get; set; }
-            /// <summary>Set by an applied undo (AugMove.UndoAll), SAVED so a restart onto this build keeps it: no hunting reward
-            /// or school gem, and the weapon rows stay in the old build's shape. Cleared only by 'triune move on'.</summary>
-            public bool UndoRan { get; set; }
-            /// <summary>Unix seconds of that undo. A start more than UndoKeepHours later clears UndoRan and MoveOff: this build is
-            /// back after the rollback (the old build ignores both fields, so they would otherwise keep the lane off for good).</summary>
-            public long UndoAt { get; set; }
         }
-
-        /// <summary>How long a saved undo holds across restarts of THIS build (a crash between the undo and the switch).</summary>
-        public const int UndoKeepHours = 24;
 
         // limits for every number a command or a hand-edited store can set (review 2026-11-01: finite and bounded, never NaN /
         // Infinity / 1e308): kills an hour, weeks, points per tier, the bought school base
@@ -133,7 +125,7 @@ namespace ACE.Server.Managers.ZoneControl
                 {
                     if (_current == null || (_loadFailed && _firstLoadFailed && DateTime.UtcNow >= _retryLoadAt))
                     {
-                        try { _current = ExpireStaleUndo(Load()); _loadFailed = false; _firstLoadFailed = false; }
+                        try { _current = Load(); _loadFailed = false; _firstLoadFailed = false; }
                         catch (Exception ex)
                         {
                             // the defaults run (earning OFF) but are never saved over the store; retried once a minute
@@ -222,30 +214,6 @@ namespace ACE.Server.Managers.ZoneControl
             return string.IsNullOrWhiteSpace(json) ? Defaults() : Normalize(JsonConvert.DeserializeObject<Config>(json));
         }
 
-        /// <summary>
-        /// A loaded store with a saved undo (AugMove.UndoAll): kept for UndoKeepHours (a restart of this build before the switch
-        /// to the old one - logged as an ERROR every start), cleared after that (this build is deployed again after a rollback:
-        /// the login move and earning come back). Call with _lock held.
-        /// </summary>
-        private static Config ExpireStaleUndo(Config cfg)
-        {
-            if (cfg == null || !cfg.UndoRan)
-                return cfg;
-            // a hand-edited UndoAt outside the date range reads as "long ago" (cleared), never as a load failure
-            var at = DateTimeOffset.FromUnixTimeSeconds(Math.Clamp(cfg.UndoAt, 0, DateTimeOffset.MaxValue.ToUnixTimeSeconds())).UtcDateTime;
-            if (cfg.UndoAt > 0 && DateTime.UtcNow - at < TimeSpan.FromHours(UndoKeepHours))
-            {
-                log.Error($"[TriuneEarning] the Triune move UNDO is saved ({at:yyyy-MM-dd HH:mm} UTC): hunting rewards, school gems and the login move are OFF on this build - switch to the old build, or '/zonecontrol triune move on' to stay.");
-                return cfg;
-            }
-            cfg.UndoRan = false;
-            cfg.MoveOff = false;
-            log.Warn($"[TriuneEarning] a Triune move undo from {at:yyyy-MM-dd HH:mm} UTC is older than {UndoKeepHours} h: this build is back after the rollback - the login move and earning are ON again.");
-            try { SaveStore(cfg); }
-            catch (Exception ex) { log.Error($"[TriuneEarning] clearing the old undo could not be saved (it is cleared for this run): {ex}"); }
-            return cfg;
-        }
-
         private static void SaveStore(Config cfg)
         {
             var jsonOut = JsonConvert.SerializeObject(cfg);
@@ -282,7 +250,7 @@ namespace ACE.Server.Managers.ZoneControl
             lock (_lock)
             {
                 Config fresh;
-                try { fresh = ExpireStaleUndo(Load()); }
+                try { fresh = Load(); }
                 catch
                 {
                     // the running settings stay; no edit may now save over the unreadable store until a reload reads it
@@ -626,8 +594,6 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 if (victim == null || victim is Player || victim is Pet)
                     return;
-                if (AugMove.Undone)
-                    return;   // the admin undo ran: nothing more is earned on this build before the old one is back
 
                 var cfg = Current;
                 if (!cfg.Enabled && !cfg.GemsEnabled && !cfg.DripEnabled)   // the weekly count also paces the school gems
@@ -673,8 +639,6 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 if (player.IsLoggingOut || !ReferenceEquals(PlayerManager.GetOnlinePlayer(player.Guid), player))
                     return;
-                if (AugMove.Undone)
-                    return;   // queued before the undo ran: the undo already wrote this character's old-build counts
                 if (AugMove.AwaitsMove(player))
                     return;   // old counters not moved yet: nothing earned on them (the move adds them later)
 
@@ -802,8 +766,8 @@ namespace ACE.Server.Managers.ZoneControl
             if (own < FirstTier && !player.GetProperty(PropertyInt64.AugHuntWeekKills).HasValue)
                 return;
             var row = own >= FirstTier ? cfg.Tiers.FirstOrDefault(r => r.Tier == own) : null;
-            // paused (an undo saved, or old counters waiting for the move) shows as off: kills grant nothing then
-            var on = row != null && row.Points > 0 && RewardsOn(cfg, own) && !AugMove.Undone && !AugMove.AwaitsMove(player);
+            // paused (old counters waiting for the move) shows as off: kills grant nothing then
+            var on = row != null && row.Points > 0 && RewardsOn(cfg, own) && !AugMove.AwaitsMove(player);
 
             if (on && EnsureRollTier(player, own))
                 full = true;
@@ -926,11 +890,6 @@ namespace ACE.Server.Managers.ZoneControl
             if (!on && !gems)
             {
                 lines.Add("Hunting rewards: none in these lands right now.");
-                return lines;
-            }
-            if (AugMove.Undone)
-            {
-                lines.Add("Hunting rewards: paused for now.");
                 return lines;
             }
             if (AugMove.AwaitsMove(player))

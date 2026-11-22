@@ -124,7 +124,7 @@ namespace ACE.Server.Managers.ZoneControl
                     return;
 
                 var cfg = TriuneEarning.Current;
-                if (!cfg.GemsEnabled || AugMove.Undone)
+                if (!cfg.GemsEnabled)
                     return;
 
                 var killTier = TierRewardScale.KillTier(victim);
@@ -256,12 +256,6 @@ namespace ACE.Server.Managers.ZoneControl
             if (player == null || school == null || stamp == null)
                 return false;
 
-            if (AugMove.Undone)
-            {
-                // the undo ran: the old build turns gems back into charms, so the gem waits (kept) until the restart
-                player.SendMessage("The gem is quiet for now. It will answer after the server restart.", ChatMessageType.Broadcast);
-                return true;
-            }
             if (AugMove.AwaitsMove(player))
             {
                 // old counters not moved yet: the gem waits (kept) until the move has run

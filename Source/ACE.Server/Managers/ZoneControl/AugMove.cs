@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 using log4net;
 using Newtonsoft.Json;
 
+using ACE.Database;
+using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
@@ -24,7 +27,7 @@ namespace ACE.Server.Managers.ZoneControl
     ///   - the rolls already taken at the own tier are seeded from Triune (clamp(Triune - the Triune the tiers below asked,
     ///     0, Points)), so the move hands out no second tier of rewards;
     ///   - what was added and the old values go in PropertyString.TriuneMoveRecord (server-only JSON): its presence = moved,
-    ///     and the admin undo reads it.
+    ///     and the offline undo (RunOfflineUndo, at startup) reads it.
     /// It rides the character's normal save: a crash before the save runs it again from the same old values, nothing doubled.
     /// </summary>
     public static class AugMove
@@ -116,40 +119,90 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// An applied undo (saved in the Triune settings, so a restart onto this build keeps it): no hunting reward and no school
-        /// gem is handed out after it, so nothing earned on this build between the undo and the switch to the old build is
-        /// counted twice there (the undo already turned the earned-past-the-caps part back into Triune / charm counts).
+        /// The switch that ARMS the offline undo (owner 2026-11-22: the undo runs with nobody online, not live). A shard bool in
+        /// config_properties_boolean, read directly (not a server property, so the old build never sees it). Set by
+        /// '/zonecontrol triune undomove confirm' or one line of SQL with the server off; it STAYS on after the undo, so a
+        /// restart of this build (a crash restarter) never lets anyone in to be moved again. Once this build has stopped on it,
+        /// only SQL turns it off (UPDATE ... value = 0: this build stops before commands run, the old build cannot set it).
         /// </summary>
-        public static bool Undone => TriuneEarning.Current.UndoRan;
+        public const string UndoAtStartKey = "zc_triune_undo_at_start";
 
-        /// <summary>
-        /// '/zonecontrol triune move on' after an undo: the admin stays on THIS build. The weapon rows are saved folded again
-        /// FIRST, then earning comes back and the move is on again (one save) - a failed rows save changes nothing. The undone
-        /// characters are moved again at their next login.
-        /// </summary>
-        public static int CancelUndo()
+        /// <summary>The startup read (Program): throws when the row cannot be read - the server must not open on a guess.</summary>
+        public static bool ReadUndoAtStart() => DatabaseManager.ShardConfig.GetBool(UndoAtStartKey)?.Value == true;
+
+        /// <summary>For status lines only: a read error shows as not armed.</summary>
+        public static bool IsUndoAtStartArmed()
         {
-            // unreadable Triune settings would refuse the second save after the rows were already folded: refuse first
-            if (TriuneEarning.LoadFailed)
-                throw new InvalidOperationException("the stored Triune settings could not be read - fix them, then /zonecontrol triune reload (nothing was changed)");
-            WeaponScalingManager.CancelRollback();
-            try
-            {
-                TriuneEarning.Mutate(c => { c.MoveOff = false; c.UndoRan = false; });
-            }
-            catch (Exception ex)
-            {
-                // the undo stays saved: put the weapon rows back in the old build's shape, so a switch to it still reads them right
-                log.Error($"[AugMove] 'move on' could not clear the saved undo - restoring the weapon rollback copy: {ex}");
-                try { WeaponScalingManager.SaveUnfoldedForRollback(); }
-                catch (Exception ex2) { log.Error($"[AugMove] the weapon rollback copy could NOT be restored - do not switch builds: {ex2}"); }
-                throw;
-            }
-            return MoveOnline();
+            try { return ReadUndoAtStart(); }
+            catch (Exception ex) { log.Error($"[AugMove] {UndoAtStartKey} could not be read: {ex}"); return false; }
+        }
+
+        public static void ArmUndoAtStart(bool on)
+        {
+            const string description = "Triune retire rollback: when 1, this build runs the move undo at startup (nobody online), saves, and stops - every start, until set to 0. The old build ignores it.";
+            if (DatabaseManager.ShardConfig.BoolExists(UndoAtStartKey))
+                DatabaseManager.ShardConfig.SaveBool(new ConfigPropertiesBoolean { Key = UndoAtStartKey, Value = on, Description = description });
+            else
+                DatabaseManager.ShardConfig.AddBool(UndoAtStartKey, on, description);
         }
 
         /// <summary>
-        /// Move the characters ONLINE now (the move was just turned on, or an undo cancelled), not at their next login: until
+        /// The OFFLINE undo (Program, at startup, after every character is loaded and before the network opens): moves every
+        /// moved character back for the old build and saves the weapon rows in the old shape, then waits until every save is
+        /// written. The caller stops the server. Returns true only when nothing failed AND the database holds no move record on
+        /// a live character any more (a character the server could not load at start is never seen by the loop, but its record
+        /// is). A character whose undo or save failed keeps its move record in the database (nothing half-done is ever saved),
+        /// so the next start of this build re-runs it for exactly those.
+        /// </summary>
+        public static bool RunOfflineUndo()
+        {
+            log.Warn($"[AugMove] OFFLINE UNDO ({UndoAtStartKey} = 1): moving every moved character back for the old build. Nobody can log in; the server stops when it is done.");
+            var saveFailed = 0;
+            UndoResult r;
+            try
+            {
+                r = UndoAll(apply: true, onSaved: ok => { if (!ok) Interlocked.Increment(ref saveFailed); });
+            }
+            catch (Exception ex)
+            {
+                // only the weapon rows save throws out of UndoAll (each character's error is its own FAILED line)
+                log.Fatal($"[AugMove] OFFLINE UNDO stopped before any character was changed: {ex}. Do NOT start the old build: fix it, then start THIS build again - the undo runs again.");
+                return false;
+            }
+            foreach (var line in r.Lines.Where(l => l.Contains("FAILED")))
+                log.Error("[AugMove] undo:" + line);
+            // every save went onto the one shard save thread in order: a marker queued after them runs once they are all
+            // written. Not disposed: after a timeout the marker still runs later and sets it.
+            var written = new ManualResetEventSlim();
+            DatabaseManager.Shard.GetCurrentQueueWaitTime(_ => written.Set());
+            var allWritten = written.Wait(TimeSpan.FromMinutes(30));
+            if (!allWritten)
+                log.Error("[AugMove] OFFLINE UNDO: the saves are still being written after 30 minutes - not confirmed (the server stop still waits for them).");
+            var failedSaves = Volatile.Read(ref saveFailed);
+            int? left = null;
+            if (allWritten)
+            {
+                try { left = RecordsLeftInDatabase(); }
+                catch (Exception ex) { log.Error($"[AugMove] OFFLINE UNDO: the move records left could not be counted: {ex}"); }
+            }
+            var ok = allWritten && r.Failed == 0 && failedSaves == 0 && left == 0;
+            if (ok)
+                log.Warn($"[AugMove] OFFLINE UNDO DONE: {r.Undone:N0} of {r.Players:N0} characters moved back, no move record left. Start the OLD build now. {UndoAtStartKey} stays 1: THIS build stops at every start until it is set to 0 by SQL.");
+            else
+                log.Error($"[AugMove] OFFLINE UNDO INCOMPLETE: {r.Failed:N0} characters failed, {failedSaves:N0} saves failed, {(left?.ToString("N0") ?? "unknown")} move records still in the database{(allWritten ? "" : ", saves not confirmed")} (lines above). Do NOT start the old build: fix them and start THIS build again - it re-runs the undo for the ones left.");
+            return ok;
+        }
+
+        /// <summary>Move records still on a non-deleted character, read from the database after the saves are written.</summary>
+        private static int RecordsLeftInDatabase()
+        {
+            var type = (ushort)PropertyString.TriuneMoveRecord;
+            using var ctx = new ShardDbContext();
+            return ctx.BiotaPropertiesString.Count(s => s.Type == type && ctx.Character.Any(c => c.Id == s.ObjectId && !c.IsDeleted));
+        }
+
+        /// <summary>
+        /// Move the characters ONLINE now (the move was just turned on), not at their next login: until
         /// moved they earn nothing (AwaitsMove). Each moved client gets its new school counts and the old counters at 0, so a
         /// plugin never sees both. Runs from an in-game command, on the world thread. Returns how many were moved.
         /// </summary>
@@ -235,15 +288,6 @@ namespace ACE.Server.Managers.ZoneControl
             }
             try
             {
-                if (Undone && player.Session?.AccessLevel >= AccessLevel.Admin)
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("ADMIN: the Triune move undo is saved - hunting rewards, school gems and the login move are OFF on this build. Switch to the old build, or '/zonecontrol triune move on' to stay.", ChatMessageType.Broadcast));
-            }
-            catch (Exception ex)
-            {
-                log.Error($"[AugMove] undo notice for {player.Name}: {ex}");
-            }
-            try
-            {
                 SchoolGems.RenameHeldGems(player);
                 TriuneEarning.PushHuntState(player, full: true, send: false);
             }
@@ -256,19 +300,18 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>The move, when this character has no record and holds something to move. True when it moved.</summary>
         public static bool RunMove(Player player)
         {
-            // the undo switches the move off under the same lock: a login is either moved (record written) before the undo's
-            // character loop reads it, or sees MoveOff - never moved after the loop passed it by
+            // one move at a time (its callers run on the world thread today; the lock keeps it safe for any other)
             lock (MoveLock)
                 return RunMoveLocked(player);
         }
 
-        /// <summary>Held by RunMove and by the undo while it switches the move off.</summary>
+        /// <summary>Held by RunMove.</summary>
         private static readonly object MoveLock = new object();
 
         private static bool RunMoveLocked(Player player)
         {
-            // the admin undo ran: nothing moves again until the old build is back (or the switch is reset). Settings that could
-            // not be read may hide a saved MoveOff: no move then - it runs at a later login once they read again.
+            // 'triune move off': nobody is moved at login. Settings that could not be read may hide a saved MoveOff: no move
+            // then - it runs at a later login once they read again.
             var cfg0 = TriuneEarning.Current;
             if (TriuneEarning.LoadFailed || cfg0.MoveOff)
                 return false;
@@ -347,7 +390,7 @@ namespace ACE.Server.Managers.ZoneControl
             return true;
         }
 
-        // ---- the undo (admin, before switching back to the old build) ----------------------------------------------------
+        // ---- the undo (offline, at startup, before switching back to the old build) ----------------------------------------------------
 
         public sealed class UndoResult
         {
@@ -417,91 +460,87 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// /zonecontrol triune undomove: every MOVED character (a move record), online and offline; never-moved ones are
-        /// untouched. Saves the weapon rows unfolded for the old build and switches the move off (MoveOff) so nobody is moved
-        /// again before the restart - both FIRST: when either save fails it throws before any character is changed. From then
-        /// on (Undone) this build hands out no hunting reward and no school gem.
+        /// The move undo over every MOVED character (a move record); never-moved ones are untouched. Without apply it only
+        /// lists what it would do ('/zonecontrol triune undomove', read only). With apply it runs ONLY offline (RunOfflineUndo, at
+        /// startup): the weapon rows are saved unfolded FIRST - a failed save throws before any character is changed - and an
+        /// online character is refused.
         /// </summary>
-        public static UndoResult UndoAll(bool apply)
+        public static UndoResult UndoAll(bool apply, Action<bool> onSaved = null)
         {
             var result = new UndoResult();
             if (apply)
-            {
-                var before = TriuneEarning.Current;
-                var (wasOff, wasUndo) = (before.MoveOff, before.UndoRan);
-                lock (MoveLock)
-                    TriuneEarning.Mutate(c => { c.MoveOff = true; c.UndoRan = true; c.UndoAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(); });
-                try
-                {
-                    WeaponScalingManager.SaveUnfoldedForRollback();
-                }
-                catch (Exception ex)
-                {
-                    // nothing was undone: the switches go back to what they were. A failed put-back is logged (the move then
-                    // stays OFF and earning stopped - 'triune movestatus' shows it) and the FIRST error is the one reported.
-                    log.Error($"[AugMove] undo: the weapon rows could not be saved - no character was changed: {ex}");
-                    try { TriuneEarning.Mutate(c => { c.MoveOff = wasOff; c.UndoRan = wasUndo; }); }
-                    catch (Exception revert) { log.Error($"[AugMove] undo: the move switches could not be put back (move OFF, earning stopped): {revert}"); }
-                    throw;
-                }
-            }
+                WeaponScalingManager.SaveUnfoldedForRollback();
             foreach (var p in PlayerManager.GetAllPlayers())
             {
-                if (p == null || p.IsDeleted)
+                if (p == null)
                     continue;
-                result.Players++;
-                Record record = null;
-                var json = p.GetProperty(PropertyString.TriuneMoveRecord);
-                if (!string.IsNullOrEmpty(json))
-                {
-                    try { record = JsonConvert.DeserializeObject<Record>(json); }
-                    catch (Exception ex)
-                    {
-                        // its counts may be moved: never "safe to switch" - counted as FAILED (fix the record, run it again)
-                        result.Failed++;
-                        result.Lines.Add($"  {p.Name}: FAILED - unreadable move record ({ex.Message}), nothing changed");
-                        continue;
-                    }
-                    // a hand-edited "null" record: the move treats it as moved (the record exists), so it is never "never moved"
-                    if (record == null)
-                    {
-                        result.Failed++;
-                        result.Lines.Add($"  {p.Name}: FAILED - empty move record (\"{json}\"), nothing changed - fix the record, run it again");
-                        continue;
-                    }
-                }
-
-                long Read(PropertyInt64 prop) => p.GetProperty(prop) ?? 0;
-                var plan = PlanUndo(Read, record);
-                if (plan == null)
-                    continue;
-                result.Undone++;
-
-                var (counts, oldCounters) = plan.Value;
-                result.Lines.Add($"  {p.Name}: " + string.Join(", ", Schools.Select(s => $"{s.Name} {Read(s.Prop):N0}->{counts[s.Prop]:N0}"))
-                    + (oldCounters.Count > 0 ? " | " + string.Join(", ", oldCounters.Select(o => $"{o.Key} {o.Value:N0}")) : ""));
-                if (!apply)
-                    continue;
-                // the record is deleted by WriteUndo: the server log keeps what the move did and what the undo wrote
-                log.Info($"[AugMove] undo 0x{p.Guid.Full:X8} record {json} ->{result.Lines[^1]}");
-
+                // ANY error on one character (IsDeleted reads the character row: a biota without one throws) is that
+                // character's FAILED line, never an abort of the run: its changes are never saved and it keeps its record
+                var planned = false;
                 try
                 {
-                    WriteUndo(p, record, counts, oldCounters);
+                    UndoOne(p, apply, onSaved, result, ref planned);
                 }
                 catch (Exception ex)
                 {
-                    // one bad character never stops the rest; it keeps its record, so a re-run undoes it
-                    result.Undone--;
+                    if (planned)
+                        result.Undone--;
                     result.Failed++;
-                    result.Lines.Add($"  {p.Name}: FAILED ({ex.Message}) - re-run the undo");
+                    result.Lines.Add($"  {p.Name}: FAILED ({ex.Message}) - nothing saved for it, re-run the undo");
                     log.Error($"[AugMove] undo of {p.Name} (0x{p.Guid.Full:X8}) failed: {ex}");
                 }
             }
             return result;
         }
 
-        private static void WriteUndo(IPlayer p, Record record, Dictionary<PropertyInt64, long> counts, Dictionary<PropertyInt64, long> oldCounters)
+        /// <summary>One character of UndoAll. Sets planned once it is counted in Undone (the caller takes it back on an error).</summary>
+        private static void UndoOne(IPlayer p, bool apply, Action<bool> onSaved, UndoResult result, ref bool planned)
+        {
+            if (p.IsDeleted)
+                return;
+            result.Players++;
+            Record record = null;
+            var json = p.GetProperty(PropertyString.TriuneMoveRecord);
+            if (!string.IsNullOrEmpty(json))
+            {
+                try { record = JsonConvert.DeserializeObject<Record>(json); }
+                catch (Exception ex)
+                {
+                    // its counts may be moved: never "safe to switch" - counted as FAILED (fix the record, run it again)
+                    result.Failed++;
+                    result.Lines.Add($"  {p.Name}: FAILED - unreadable move record ({ex.Message}), nothing changed");
+                    return;
+                }
+                // a hand-edited "null" record: the move treats it as moved (the record exists), so it is never "never moved"
+                if (record == null)
+                {
+                    result.Failed++;
+                    result.Lines.Add($"  {p.Name}: FAILED - empty move record (\"{json}\"), nothing changed - fix the record, run it again");
+                    return;
+                }
+            }
+
+            long Read(PropertyInt64 prop) => p.GetProperty(prop) ?? 0;
+            var plan = PlanUndo(Read, record);
+            if (plan == null)
+                return;
+            result.Undone++;
+            planned = true;
+
+            var (counts, oldCounters) = plan.Value;
+            result.Lines.Add($"  {p.Name}: " + string.Join(", ", Schools.Select(s => $"{s.Name} {Read(s.Prop):N0}->{counts[s.Prop]:N0}"))
+                + (oldCounters.Count > 0 ? " | " + string.Join(", ", oldCounters.Select(o => $"{o.Key} {o.Value:N0}")) : ""));
+            if (!apply)
+                return;
+            if (p is not OfflinePlayer offline)
+                throw new InvalidOperationException("online - the undo runs only at startup, with nobody online");
+            // the record is deleted by WriteUndo: the server log keeps what the move did and what the undo wrote
+            log.Info($"[AugMove] undo 0x{p.Guid.Full:X8} record {json} ->{result.Lines[^1]}");
+            // one bad character never stops the rest (the caller counts it): it keeps its record, so a re-run undoes it
+            WriteUndo(offline, counts, oldCounters, onSaved);
+        }
+
+        private static void WriteUndo(OfflinePlayer p, Dictionary<PropertyInt64, long> counts, Dictionary<PropertyInt64, long> oldCounters, Action<bool> onSaved)
         {
             {
                 foreach (var (prop, v) in counts)
@@ -520,15 +559,7 @@ namespace ACE.Server.Managers.ZoneControl
                     p.RemoveProperty(prop);
                 p.RemoveProperty(PropertyFloat.AugDripFraction);
 
-                if (p is Player online)
-                {
-                    foreach (var prop in counts.Keys.Concat(oldCounters.Keys))
-                        online.Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(online, prop, online.GetProperty(prop) ?? 0));
-                    online.CharacterChangesDetected = true;
-                    online.SavePlayerToDatabase();
-                }
-                else if (p is OfflinePlayer offline)
-                    offline.SaveBiotaToDatabase();
+                p.SaveBiotaToDatabase(true, onSaved);
             }
         }
 
@@ -557,7 +588,7 @@ namespace ACE.Server.Managers.ZoneControl
                 lines.Add($"  to move at next login: {p.Name} - {AddedText(add)}{(frac > 0 ? $" (+ a part-way Triune point {frac:0.###})" : "")}");
             }
             lines.Insert(0, $"Triune move: {moved:N0} moved, {toMove:N0} still to move{(TriuneEarning.Current.MoveOff ? " - MOVE IS OFF" : "")}"
-                + $"{(Undone ? $" - UNDO SAVED: no hunting rewards, school gems or login move on this build ('triune move on' resumes; a start {TriuneEarning.UndoKeepHours} h after the undo clears it)" : "")}.");
+                + $"{(IsUndoAtStartArmed() ? $" - UNDO ARMED: it runs at the next server start, then the server stops ({UndoAtStartKey})" : "")}.");
             return lines;
         }
     }
