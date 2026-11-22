@@ -244,6 +244,17 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Normalize_Keeps_The_Floor_Below_The_Ceiling_At_The_Top_Kph()
+        {
+            var cfg = new TriuneEarning.Config();
+            cfg.Tiers.Add(new TriuneTierRow { Tier = 15, FloorKph = TriuneEarning.MaxKph, CeilingKph = TriuneEarning.MaxKph });
+            cfg = TriuneEarning.Normalize(cfg);
+            var r = cfg.Tiers.Single(x => x.Tier == 15);
+            Assert.IsTrue(r.CeilingKph > r.FloorKph, $"floor {r.FloorKph} ceiling {r.CeilingKph}");
+            Assert.AreEqual(TriuneEarning.MaxKph, r.CeilingKph);
+        }
+
+        [TestMethod]
         public void Normalize_Rejects_Infinite_Tiny_And_Huge_Values()
         {
             var cfg = new TriuneEarning.Config { GemBaseCap = -1 };

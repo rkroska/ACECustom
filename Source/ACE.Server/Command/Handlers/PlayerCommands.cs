@@ -495,13 +495,14 @@ namespace ACE.Server.Command.Handlers
 
             Say("---------------------------");
             Say("Advanced Augmentation Levels:");
-            Say($"Creature: {player.LuminanceAugmentCreatureCount ?? 0:N0}");
-            Say($"Item: {player.LuminanceAugmentItemCount ?? 0:N0}");
-            Say($"Life: {player.LuminanceAugmentLifeCount ?? 0:N0}");
-            Say($"War: {player.LuminanceAugmentWarCount ?? 0:N0}");
-            Say($"Void: {player.LuminanceAugmentVoidCount ?? 0:N0}");
-            Say($"Melee: {player.LuminanceAugmentMeleeCount ?? 0:N0}");
-            Say($"Missile: {player.LuminanceAugmentMissileCount ?? 0:N0}");
+            // the counts every gate reads: a character not moved yet (the move off) still shows its Triune / charm power
+            Say($"Creature: {player.EffectiveCreatureAugCount:N0}");
+            Say($"Item: {player.EffectiveItemAugCount:N0}");
+            Say($"Life: {player.EffectiveLifeAugCount:N0}");
+            Say($"War: {player.EffectiveWarAugCount:N0}");
+            Say($"Void: {player.EffectiveVoidAugCount:N0}");
+            Say($"Melee: {player.EffectiveMeleeAugCount:N0}");
+            Say($"Missile: {player.EffectiveMissileAugCount:N0}");
             Say($"Duration: {player.LuminanceAugmentSpellDurationCount ?? 0:N0}");
             Say($"Specialization: {player.LuminanceAugmentSpecializeCount ?? 0:N0}");
             Say($"Summon: {player.LuminanceAugmentSummonCount ?? 0:N0}");

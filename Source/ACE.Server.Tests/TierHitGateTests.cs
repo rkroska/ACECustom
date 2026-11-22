@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -210,7 +209,26 @@ namespace ACE.Server.Tests
                 Assert.AreEqual((4000 + step, 2000 + step, 2000 + step, 0, 2000 + step),
                     (r.MinWieldCreature, r.MinWieldAugs, r.MinWieldLife, r.MinWieldTriune, r.MinWieldSkillCharm), $"T{r.Tier}");
             }
+        }
 
+        [TestMethod]
+        public void Normalize_SeedsAnUnfoldedRow_FromBeforeTheCharmGates_ThenFoldsIt()
+        {
+            // CodeRabbit 2026-11-22: a T16+ row saved before the 08-15 charm gates holds 0 Triune AND 0 charm - the old build
+            // seeded both at load, so the fold must see them too (6,500 / 4,500 / 4,500 at T16, not 6,000 / 4,000 / 4,000)
+            var old = WeaponScalingManager.BuildDefaults();
+            old.TriuneFolded = false;
+            var t16 = old.Tiers.Single(r => r.Tier == 16);
+            (t16.MinWieldCreature, t16.MinWieldAugs, t16.MinWieldLife, t16.MinWieldTriune, t16.MinWieldSkillCharm) = (6000, 5000, 4000, 0, 0);
+            WeaponScalingManager.Normalize(old);
+            Assert.AreEqual((6500, 4500, 4500, 0, 4500), (t16.MinWieldCreature, t16.MinWieldAugs, t16.MinWieldLife, t16.MinWieldTriune, t16.MinWieldSkillCharm));
+
+            // a folded store is never re-seeded (its rows hold 0 Triune on purpose)
+            var folded = WeaponScalingManager.BuildDefaults();
+            var f16 = folded.Tiers.Single(r => r.Tier == 16);
+            var before = (f16.MinWieldCreature, f16.MinWieldAugs, f16.MinWieldLife, f16.MinWieldTriune, f16.MinWieldSkillCharm);
+            WeaponScalingManager.Normalize(folded);
+            Assert.AreEqual(before, (f16.MinWieldCreature, f16.MinWieldAugs, f16.MinWieldLife, f16.MinWieldTriune, f16.MinWieldSkillCharm));
         }
 
         [TestMethod]
@@ -235,7 +253,46 @@ namespace ACE.Server.Tests
             Assert.AreEqual((6000, 4000, 4000, 0, 0), (t15.MinWieldCreature, t15.MinWieldAugs, t15.MinWieldLife, t15.MinWieldTriune, t15.MinWieldSkillCharm), "below T16 untouched");
             Assert.AreEqual(WeaponScalingManager.DefaultMinWieldSchool(20), noSchool.MinWieldSkillCharm, "no school number = the default");
             Assert.AreEqual((8500, 6500, 6500), (noSchool.MinWieldCreature, noSchool.MinWieldAugs, noSchool.MinWieldLife));
+        }
 
+        [TestMethod]
+        public void SchoolCheckOff_StopsAskingTheSchool_AtThatTierOnly()
+        {
+            var rows = Rows();
+            foreach (var r in rows.Where(r => r.Tier == 12 || r.Tier == 13))
+                r.SchoolCheckOff = true;
+            // T13 Creature / Item / Life, best school only 2,000 (the T11 number)
+            Assert.AreEqual(11, TierHitGate.HighestTier(5000, 3000, 3000, 2000, Rows()), "check on everywhere: the school holds them at T11");
+            Assert.AreEqual(13, TierHitGate.HighestTier(5000, 3000, 3000, 2000, rows), "T12 and T13 ask no school");
+            Assert.AreEqual(13, TierHitGate.HighestTier(5500, 3500, 3500, 2000, rows), "T14 still asks it");
+            Assert.AreEqual(12, TierHitGate.HighestTier(4999, 3000, 3000, 9000, rows), "Creature, Item and Life are still asked");
+            Assert.AreEqual(0, TierHitGate.HighestTier(4000, 2000, 2000, 1999, rows), "T11 still asks it");
+        }
+
+        [TestMethod]
+        public void SchoolCheckOff_IsKeptByNormalize_AndClearedBelowT11()
+        {
+            var cfg = WeaponScalingManager.BuildDefaults();
+            cfg.Tiers.First(r => r.Tier == 13).SchoolCheckOff = true;
+            var low = cfg.Tiers.FirstOrDefault(r => r.Tier < 11);
+            if (low != null)
+                low.SchoolCheckOff = true;
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(cfg);
+            var back = WeaponScalingManager.Normalize(Newtonsoft.Json.JsonConvert.DeserializeObject<WeaponScalingConfig>(json));
+            Assert.IsTrue(back.Tiers.First(r => r.Tier == 13).SchoolCheckOff);
+            Assert.IsFalse(back.Tiers.Where(r => r.Tier != 13).Any(r => r.SchoolCheckOff), "only T13, and nothing below T11");
+            var oldStore = Newtonsoft.Json.JsonConvert.DeserializeObject<WeaponScalingConfig>("{\"Tiers\":[{\"Tier\":13,\"MinWieldSkillCharm\":3000}]}");
+            Assert.IsFalse(oldStore.Tiers[0].SchoolCheckOff, "a store saved before the switch: the check is on");
+        }
+
+        [TestMethod]
+        public void HitGatePayload_ListsEveryT11PlusRow_CheckAndSchool()
+        {
+            var cfg = WeaponScalingManager.BuildDefaults();
+            cfg.Tiers.First(r => r.Tier == 14).SchoolCheckOff = true;
+            var line = ACE.Server.Command.Handlers.WeaponScalingCommands.BuildHitGatePayload(cfg);
+            StringAssert.StartsWith(line, "[[ZCHG]]|t=11~1~2000,12~1~2500,13~1~3000,14~0~3500,15~1~4000,16~1~4500");
+            StringAssert.EndsWith(line, ",25~1~9000");
         }
     }
 }

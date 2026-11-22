@@ -249,7 +249,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// The four attack school gem emote prefixes (War / Void / Melee / Missile). Since 2026-11-22 (Triune retire) only an
         /// EARNED +1 gem does anything (SchoolGems.TryUse); the school charms are keepsakes and nothing reads them here.
         /// </summary>
-        private static readonly HashSet<string> SchoolCharms = new HashSet<string> { "Wrath", "Nether", "Steel", "TrueShot" };
+        private static readonly HashSet<string> SchoolGemPrefixes = new HashSet<string> { "Wrath", "Nether", "Steel", "TrueShot" };
 
         /// <summary>What a retired gem (Triune, an unstamped attack school gem) says when used (owner 2026-11-22). It stays put.</summary>
         private const string RetiredGemLine = "This gem is no longer used. Its power now lives in your augmentations.";
@@ -2834,6 +2834,12 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on creatureAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentCreatureCount ?? 0) != creatureAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Creature", player.LuminanceAugmentCreatureCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
@@ -2926,6 +2932,12 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on itemAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentItemCount ?? 0) != itemAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Item", player.LuminanceAugmentItemCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
@@ -3017,6 +3029,12 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on lifeAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentLifeCount ?? 0) != lifeAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Life", player.LuminanceAugmentLifeCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
@@ -3068,7 +3086,7 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
-                                    // a school fed by the T11-T14 drip is priced as if those points were used (TriuneEarning.GemPriceCount)
+                                    // priced from the count itself: only Creature / Item / Life have a T11-T14 price floor (TriuneEarning.GemPriceCount)
                                     long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "War", warAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
@@ -3108,6 +3126,12 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on warAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentWarCount ?? 0) != warAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "War", player.LuminanceAugmentWarCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
@@ -3158,7 +3182,7 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
-                                    // a school fed by the T11-T14 drip is priced as if those points were used (TriuneEarning.GemPriceCount)
+                                    // priced from the count itself: only Creature / Item / Life have a T11-T14 price floor (TriuneEarning.GemPriceCount)
                                     long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Void", voidAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
@@ -3198,6 +3222,12 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on voidAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentVoidCount ?? 0) != voidAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Void", player.LuminanceAugmentVoidCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
@@ -3248,7 +3278,7 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
-                                    // a school fed by the T11-T14 drip is priced as if those points were used (TriuneEarning.GemPriceCount)
+                                    // priced from the count itself: only Creature / Item / Life have a T11-T14 price floor (TriuneEarning.GemPriceCount)
                                     long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Melee", meleeAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
@@ -3288,6 +3318,12 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on meleeAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentMeleeCount ?? 0) != meleeAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Melee", player.LuminanceAugmentMeleeCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
@@ -3338,7 +3374,7 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
-                                    // a school fed by the T11-T14 drip is priced as if those points were used (TriuneEarning.GemPriceCount)
+                                    // priced from the count itself: only Creature / Item / Life have a T11-T14 price floor (TriuneEarning.GemPriceCount)
                                     long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Missile", missileAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
@@ -3378,6 +3414,12 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on missileAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentMissileCount ?? 0) != missileAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Missile", player.LuminanceAugmentMissileCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
@@ -3706,7 +3748,7 @@ namespace ACE.Server.WorldObjects.Managers
                                                    moteMessage.EndsWith("10") ? 10 : 1;
                                     var prefix = augCount == 1 ? moteMessage : moteMessage.Substring(0, moteMessage.Length - (augCount == 100 ? 3 : 2));
 
-                                    if (!SchoolCharms.Contains(prefix))
+                                    if (!SchoolGemPrefixes.Contains(prefix))
                                         break;
 
                                     // An EARNED +1 gem (owner 2026-11-01) adds +1 straight onto the school's augmentations (one stat,

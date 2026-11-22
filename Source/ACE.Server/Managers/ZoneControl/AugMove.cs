@@ -7,7 +7,6 @@ using Newtonsoft.Json;
 
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
-using ACE.Server.Entity;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 
@@ -124,11 +123,22 @@ namespace ACE.Server.Managers.ZoneControl
             var moved = 0;
             foreach (var p in PlayerManager.GetAllOnline())
             {
+                var held = Moves.Select(m => m.Old).Where(old => p.GetProperty(old).HasValue).ToList();
+                bool did;
                 try
                 {
-                    var held = Moves.Select(m => m.Old).Where(old => p.GetProperty(old).HasValue).ToList();
-                    if (!RunMove(p))
-                        continue;
+                    did = RunMove(p);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[AugMove] move of {p.Name} after 'move on': {ex}");
+                    // a throw after the writes (the log or chat line) still moved them: the client must still get the new counts
+                    did = held.Any(old => !p.GetProperty(old).HasValue);
+                }
+                if (!did)
+                    continue;
+                try
+                {
                     moved++;
                     foreach (var s in Schools)
                         p.Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(p, s.Prop, p.GetProperty(s.Prop) ?? 0));
@@ -139,7 +149,7 @@ namespace ACE.Server.Managers.ZoneControl
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"[AugMove] move of {p?.Name} after 'move on': {ex}");
+                    log.Error($"[AugMove] client update for {p.Name} after 'move on': {ex}");
                 }
             }
             return moved;
@@ -181,11 +191,21 @@ namespace ACE.Server.Managers.ZoneControl
         public static string AddedText(IReadOnlyDictionary<PropertyInt64, long> added)
             => string.Join(", ", Schools.Where(s => added.TryGetValue(s.Prop, out var n) && n > 0).Select(s => $"{s.Name} +{added[s.Prop]:N0}"));
 
+        /// <summary>
+        /// The part-way reward after the move (tested): a Triune point was 3 rewards (one per school), so the old part-way
+        /// point adds 3x onto the part-way reward - kept below one whole reward (owner 2026-11-22: the small loss is fine).
+        /// </summary>
+        public static double CarriedFraction(double dripFraction, double triuneFraction)
+            => Math.Min(0.999, Math.Max(0, dripFraction) + 3 * Math.Max(0, triuneFraction));
+
+        /// <summary>"T16", or "own tier unknown" when it could not be read.</summary>
+        private static string TierText(int tier) => tier > 0 ? $"T{tier}" : "own tier unknown";
+
         // ---- login ------------------------------------------------------------------------------------------------------
 
         /// <summary>
-        /// Called from Player.PlayerEnterWorld before the description goes out (so the login packet already carries the new
-        /// counts and no retired counter): the move when it is due, the gem renames, and the hunting numbers for a plugin.
+        /// Called from Player.PlayerEnterWorld before the description goes out (so the hunting numbers it carries already
+        /// match the moved counts): the move when it is due, the gem renames, and the hunting numbers for a plugin.
         /// </summary>
         public static void OnLogin(Player player)
         {
@@ -213,7 +233,8 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>The move, when this character has no record and holds something to move. True when it moved.</summary>
         public static bool RunMove(Player player)
         {
-            // one move at a time (its callers run on the world thread today; the lock keeps it safe for any other)
+            // world thread only: the hunting rewards, the gems and the luminance buys write the same counts without this lock.
+            // It only keeps two moves of one character from overlapping.
             lock (MoveLock)
                 return RunMoveLocked(player);
         }
@@ -271,15 +292,11 @@ namespace ACE.Server.Managers.ZoneControl
             // the record and the counts are worked out before the first write, so the move's own writes never stop half-way
             var recordJson = JsonConvert.SerializeObject(record);
             var newCounts = add.ToDictionary(kv => kv.Key, kv => Read(kv.Key) + kv.Value);
-            // a Triune point was 3 rewards (one per school): the part-way point carries over, kept below a whole reward
-            var newFraction = oldFraction > 0 ? Math.Min(0.999, (player.GetProperty(PropertyFloat.AugDripFraction) ?? 0) + 3 * oldFraction) : (double?)null;
             foreach (var (school, v) in newCounts)
                 player.SetProperty(school, v);
             foreach (var (old, _) in Moves)
                 player.RemoveProperty(old);
             player.RemoveProperty(PropertyFloat.TriuneFraction);
-            if (newFraction is double f)
-                player.SetProperty(PropertyFloat.AugDripFraction, f);
             player.SetProperty(PropertyString.TriuneMoveRecord, recordJson);
             player.CharacterChangesDetected = true;
 
@@ -303,11 +320,14 @@ namespace ACE.Server.Managers.ZoneControl
             }
             catch (Exception ex)
             {
-                log.Error($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved, but the T{own} rolls could not be seeded: {ex}");
+                log.Error($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved, but the {TierText(own)} rolls could not be seeded (seeded so far: {string.Join(", ", seeds)}): {ex}");
             }
+            // the part-way point goes in AFTER the roll tier is set: a new roll tier clears the part-way reward it finds
+            if (oldFraction > 0)
+                player.SetProperty(PropertyFloat.AugDripFraction, CarriedFraction(player.GetProperty(PropertyFloat.AugDripFraction) ?? 0, oldFraction));
 
             var text = AddedText(add);
-            log.Info($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved {text}; T{own} rolls seeded {string.Join(", ", seeds)}.");
+            log.Info($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved {(text.Length > 0 ? text : "a part-way Triune point only")}; {TierText(own)} rolls seeded {string.Join(", ", seeds)}.");
             if (text.Length > 0)
                 player.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your Triune Weave and charm counts now live in your augmentations: {text}.", ChatMessageType.Broadcast));
             return true;
@@ -336,9 +356,16 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!pending)
                     continue;
                 toMove++;
-                lines.Add($"  to move at next login: {p.Name} - {AddedText(add)}{(frac > 0 ? $" (+ a part-way Triune point {frac:0.###})" : "")}");
+                var parts = new List<string>();
+                var addedText = AddedText(add);
+                if (addedText.Length > 0)
+                    parts.Add(addedText);
+                if (frac > 0)
+                    parts.Add($"a part-way Triune point {frac:0.###}");
+                lines.Add($"  to move at next login: {p.Name} - {string.Join(" + ", parts)}");
             }
-            lines.Insert(0, $"Triune move: {moved:N0} moved, {toMove:N0} still to move{(TriuneEarning.Current.MoveOff ? " - MOVE IS OFF" : "")}.");
+            var blocked = TriuneEarning.LoadFailed ? " - THE SETTINGS COULD NOT BE READ, nobody is moved" : TriuneEarning.Current.MoveOff ? " - MOVE IS OFF" : "";
+            lines.Insert(0, $"Triune move: {moved:N0} moved, {toMove:N0} still to move{blocked}.");
             return lines;
         }
     }

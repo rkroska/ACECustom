@@ -64,10 +64,12 @@ namespace ACE.Entity.Enum.Properties
         // 50000+ block (matches the PropertyInt/PropertyBool charm-system ids)
         /// <summary>RETIRED 2026-11-22 (Triune retire): was the Charm of the Triune Weave count (+1 Creature / Item / Life each).
         /// The login move (AugMove) adds it onto LumAugCreature / Item / Life and removes it; nothing grants it any more. A gate
-        /// that still names it (old gear, quest checks, portals) reads "growth past T15" instead (Creature.GetInt64ForGate).</summary>
+        /// that still names it (old gear, quest checks, portals) reads the larger of "growth past T15" and the value the move
+        /// took (Creature.GetInt64ForGate).</summary>
         TriuneWeaveCount       = 50000,
         // RETIRED 2026-11-22: the four school charm counters (War / Void / Melee / Missile). The login move adds each onto
-        // its LumAug school and removes it. A gate naming one reads that school past 4,000 (Creature.GetInt64ForGate).
+        // its LumAug school and removes it. A gate naming one reads the larger of that school past 4,000 and the value the move
+        // took (Creature.GetInt64ForGate).
         /// <summary>Charm of the Battlemage's Wrath (War).</summary>
         BattlemagesWrathCharmCount = 50001,
         /// <summary>Charm of the Nether Veil (Void).</summary>
@@ -116,7 +118,8 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>T11-T14 drip: Missile augs from earned T11-T14 school gems.</summary>
         AugDripMissileCount    = 50666,
         // Hunting rewards (owner 2026-11-22, Triune retire): T11-T25 own-tier kills earn rewards, each +1 to ONE of Creature /
-        // Item / Life at random, from a budget of rolls per school per tier. 50667-50677, free in EVERY Property enum.
+        // Item / Life at random, from a budget of rolls per school per tier. PropertyInt64 50667-50677 (PropertyString 50667 is
+        // the move record, a different table).
         // All of them are SENT to the owner's client (at login and whenever they change), so a plugin can draw the
         // "Hunting rewards" block live, the way it reads banked luminance - no command to poll.
         /// <summary>The tier the roll counts below belong to (the player's own tier when they last earned or logged in). 0 = none.</summary>

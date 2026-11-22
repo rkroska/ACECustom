@@ -5898,10 +5898,9 @@ namespace ACE.Server.Command.Handlers
         private const int MaxTunedTier = 25;
         private const int MinBoundedTier = ZoneControlManager.MinBoundedVariation;
 
-        /// <summary>Life augs are capped and UNGATED, so every real player at cap carries the same
-        /// 4,000 (owner 2026-09-01: "6k creature, 4k item, 4k life is the max a real player has").
-        /// TierHitGate does not read them - Life cannot distinguish two players, so it is a constant
-        /// offset here rather than a variable.</summary>
+        /// <summary>The Life every player at the luminance cap carries (owner 2026-09-01: "6k creature, 4k item, 4k life is
+        /// the max a real player has"). The basis counts Life as this constant: past the caps the row's Life climbs with
+        /// Creature and Item (one old Triune step), and that step is counted once below.</summary>
         private const int LifeAugCap = 4000;
 
         /// <summary>
@@ -5914,7 +5913,7 @@ namespace ACE.Server.Command.Handlers
         /// N = the part of all three above 6,000 / 4,000 / 4,000, and C + I + 4,000 - N = the old C0 + I0 + N + 4,000.
         ///
         /// The shape this produces is why the default curve is not linear: Creature and Item climb to
-        /// their caps by T15 and then stop, and from T16 every remaining point is Triune. Growth is
+        /// their caps by T15, and from T16 the growth is the one step above the caps (the old Triune). Growth is
         /// therefore about +1,000 per tier to T15 and +500 per tier after it.
         /// </summary>
         private static int AugPowerAt(int tier)
@@ -5923,7 +5922,7 @@ namespace ACE.Server.Command.Handlers
             if (row == null)
                 return LifeAugCap;
             var pastCaps = Math.Max(0, Math.Min(row.MinWieldCreature - 6000, Math.Min(row.MinWieldAugs - 4000, row.MinWieldLife - 4000)));
-            return row.MinWieldCreature + row.MinWieldAugs + row.MinWieldTriune - pastCaps + LifeAugCap;
+            return row.MinWieldCreature + row.MinWieldAugs - pastCaps + LifeAugCap;
         }
 
         private static void HandleMobCheck(string zoneName, uint mobWcid, Action<string> Msg)

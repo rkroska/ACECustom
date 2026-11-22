@@ -2208,9 +2208,11 @@ namespace ACE.Server.WorldObjects
                     var jewelProc = fromProc && (weapon?.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0) > 0;
                     // the hit gate asks the school of what FIRED the ring (a proc follows its weapon: a melee weapon -> Melee, a
                     // launcher -> Missile), not the resist item, which is null for a proc with no B value
-                    var resisted = TryResistSpell(creature, spell, fromProc && (procBaseDamage > 0 || jewelProc) ? weapon : null, true,
-                        gateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, (fromProc ? weapon : null) ?? lowTierItem));   // a retail proc ring (fromProc off, procWeapon null) still follows its real proccing item
-                    if (resisted && !(Overpower != null && Creature.GetOverpower(this, creature)))
+                    var ringSchool = gateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, (fromProc ? weapon : null) ?? lowTierItem);   // a retail proc ring (fromProc off, procWeapon null) still follows its real proccing item
+                    var resisted = TryResistSpell(creature, spell, fromProc && (procBaseDamage > 0 || jewelProc) ? weapon : null, true, ringSchool);
+                    // Overpower lands an ordinary resist, never a hit-gate block (the gate already told the player in TryResistSpell)
+                    if (resisted && !(Overpower != null && Creature.GetOverpower(this, creature)
+                            && ACE.Server.Managers.ZoneControl.TierHitGate.CanHit(this, creature, out _, ringSchool)))
                     {
                         dbgResist++;
                         continue;

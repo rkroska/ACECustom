@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 
 using ACE.Entity.Enum;
-using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Managers.WeaponScaling;
 using ACE.Server.Network.GameMessages.Messages;
@@ -104,11 +103,12 @@ namespace ACE.Server.Managers.ZoneControl
             // only feedback the gate ever gives, so it has to be complete.
             //
             // Requirements the player already MEETS are left out, and so is any counter this tier does not ask for at all
-            // (a spell of no attack school - a Life or Creature debuff - asks no school). The list is exactly what is still to do.
+            // (a spell of no attack school - a Life or Creature debuff - asks no school; a tier with its school check off asks
+            // none). The list is exactly what is still to do.
             var needCreature = Short(creature, row.MinWieldCreature);
             var needItem = Short(item, row.MinWieldAugs);
             var needLife = Short(life, row.MinWieldLife);
-            var needSchool = school != AttackSchool.None && Short(schoolCount, row.MinWieldSkillCharm);
+            var needSchool = school != AttackSchool.None && !row.SchoolCheckOff && Short(schoolCount, row.MinWieldSkillCharm);
 
             if (!needCreature && !needItem && !needLife && !needSchool)
                 return true;
@@ -188,7 +188,8 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>
         /// Do these counts meet this tier row's gate? The same comparisons CanHit makes, so "which tier is this player" and
         /// "can this player hit that monster" can never drift apart: Creature, Item, Life and the attack school at every tier -
-        /// here the player's BEST school, so a player is the tier their best attack can fight.
+        /// here the player's BEST school, so a player is the tier their best attack can fight. A tier with its school check off
+        /// (SchoolCheckOff) asks no school here either, so the own tier and the reward tier follow what can be hit.
         /// </summary>
         internal static bool MeetsTier(long creature, long item, long life, long bestSchool, WeaponScalingTier row)
         {
@@ -196,7 +197,7 @@ namespace ACE.Server.Managers.ZoneControl
                 && !Short(creature, row.MinWieldCreature)
                 && !Short(item, row.MinWieldAugs)
                 && !Short(life, row.MinWieldLife)
-                && !Short(bestSchool, row.MinWieldSkillCharm);
+                && (row.SchoolCheckOff || !Short(bestSchool, row.MinWieldSkillCharm));
         }
 
         /// <summary>
@@ -278,7 +279,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// have is"): the lower of the tier they can hit (PlayerTier) and the highest tier gem they own. Before this a player
         /// who could hit a tier but whose gem refused them (short on Life augs or Enlightenment) was counted at that tier, and
         /// every kill in the tier they could actually reach was cut by the tier dip. Feeds TierRewardScale.OwnTier (coins, kill
-        /// tasks, bounties, own-tier Triune and school gems) and the rare odds.
+        /// tasks, bounties, own-tier hunting rewards and school gems) and the rare odds.
         ///
         /// T11 is the floor (owner 2026-11-17): T11 is reached without its gem, so anyone who can hit T11 counts as at least
         /// T11 and the gem cap only bites from T12.

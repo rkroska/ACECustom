@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading;
 
 using log4net;
 using Newtonsoft.Json;
@@ -97,9 +99,14 @@ namespace ACE.Server.Managers.ZoneControl
         public const int MaxPoints = 100_000, MaxGemBaseCap = 1_000_000;
 
         private static readonly object _lock = new();
-        private static Config _current;
+        // volatile: read outside the lock (Current's fast path, LoadFailed), written under it
+        private static volatile Config _current;
         /// <summary>True while the stored JSON could not be read: the running settings stay, and no edit may save over the store.</summary>
-        private static bool _loadFailed;
+        private static volatile bool _loadFailed;
+        // bumped by every settings change (an edit, a reload): a player's next hunting update after one sends every number,
+        // so a plugin never keeps the old bands. Per player: the revision their client last got in full.
+        private static int _settingsRev;
+        private static readonly ConditionalWeakTable<Player, StrongBox<int>> SentRev = new();
         /// <summary>The stored settings could not be read (defaults or the last good copy are running).</summary>
         public static bool LoadFailed => _loadFailed;
         /// <summary>When a failed FIRST load is next retried on its own (a brief DB error must not leave earning off until a reload).</summary>
@@ -144,7 +151,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         public static Config Defaults() => Normalize(new Config());
 
-        /// <summary>Every tier T15..T25 present once, in order, with sane numbers.</summary>
+        /// <summary>Every tier T11..T25 present once, in order, with sane numbers.</summary>
         public static Config Normalize(Config cfg)
         {
             cfg ??= new Config();
@@ -159,6 +166,7 @@ namespace ACE.Server.Managers.ZoneControl
                 r.FloorKph = InRange(r.FloorKph, MinKph, MaxKph, d.FloorKph);
                 r.CeilingKph = InRange(r.CeilingKph, MinKph, MaxKph, Math.Min(MaxKph, r.FloorKph * 2));
                 if (!(r.CeilingKph > r.FloorKph)) r.CeilingKph = Math.Min(MaxKph, r.FloorKph * 2);
+                if (!(r.CeilingKph > r.FloorKph)) r.FloorKph = r.CeilingKph / 2;   // a floor at the top kph: the ceiling has no room above it
                 r.SlowWeeks = InRange(r.SlowWeeks, MinWeeks, MaxWeeks, d.SlowWeeks);
                 r.FastWeeks = InRange(r.FastWeeks, MinWeeks, MaxWeeks, Math.Min(d.FastWeeks, r.SlowWeeks));
                 if (r.FastWeeks > r.SlowWeeks) r.FastWeeks = Math.Min(d.FastWeeks, r.SlowWeeks);
@@ -234,12 +242,9 @@ namespace ACE.Server.Managers.ZoneControl
                 var clone = Normalize(JsonConvert.DeserializeObject<Config>(JsonConvert.SerializeObject(Current)));
                 edit(clone);
                 clone = Normalize(clone);
-                var jsonOut = JsonConvert.SerializeObject(clone);
-                if (DatabaseManager.ShardConfig.StringExists(StoreKey))
-                    DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = StoreKey, Value = jsonOut, Description = "Triune earning per tier (JSON)" });
-                else
-                    DatabaseManager.ShardConfig.AddString(StoreKey, jsonOut, "Triune earning per tier (JSON)");
+                SaveStore(clone);
                 _current = clone;
+                Interlocked.Increment(ref _settingsRev);
                 return clone;
             }
         }
@@ -261,6 +266,7 @@ namespace ACE.Server.Managers.ZoneControl
                 _current = fresh;
                 _loadFailed = false;
                 _firstLoadFailed = false;
+                Interlocked.Increment(ref _settingsRev);
             }
         }
 
@@ -285,14 +291,14 @@ namespace ACE.Server.Managers.ZoneControl
         public static double Band1Kills(TriuneTierRow r) => r.FloorKph * HoursPerWeek;
         public static double Band2Kills(TriuneTierRow r) => Math.Max(0, r.CeilingKph - r.FloorKph) * HoursPerWeek;
 
-        /// <summary>Triune per kill in the first band: a week of floor-pace kills pays Points / SlowWeeks.</summary>
+        /// <summary>Points per kill in the first band: a week of floor-pace kills pays Points / SlowWeeks.</summary>
         public static double Rate1(TriuneTierRow r)
         {
             var b = Band1Kills(r);
             return b > 0 && r.SlowWeeks > 0 ? r.Points / r.SlowWeeks / b : 0.0;
         }
 
-        /// <summary>Triune per kill in the second band: a week of ceiling-pace kills pays Points / FastWeeks in all.</summary>
+        /// <summary>Points per kill in the second band: a week of ceiling-pace kills pays Points / FastWeeks in all.</summary>
         public static double Rate2(TriuneTierRow r)
         {
             var b = Band2Kills(r);
@@ -326,11 +332,11 @@ namespace ACE.Server.Managers.ZoneControl
             return Math.Min(1.0, GemChance1(r) * Overlap(killsBefore, 0, b1) + GemChance2(r) * Overlap(killsBefore, b1, b1 + Band2Kills(r)));
         }
 
-        /// <summary>The school total (ladder + charm) a gem earned at <paramref name="tier"/> can raise a school to. T11-T14: the
+        /// <summary>The school count a gem earned at <paramref name="tier"/> can raise a school to. T11-T14: the
         /// attack school follows the Item / Life ladder (T11 2,500 ... T14 4,000); T15+: the base cap + the Triune points.</summary>
         public static long GemCeiling(Config cfg, int tier) => IsDripTier(tier) ? DripCeiling(cfg, tier, cfg.DripBaseItem) : cfg.GemBaseCap + TierCap(cfg, tier);
 
-        /// <summary>The ladder total (used + drip) a school needs before its gems drop or work at <paramref name="tier"/>:
+        /// <summary>The school count a school needs before its gems drop or work at <paramref name="tier"/>:
         /// T11-T14 = that tier's entry on the Item / Life ladder; T15+ = the base cap (4,000).</summary>
         public static long GemFloor(Config cfg, int tier) => IsDripTier(tier) ? DripEntry(cfg, tier, cfg.DripBaseItem) : cfg.GemBaseCap;
 
@@ -441,19 +447,6 @@ namespace ACE.Server.Managers.ZoneControl
             player.RemoveProperty(PropertyFloat.AugDripFraction);
             return true;
         }
-
-        /// <summary>The LumAug count of a gem school name (Creature / Item / Life / War / Void / Melee / Missile), else null.</summary>
-        public static PropertyInt64? AugPropertyFor(string school) => school switch
-        {
-            "Creature" => PropertyInt64.LumAugCreatureCount,
-            "Item" => PropertyInt64.LumAugItemCount,
-            "Life" => PropertyInt64.LumAugLifeCount,
-            "War" => PropertyInt64.LumAugWarCount,
-            "Void" => PropertyInt64.LumAugVoidCount,
-            "Melee" => PropertyInt64.LumAugMeleeCount,
-            "Missile" => PropertyInt64.LumAugMissileCount,
-            _ => null,
-        };
 
         /// <summary>
         /// The count a luminance gem is PRICED from. DECIDED 11-08 (price floor), kept 11-22: Creature / Item / Life while the
@@ -679,10 +672,11 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!canStillEarn && !SchoolGems.CanEarnAny(player, cfg, killTier))
                     return;
                 var stored = player.GetProperty(PropertyInt64.TriuneWeekStart) ?? 0;
-                if (kills < b1 && after >= b1)
-                    player.SendMessage($"Your hunting now earns augmentations at a slower pace until the week turns ({NextResetText(cfg, stored)}).", ChatMessageType.Broadcast);
-                else if (kills < b2 && after >= b2)
+                // the end first: a kill that crosses both lines (an empty slow band) says the rewards stopped
+                if (kills < b2 && after >= b2)
                     player.SendMessage($"Your kills here earn no augmentations until the week turns ({NextResetText(cfg, stored)}).", ChatMessageType.Broadcast);
+                else if (kills < b1 && after >= b1)
+                    player.SendMessage($"Your hunting now earns augmentations at a slower pace until the week turns ({NextResetText(cfg, stored)}).", ChatMessageType.Broadcast);
             }
             catch (Exception ex)
             {
@@ -747,6 +741,9 @@ namespace ACE.Server.Managers.ZoneControl
             PropertyInt64.AugHuntRollsPerSchool,
         };
 
+        /// <summary>The per-school roll counts, in DripSchools order.</summary>
+        private static readonly PropertyInt64[] RollProps = DripSchools.Select(s => s.RollsProperty).ToArray();
+
         /// <summary>
         /// Writes the "Hunting rewards" numbers onto the player and sends them to their client (owner 2026-11-22: a plugin can
         /// show the block live, like banked luminance). <paramref name="full"/> = every number (login, a new week, a new tier);
@@ -754,8 +751,6 @@ namespace ACE.Server.Managers.ZoneControl
         /// counts are moved to the own tier here too, so a plugin never shows another tier's rolls. <paramref name="send"/>
         /// false = only write them (at login, where the description that follows carries them - they are [SendOnLogin]).
         /// </summary>
-        private static readonly PropertyInt64[] RollProps = DripSchools.Select(s => s.RollsProperty).ToArray();
-
         public static void PushHuntState(Player player, bool full, bool send = true)
         {
             if (player == null)
@@ -771,6 +766,13 @@ namespace ACE.Server.Managers.ZoneControl
 
             if (on && EnsureRollTier(player, own))
                 full = true;
+            // the settings changed since this client last got every number: send them all again
+            var rev = Volatile.Read(ref _settingsRev);
+            var sentRev = SentRev.GetValue(player, _ => new StrongBox<int>(rev - 1));
+            if (sentRev.Value != rev)
+                full = true;
+            if (full)
+                sentRev.Value = rev;
 
             var kills = (long)Math.Floor(WeekKills(player, cfg));
             var values = new Dictionary<PropertyInt64, long> { [PropertyInt64.AugHuntWeekKills] = kills };
@@ -862,6 +864,10 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>One kill per point, rounded: "403".</summary>
         public static string KillsPerPoint(double rate) => rate > 0 ? Math.Round(1.0 / rate).ToString("N0", CultureInfo.InvariantCulture) : "-";
 
+        /// <summary>"Creature 6,312 of 6,500", or "Creature 6,500 (full)" once nothing more can be earned there this tier
+        /// (a school bought to the luminance cap can already sit past where the tier ends).</summary>
+        internal static string SoFar(string school, long count, long end) => count >= end ? $"{school} {count:N0} (full)" : $"{school} {count:N0} of {end:N0}";
+
         /// <summary>
         /// The "Hunting rewards this week" block of /aug (owner-trimmed 2026-11-22). Example at T15:
         ///   Hunting rewards this week:
@@ -920,7 +926,7 @@ namespace ACE.Server.Managers.ZoneControl
             // each school's count against where this tier ends (owner 2026-11-22): always true, also after the own tier changed
             // and came back (the roll counts restart then, so "312 of 500 rolls" would read as 0 of 500 with only 188 to go)
             if (on)
-                lines.Add($"  This tier so far: {string.Join(", ", DripSchools.Select(s => $"{s.Name} {s.Count(player):N0} of {DripCeiling(cfg, own, s):N0}"))}."
+                lines.Add($"  This tier so far: {string.Join(", ", DripSchools.Select(s => SoFar(s.Name, s.Count(player), DripCeiling(cfg, own, s))))}."
                     + (RollsDone(player, row) ? " This tier's rewards are all used." : ""));
 
             return lines;

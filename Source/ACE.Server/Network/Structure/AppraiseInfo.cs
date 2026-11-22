@@ -66,6 +66,22 @@ namespace ACE.Server.Network.Structure
         [GeneratedRegex("(\\B[A-Z])")]
         private static partial Regex CreatureNameRegex();
 
+        /// <summary>
+        /// A portal's Triune Weave requirement in the augmentation counts it now reads (the Triune retire, 2026-11-22): N asks
+        /// Creature 6,000 + N and Item and Life 4,000 + N each - the same numbers the portal's refusal names (Portal.cs).
+        /// </summary>
+        private static string TriunePortalLine(int min, int max)
+        {
+            var hasMax = max > 0 && max != 999 && max > min;
+            var need = min > 0
+                ? $"Restricted to characters with {Creature.CreatureAugBase + min:N0} or more Creature Augmentations and {Creature.SchoolAugBase + min:N0} or more Item and Life Augmentations each."
+                : "";
+            var cap = hasMax
+                ? $"Characters augmented past {Creature.CreatureAugBase + max:N0} Creature / {Creature.SchoolAugBase + max:N0} Item and Life cannot use it."
+                : "";
+            return string.Join(" ", new[] { need, cap }.Where(x => x.Length > 0));
+        }
+
         public AppraiseInfo()
         {
             Flags = IdentifyResponseFlags.None;
@@ -290,7 +306,9 @@ namespace ACE.Server.Network.Structure
                     var prefix = isMultiplier ? "x" : "";
                     string msg;
 
-                    if (req.max.GetValueOrDefault() > 0 && req.max.GetValueOrDefault() != 999 && req.value.GetValueOrDefault() > 0)
+                    if (req.type == PortalRequirement.TriuneWeave)
+                        msg = TriunePortalLine(req.value.GetValueOrDefault(), req.max.GetValueOrDefault());   // the counter is retired
+                    else if (req.max.GetValueOrDefault() > 0 && req.max.GetValueOrDefault() != 999 && req.value.GetValueOrDefault() > 0)
                         msg = $"Restricted to characters of {typeName} between {prefix}{req.value.Value} and {prefix}{req.max.Value}.";
                     else if (req.value.GetValueOrDefault() > 0)
                         msg = $"Restricted to characters of {typeName} {prefix}{req.value.Value} or greater.";
@@ -1731,7 +1749,7 @@ namespace ACE.Server.Network.Structure
 
             effectDescriptions.Add($"- Effective Melee Defense: {emdVal}");
 
-            // the tier wield gates (owner 2026-10-05: Creature + Item + Life at T11-T15, Triune at T16+) - the same lines, in the
+            // the tier wield gates (Creature + Item + Life at every tier since the 2026-11-22 Triune retire) - the same lines, in the
             // same order, as the armour block (LootGenerationFactory.WieldLineFor)
             foreach (var gate in ACE.Server.Factories.LootGenerationFactory.WieldLineFor(weapon).Split('\n'))
                 if (gate.Length > 0)

@@ -41,7 +41,7 @@ namespace ACE.Server.Managers.ZoneControl
             /// <summary>The school as players read it: "War" -> "Your War augmentations grow to 4,501."</summary>
             public string Name;
             public uint GemWcid;
-            /// <summary>The gem's name since 2026-11-22 (world SQL renames the weenie; held copies are renamed at login).</summary>
+            /// <summary>The gem's name since 2026-11-22 (world SQL renames the weenie; held EARNED copies are renamed at login).</summary>
             public string GemName;
             /// <summary>The ONE count (owner 2026-11-22): luminance bought, kills and gems all add here.</summary>
             public PropertyInt64 AugCount;
@@ -95,7 +95,7 @@ namespace ACE.Server.Managers.ZoneControl
                 return false;
             var ceiling = TriuneEarning.GemCeiling(cfg, tier);
             var floor = TriuneEarning.GemFloor(cfg, tier);
-            return Schools.Any(s => Qualifies(Total(player, s), floor, ceiling));
+            return Schools.Any(s => Qualifies(Power(player, s), floor, ceiling));   // the same count the drop and the use test
         }
 
         /// <summary>
@@ -246,8 +246,8 @@ namespace ACE.Server.Managers.ZoneControl
         };
 
         /// <summary>
-        /// The earned gem's use. Returns false for a gem without an earned stamp (the caller runs the old charm-item path);
-        /// true when this handled it, whatever the outcome.
+        /// The earned gem's use. Returns false for a gem without an earned stamp (the caller then says the gem is no longer
+        /// used); true when this handled it, whatever the outcome.
         /// </summary>
         public static bool TryUse(Player player, WorldObject gem)
         {

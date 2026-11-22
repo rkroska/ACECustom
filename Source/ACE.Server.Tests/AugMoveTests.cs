@@ -79,5 +79,14 @@ namespace ACE.Server.Tests
             Assert.IsNull(AugMove.MovedOld("{\"Added\":null,\"Old\":null}", PropertyInt64.TriuneWeaveCount));
         }
 
+        [TestMethod]
+        public void CarriedFraction_Is_Three_Rewards_Per_Triune_Point_Kept_Below_One()
+        {
+            Assert.AreEqual(0.9, AugMove.CarriedFraction(0, 0.3), 1e-9, "0.3 of a Triune point = 0.9 of a reward");
+            Assert.AreEqual(0.999, AugMove.CarriedFraction(0, 0.801), 1e-9, "2.4 rewards: kept below a whole one (owner: the small loss is fine)");
+            Assert.AreEqual(0.999, AugMove.CarriedFraction(0.5, 0.2), 1e-9, "on top of a part-way reward, still below one");
+            Assert.AreEqual(0.4, AugMove.CarriedFraction(0.1, 0.1), 1e-9);
+            Assert.AreEqual(0.3, AugMove.CarriedFraction(-1, 0.1), 1e-9, "a bad stored part-way reward reads as 0");
+        }
     }
 }

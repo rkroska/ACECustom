@@ -185,7 +185,7 @@ namespace ACE.Server.Factories
         public readonly record struct ZoneSetWeaponPick(int Family, ZoneSetWeaponVariant Variant);
 
         /// <summary>
-        /// The tier-11+ wield gates (StampTierGates: item / Creature / Life augs at T11-T15, Triune Weave from T16), replacing
+        /// The tier-11+ wield gates (StampTierGates: Item / Creature / Life augs at every tier since the 2026-11-22 Triune retire), replacing
         /// every requirement StripWieldRequirements removed. Validated server-side by the
         /// WieldRequirement.Int64Stat case. The client cannot render this requirement type, so
         /// the LongDesc block carries the lines instead (non-weapons; weapons show them in Property Details).
@@ -228,7 +228,7 @@ namespace ACE.Server.Factories
             // for anyone who equips during it: switch off -> gate gone -> a 0-aug character equips a T25
             // piece -> switch on -> the piece re-resolves to full ladder stats while the restored gate is
             // never rechecked, because they are already wearing it. They keep it until they choose to
-            // unequip. Keeping the gate costs only cosmetics (a T25 piece asks 5,000 Triune while its stats
+            // unequip. Keeping the gate costs only cosmetics (a T25 piece asks its full aug gate while its stats
             // read T10 in fallback); clearing it costs a hole. DO NOT re-add the clearing branch.
             // T11+ RARES, Ascendant (owner 2026-10-09): the gates are those of the tier the item DROPPED in, not of its own
             // (higher) tier. Resolved here as well as inside StampTierGates so the "is there a row" test below asks about
@@ -336,8 +336,8 @@ namespace ACE.Server.Factories
         /// ApplyZoneWieldRequirement, and the live re-stamps before a wield check, on appraise, on re-resolve and after a
         /// Salvage Bag through RefreshWieldGate - ends here. So the Ascendant rule lives here and nowhere else: an item that
         /// stores the tier it dropped in (ZoneRare.GateTierOf) gets THAT tier's gates, whatever tier the caller passes. With
-        /// the row swapped before the T11-T15 / T16+ branch is chosen, a T18 item found in T15 gets the three aug gates and a
-        /// T25 item found in T22 gets the T22 Triune gate. Every other item has no stored gate tier and is untouched.
+        /// the row swapped first, a T18 item found in T15 gets the T15 aug gates and a T25 item found in T22 the T22 ones.
+        /// Every other item has no stored gate tier and is untouched.
         /// </summary>
         public static int StampTierGates(WorldObject wo, int tier)
         {

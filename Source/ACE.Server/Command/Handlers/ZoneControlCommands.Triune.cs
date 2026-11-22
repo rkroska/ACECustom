@@ -10,8 +10,9 @@ using ACE.Server.Network;
 namespace ACE.Server.Command.Handlers
 {
     /// <summary>
-    /// /zonecontrol triune ... - Triune earning per tier (TriuneEarning.cs, owner 2026-11-01): on / off, the weekly reset, and
-    /// each tier's floor / ceiling kills an hour, slow / fast weeks and points. Every edit is saved and live at once.
+    /// /zonecontrol triune ... - the hunting rewards per tier (TriuneEarning.cs, owner 2026-11-01; the Triune Weave itself is
+    /// retired 2026-11-22): on / off, the school gems, the T11-T14 drip, the login move, the weekly reset, and each tier's
+    /// floor / ceiling kills an hour, slow / fast weeks and points. Every edit is saved and live at once.
     /// </summary>
     public static partial class ZoneControlCommands
     {
@@ -30,7 +31,7 @@ namespace ACE.Server.Command.Handlers
             // Triune is augmentation power: looking is Developer (the /zonecontrol level), changing it is Admin, like a Bounty
             // (a mistyped verb gets the usage line below, not this)
             if (TriuneWriteVerbs.Contains(verb) && session != null && session.AccessLevel < AccessLevel.Admin)
-            { Msg("Changing Triune earning needs Admin access."); return; }
+            { Msg("Changing the hunting rewards needs Admin access."); return; }
 
             try
             {
@@ -39,7 +40,7 @@ namespace ACE.Server.Command.Handlers
             catch (InvalidOperationException ex)
             {
                 // the store could not be read (TriuneEarning refuses to save over it) - nothing changed
-                Msg("Triune earning: " + ex.Message);
+                Msg("Hunting rewards: " + ex.Message);
             }
         }
 
@@ -65,7 +66,9 @@ namespace ACE.Server.Command.Handlers
                 case "off":
                 {
                     var on = verb == "on";
-                    ShowTriune(TriuneEarning.Mutate(c => c.Enabled = on), Msg);
+                    var cfg = TriuneEarning.Mutate(c => c.Enabled = on);
+                    ShowTriune(cfg, Msg);
+                    WarnTriuneVsHitGate(cfg, Msg);   // with rewards off nobody new climbs past the luminance caps
                     return;
                 }
 
@@ -74,7 +77,9 @@ namespace ACE.Server.Command.Handlers
                     var onOff = args.Count < 3 ? "" : args[2].ToLowerInvariant();
                     if (onOff != "on" && onOff != "off") { Msg("Usage: triune gems on|off"); return; }
                     var on = onOff == "on";
-                    ShowTriune(TriuneEarning.Mutate(c => c.GemsEnabled = on), Msg);
+                    var cfg = TriuneEarning.Mutate(c => c.GemsEnabled = on);
+                    ShowTriune(cfg, Msg);
+                    WarnTriuneVsHitGate(cfg, Msg);
                     return;
                 }
 
@@ -115,17 +120,17 @@ namespace ACE.Server.Command.Handlers
                         Msg(line);
                     return;
 
-
                 case "move":
                 {
                     var onOff = args.Count < 3 ? "" : args[2].ToLowerInvariant();
                     if (onOff != "on" && onOff != "off") { Msg("Usage: triune move on|off   (the login move of the retired Triune / charm counts)"); return; }
-                    if (session == null)
-                    { Msg("Run 'triune move on|off' in game, not from the server console (it moves online characters)."); return; }
-                    ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session.Player, $"triune move {onOff}");
                     var off = onOff == "off";
+                    if (!off && session == null)
+                    { Msg("Run 'triune move on' in game, not from the server console (it moves online characters)."); return; }
                     var movedNow = 0;
                     TriuneEarning.Mutate(c => c.MoveOff = off);
+                    // the audit line only once the change is saved (an unreadable store throws above: nothing changed)
+                    ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session?.Player, $"{(session != null ? session.Player.Name : "CONSOLE")} set triune move {onOff}");
                     if (!off)
                         movedNow = AugMove.MoveOnline();   // online characters held back while it was off move now
                     Msg($"Triune move at login: {(off ? "OFF" : "ON")}."
@@ -137,10 +142,23 @@ namespace ACE.Server.Command.Handlers
                     try { TriuneEarning.Reload(); }
                     catch (Exception ex)
                     {
-                        Msg($"Triune earning: the stored settings could not be read ({ex.Message}) - the running settings are kept.");
+                        Msg($"Hunting rewards: the stored settings could not be read ({ex.Message}) - the running settings are kept.");
                         return;
                     }
                     ShowTriune(TriuneEarning.Current, Msg);
+                    // a reload can turn the move back on (a hand-edited store, or settings that read again): online characters
+                    // held back meanwhile move now in game; from the console they move at their next login
+                    if (!TriuneEarning.LoadFailed && !TriuneEarning.Current.MoveOff)
+                    {
+                        if (session != null)
+                        {
+                            var movedNow = AugMove.MoveOnline();
+                            if (movedNow > 0)
+                                Msg($"{movedNow:N0} online characters were moved now.");
+                        }
+                        else
+                            Msg("Online characters not moved yet move at their next login (or run 'triune move on' in game).");
+                    }
                     return;
 
                 case "reset":
@@ -168,7 +186,7 @@ namespace ACE.Server.Command.Handlers
                     else if (int.TryParse(args[2].TrimStart('t', 'T'), out var one) && one >= TriuneEarning.FirstTier && one <= TriuneEarning.MaxTier)
                         tiers.Add(one);
                     else
-                    { Msg($"Tier must be {TriuneEarning.FirstTier}-{TriuneEarning.MaxTier} or all ({TriuneEarning.DripMinTier}-{TriuneEarning.DripMaxTier} = the aug drip, {TriuneEarning.MinTier}+ = Triune)."); return; }
+                    { Msg($"Tier must be {TriuneEarning.FirstTier}-{TriuneEarning.MaxTier} or all ({TriuneEarning.DripMinTier}-{TriuneEarning.DripMaxTier} = the aug drip, {TriuneEarning.MinTier}+ = hunting rewards)."); return; }
 
                     var edits = new List<Action<TriuneTierRow>>();
                     for (var i = 3; i + 1 < args.Count; i += 2)
@@ -239,7 +257,7 @@ namespace ACE.Server.Command.Handlers
                     Msg($"  WARNING: T{t} rewards end at Life {i:N0}, but T{t + 1} asks for {next.MinWieldLife:N0} (weapon scaling MinWieldLife).");
                 // the attack school gate (every tier since 2026-11-22): a tier's school gems should end where the next tier asks
                 var g = TriuneEarning.GemCeiling(cfg, t);
-                if (next.MinWieldSkillCharm > 0 && next.MinWieldSkillCharm != g)
+                if (!next.SchoolCheckOff && next.MinWieldSkillCharm > 0 && next.MinWieldSkillCharm != g)
                     Msg($"  WARNING: T{t} school gems end at {g:N0}, but T{t + 1} asks for {next.MinWieldSkillCharm:N0} attack school augs (weapon scaling minwieldskillcharm).");
             }
         }
@@ -293,8 +311,8 @@ namespace ACE.Server.Command.Handlers
         {
             var done = $"ends at Creature {TriuneEarning.DripCeiling(cfg, r.Tier, cfg.DripBaseCreature):N0} / Item-Life {TriuneEarning.DripCeiling(cfg, r.Tier, cfg.DripBaseItem):N0}";
             return $"  T{r.Tier}: {r.Points} rolls per school, {done} | floor {r.FloorKph:0.#} kph = {r.SlowWeeks:0.#} wk"
-                + $" (1 reward per {TriuneEarning.KillsPerReward(TriuneEarning.Rate1(r)):N0} kills to {TriuneEarning.Band1Kills(r):N0}/wk)"
-                + $" | ceiling {r.CeilingKph:0.#} kph = {r.FastWeeks:0.#} wk (1 reward per {TriuneEarning.KillsPerReward(TriuneEarning.Rate2(r)):N0} kills to"
+                + $" ({TriuneEarning.RewardPace(TriuneEarning.Rate1(r))} to {TriuneEarning.Band1Kills(r):N0}/wk)"
+                + $" | ceiling {r.CeilingKph:0.#} kph = {r.FastWeeks:0.#} wk ({TriuneEarning.RewardPace(TriuneEarning.Rate2(r))} to"
                 + $" {TriuneEarning.Band1Kills(r) + TriuneEarning.Band2Kills(r):N0}/wk)"
                 + $" | gems {r.GemSlowWeeks:0.#} / {r.GemFastWeeks:0.#} wk: 1 per {TriuneEarning.KillsPerPoint(TriuneEarning.GemChance1(r))}"
                 + $" then 1 per {TriuneEarning.KillsPerPoint(TriuneEarning.GemChance2(r))} kills per school, school ceiling {TriuneEarning.GemCeiling(cfg, r.Tier):N0}";

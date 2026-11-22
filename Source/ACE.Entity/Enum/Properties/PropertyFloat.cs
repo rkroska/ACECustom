@@ -417,8 +417,8 @@ namespace ACE.Entity.Enum.Properties
         PrestigeCoinHourStart = 57004,
 
         /// <summary>RETIRED 2026-11-22 (Triune retire): the part of a Triune Weave point not yet whole. Earning no longer reads or
-        /// writes it (rewards carry their part in AugDripFraction); the login move (AugMove) reads it into AugDripFraction and
-        /// removes it, and the move undo writes it back for the old build. Server-only.</summary>
+        /// writes it (rewards carry their part in AugDripFraction); the login move (AugMove) adds it into AugDripFraction and
+        /// removes it. Server-only.</summary>
         TriuneFraction = 57010,
 
         /// <summary>Hunting rewards (Triune earning until 2026-11-22): own-tier kills counted this week (the week in

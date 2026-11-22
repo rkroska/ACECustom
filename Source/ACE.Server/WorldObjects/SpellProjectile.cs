@@ -650,7 +650,9 @@ namespace ACE.Server.WorldObjects
                 tr.MagicSkill = sourceCreature?.GetCreatureSkill(Spell.School)?.Current ?? 0;
                 tr.MagicDefense = target.GetEffectiveMagicDefense();
             }
-            if (resisted && !overpower)
+            // Overpower lands an ordinary resist, never a hit-gate block (the gate already told the player in TryResistSpell)
+            if (resisted && (!overpower || !ACE.Server.Managers.ZoneControl.TierHitGate.CanHit(sourceCreature, target, out _,
+                    GateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(Spell, resistSource))))
             {
                 if (tr != null) { tr.Reason = "resisted"; PetTrace.CombatSpellMiss(this, target, tr); }
                 return null;
