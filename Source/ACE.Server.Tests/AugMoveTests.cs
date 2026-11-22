@@ -192,5 +192,22 @@ namespace ACE.Server.Tests
             Assert.AreEqual(0, r.Added.Count + r.Old.Count);
             Assert.IsNull(AugMove.MovedOld("{\"Added\":null,\"Old\":null}", PropertyInt64.TriuneWeaveCount));
         }
+
+        [TestMethod]
+        public void ReadUndoRecord_Takes_What_The_Move_Writes_And_Refuses_The_Rest()
+        {
+            // the shape the move writes (as stored on TEST), and a zero-only one: usable
+            Assert.IsNull(AugMove.ReadUndoRecord("{\n  \"v\": 1,\n  \"at\": 1795330260,\n  \"added\": {\n    \"9007\": 141\n  },\n  \"old\": {\n    \"50000\": 141\n  }\n}", out var real));
+            Assert.AreEqual(141, real.Added[(ushort)PropertyInt64.LumAugCreatureCount]);
+            Assert.IsNull(AugMove.ReadUndoRecord("{\"v\":1,\"at\":1795330260,\"added\":{},\"old\":{\"50000\":0}}", out var zero));
+            Assert.IsNotNull(zero);
+
+            // hand-edited ones: FAILED, never "never moved" and never deleted without putting anything back
+            foreach (var bad in new[] { "", "null", "not json {", "{}", "{\"v\":1}", "{\"v\":2,\"at\":1795330260}", "{\"v\":1,\"at\":0}" })
+            {
+                Assert.IsNotNull(AugMove.ReadUndoRecord(bad, out var r), bad);
+                Assert.IsNull(r, bad);
+            }
+        }
     }
 }

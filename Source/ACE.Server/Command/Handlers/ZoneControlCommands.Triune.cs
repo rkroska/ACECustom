@@ -126,7 +126,7 @@ namespace ACE.Server.Command.Handlers
                         AugMove.ArmUndoAtStart(arm);
                         ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session?.Player, $"triune undomove {sub} ({AugMove.UndoAtStartKey} = {(arm ? 1 : 0)})");
                         Msg(arm
-                            ? $"Triune move undo ARMED ({AugMove.UndoAtStartKey} = 1). Restart THIS build: at startup, before anyone can log in, it moves every moved character back, saves the weapon scaling rows for the old build, and stops. Then start the OLD build. Before that restart 'undomove cancel' disarms it; after it, only SQL can (UPDATE config_properties_boolean SET value = 0 WHERE `key` = '{AugMove.UndoAtStartKey}')."
+                            ? $"Triune move undo ARMED ({AugMove.UndoAtStartKey} = 1). Restart THIS build: at startup, before anyone can log in, it moves every moved character back, saves the weapon scaling rows for the old build, and stops. Start the OLD build only when the log says OFFLINE UNDO DONE (exit code 0); on INCOMPLETE fix the FAILED lines and start THIS build again. Before that restart 'undomove cancel' disarms it; after it, only SQL can (UPDATE config_properties_boolean SET value = 0 WHERE `key` = '{AugMove.UndoAtStartKey}')."
                             : $"Triune move undo disarmed ({AugMove.UndoAtStartKey} = 0).");
                         return;
                     }

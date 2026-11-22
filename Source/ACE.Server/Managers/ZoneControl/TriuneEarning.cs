@@ -920,7 +920,8 @@ namespace ACE.Server.Managers.ZoneControl
             // each school's count against where this tier ends (owner 2026-11-22): always true, also after the own tier changed
             // and came back (the roll counts restart then, so "312 of 500 rolls" would read as 0 of 500 with only 188 to go)
             if (on)
-                lines.Add($"  This tier so far: {string.Join(", ", DripSchools.Select(s => $"{s.Name} {s.Count(player):N0} of {DripCeiling(cfg, own, s):N0}"))}.");
+                lines.Add($"  This tier so far: {string.Join(", ", DripSchools.Select(s => $"{s.Name} {s.Count(player):N0} of {DripCeiling(cfg, own, s):N0}"))}."
+                    + (RollsDone(player, row) ? " This tier's rewards are all used." : ""));
 
             return lines;
         }

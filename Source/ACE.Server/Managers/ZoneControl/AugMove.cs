@@ -493,31 +493,48 @@ namespace ACE.Server.Managers.ZoneControl
             return result;
         }
 
+        /// <summary>
+        /// Reads a stored move record for the undo (tested). Returns null when it is usable, else what is wrong with it. A record
+        /// that is there counts as moved, an empty one too ("" or "null" by hand): never "never moved", or the DB count of
+        /// records left (RecordsLeftInDatabase) would keep the undo INCOMPLETE without naming the character. Every record the
+        /// move writes has its time and this version (a zero-only one too): "{}" or another version would be deleted without
+        /// putting anything back.
+        /// </summary>
+        public static string ReadUndoRecord(string json, out Record record)
+        {
+            record = null;
+            Record r;
+            try { r = JsonConvert.DeserializeObject<Record>(json ?? ""); }
+            catch (Exception ex) { return $"unreadable move record ({ex.Message})"; }
+            if (r == null)
+                return $"empty move record (\"{json}\")";
+            if (r.At <= 0 || r.V != RecordVersion)
+                return $"incomplete move record (version {r.V}, time {r.At})";
+            record = r;
+            return null;
+        }
+
         /// <summary>One character of UndoAll. Sets planned once it is counted in Undone (the caller takes it back on an error).</summary>
         private static void UndoOne(IPlayer p, bool apply, Action<bool> onSaved, UndoResult result, ref bool planned)
         {
+            var json = p.GetProperty(PropertyString.TriuneMoveRecord);
+            if (json == null)
+            {
+                // never moved: nothing to undo, and never a FAILED line - a biota without a character row (IsDeleted throws)
+                // holds no record, so it must not keep the undo from DONE
+                try { if (!p.IsDeleted) result.Players++; } catch (Exception) { }
+                return;
+            }
             if (p.IsDeleted)
                 return;
             result.Players++;
-            Record record = null;
-            var json = p.GetProperty(PropertyString.TriuneMoveRecord);
-            if (!string.IsNullOrEmpty(json))
+            var problem = ReadUndoRecord(json, out var record);
+            if (problem != null)
             {
-                try { record = JsonConvert.DeserializeObject<Record>(json); }
-                catch (Exception ex)
-                {
-                    // its counts may be moved: never "safe to switch" - counted as FAILED (fix the record, run it again)
-                    result.Failed++;
-                    result.Lines.Add($"  {p.Name}: FAILED - unreadable move record ({ex.Message}), nothing changed");
-                    return;
-                }
-                // a hand-edited "null" record: the move treats it as moved (the record exists), so it is never "never moved"
-                if (record == null)
-                {
-                    result.Failed++;
-                    result.Lines.Add($"  {p.Name}: FAILED - empty move record (\"{json}\"), nothing changed - fix the record, run it again");
-                    return;
-                }
+                // its counts may be moved: never "safe to switch" - counted as FAILED (fix the record, run it again)
+                result.Failed++;
+                result.Lines.Add($"  {p.Name}: FAILED - {problem}, nothing changed - fix the record, run it again");
+                return;
             }
 
             long Read(PropertyInt64 prop) => p.GetProperty(prop) ?? 0;
