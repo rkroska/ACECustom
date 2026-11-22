@@ -72,17 +72,55 @@ namespace ACE.Server.Managers
             if (cfg == null) return "Nether Fracture is not initialized.";
             if (key == null || !cfg.Zones.TryGetValue(key, out var z))
                 return $"Nether Fracture enabled={cfg.Enabled}; no profile here. Configured zones: {string.Join(", ", cfg.Zones.Keys)}";
-            return FormattableString.Invariant($"Nether Fracture [{key}] enabled={cfg.Enabled}: corrosion={z.Corrosion}, corruption={z.Corruption}, curse={z.Curse}, streak={z.Streak}, fracture={z.Fracture}, radius={z.Radius}m. Bank=.20; window/cooldown=8s; targets=4; group cap=2 strongest.");
+            // radius = what a burst of THIS player reaches here; radiusfrom says whether the zone sets it or the charm does;
+            // spread / pandemiclevel = this player's Pandemic spread range and charm level (2026-11-22)
+            var spread = SpreadRange(p, out var level);
+            return StatusLine(key, cfg.Enabled, z, spread, level);
         }
 
-        public static void SetZone(Player p, string source, double amount)
+        /// <summary>The status line the ZC plugin parses ("key=value" items split on ", ", the list ending ". Group") - keep
+        /// that shape (NetherFractureTests pins it).</summary>
+        internal static string StatusLine(string key, bool enabled, NetherFractureZone z, double spread, int level) =>
+            FormattableString.Invariant($"Nether Fracture [{key}] enabled={enabled}: corrosion={z.Corrosion}, corruption={z.Corruption}, curse={z.Curse}, streak={z.Streak}, fracture={z.Fracture}, radius={Math.Round(z.BurstRadius(spread), 2)}m, radiusfrom={(z.Radius == null ? "charm" : "zone")}, spread={Math.Round(spread, 2)}m, pandemiclevel={level}, bank={z.BankPercent()}%, window={z.WindowSeconds()}s, targets={z.TargetCount()}. Group cap=2 strongest.");
+
+        internal static string Canonical(string source) => source?.ToLowerInvariant() switch
         {
-            var canonical = source.ToLowerInvariant() switch
-            {
-                "corrosion" => "Corrosion", "corruption" => "Corruption", "curse" => "Curse", "streak" => "Streak",
-                "fracture" => "Fracture", "rupture" => "Fracture", "radius" => "Radius", _ => null
-            };
-            if (canonical == null || !double.IsFinite(amount)) throw new ArgumentException("Unknown source or non-finite amount.");
+            "corrosion" => "Corrosion", "corruption" => "Corruption", "curse" => "Curse", "streak" => "Streak",
+            "fracture" => "Fracture", "rupture" => "Fracture", "radius" => "Radius",
+            "bank" => "Bank", "window" => "Window", "cooldown" => "Window", "targets" => "Targets", _ => null
+        };
+
+        /// <summary>The configuration as JSON with one zone value set (a number) or removed (null = the default again);
+        /// validated before it is returned.</summary>
+        internal static string WithZoneValue(NetherFractureConfiguration cfg, string key, string canonical, double? amount)
+        {
+            var node = System.Text.Json.JsonSerializer.SerializeToNode(cfg);
+            if (node?["Zones"]?[key] is not System.Text.Json.Nodes.JsonObject zone)
+                throw new ArgumentException("No Nether Fracture profile for this named zone.");   // key = the stored key (case too)
+            if (amount is double value) zone[canonical] = value;
+            else zone.Remove(canonical);
+            var json = node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            _ = NetherFractureConfiguration.Parse(json);
+            return json;
+        }
+
+        /// <summary>The player's Pandemic spread range (m) at their charm level - the burst radius where a zone sets none.</summary>
+        internal static double SpreadRange(Player p, out int level)
+        {
+            level = p == null ? 0 : CharmAbilityRegistry.LevelOf(p, CharmAbilityRegistry.PandemicAbilityId);
+            return CharmSettingsManager.Pandemic.At("range", Math.Max(1, level));
+        }
+
+        /// <summary>The settings a zone may leave unset: "clear" removes them (radius "charm" too), so the defaults apply again.</summary>
+        internal static bool IsClearable(string source) => Canonical(source) is "Radius" or "Bank" or "Window" or "Targets";
+
+        public static void SetZone(Player p, string source, double? amount)
+        {
+            var canonical = Canonical(source);
+            if (canonical == null || amount is double a && !double.IsFinite(a))
+                throw new ArgumentException("Unknown source or non-finite amount.");
+            if (amount == null && !IsClearable(source))
+                throw new ArgumentException($"{canonical} has no default to go back to - set a number.");
             _ = Config(); // Poll before taking the administrative write lock.
             var playerKey = Key(p);
             lock (ConfigGate)
@@ -90,16 +128,13 @@ namespace ACE.Server.Managers
                 var cfg = store?.Current;
                 var key = StoredZoneKey(cfg, playerKey);
                 if (cfg == null || key == null) throw new ArgumentException("Stand inside a configured named ZC.");
-                var node = System.Text.Json.JsonSerializer.SerializeToNode(cfg);
-                node["Zones"][key][canonical] = amount;
-                var json = node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-                _ = NetherFractureConfiguration.Parse(json);
+                var json = WithZoneValue(cfg, key, canonical, amount);
                 var temp = path + ".tmp";
                 File.WriteAllText(temp, json);
                 File.Move(temp, path, true);
                 if (!store.TryReload(json, out var error)) throw new InvalidDataException(error);
                 var info = new FileInfo(path); lastStamp = info.LastWriteTimeUtc; lastLength = info.Length;
-                Log.Info($"Nether Fracture admin tuning: actor={p.Name}, zone={key}, source={canonical}, amount={amount:R}");
+                Log.Info($"Nether Fracture admin tuning: actor={p.Name}, zone={key}, source={canonical}, amount={(amount is double shown ? shown.ToString("R", System.Globalization.CultureInfo.InvariantCulture) : "cleared")}");
             }
         }
 
@@ -231,7 +266,8 @@ namespace ACE.Server.Managers
 
         public static void Applied(Player p, Creature target)
         {
-            if (!p.IsAlive || !CanTarget(p, target) || !Three(p, target) || !TryTuning(p, target, out var z) || z.Fracture <= 0) return;
+            // nothing to release with no burst or nothing banked (Bank 0 / "bank off"): no prime line or effect either
+            if (!p.IsAlive || !CanTarget(p, target) || !Three(p, target) || !TryTuning(p, target, out var z) || z.Fracture <= 0 || z.BankShare() <= 0) return;
             var s = p.NetherFracture;
             if (!s.Prime(target.Guid.Full, Now)) return;
             target.EnqueueBroadcast(new GameMessageScript(target.Guid, PlayScript.EnchantUpPurple));
@@ -240,9 +276,9 @@ namespace ACE.Server.Managers
 
         public static void Credit(Player p, Creature target, uint actual)
         {
-            if (actual == 0 || !p.IsAlive || !CanTarget(p, target)) return;
+            if (actual == 0 || !p.IsAlive || !CanTarget(p, target) || !TryTuning(p, target, out var z)) return;
             var s = p.NetherFracture;
-            s.Credit(actual, Now);
+            s.Credit(actual, Now, z.BankShare(), z.WindowSeconds());
         }
 
         public static void BeforeStreak(Player p, Creature target, ref float damage)
@@ -272,11 +308,12 @@ namespace ACE.Server.Managers
         {
             if (!p.IsAlive || !CanTarget(p, target) || !TryTuning(p, target, out var z)) return;
             var s = p.NetherFracture;
-            if (!s.Release(target.Guid.Full, Now, z.Fracture, out var budget)) return;
+            if (!s.Release(target.Guid.Full, Now, z.Fracture, out var budget, z.WindowSeconds())) return;
             var originHeight = target.PhysicsObj?.GetHeight() ?? 0f;
-            BurstVisual(p, origin, (float)z.Radius);
+            var radius = (float)z.BurstRadius(SpreadRange(p, out _));
+            BurstVisual(p, origin, radius);
             if (death) p.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your primed enchantments release Nether Fracture as {target.Name} falls.", ChatMessageType.Spellcasting));
-            p.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () => Pulse(p, origin, originHeight, budget, (float)z.Radius)));
+            p.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () => Pulse(p, origin, originHeight, budget, radius, z.TargetCount())));
         }
 
         // Trace from the captured blast point, never from the caster or a moving/dead source.
@@ -310,15 +347,17 @@ namespace ACE.Server.Managers
             }
             finally { sight.DestroyObject(); }
         }
-        private static void Pulse(Player p, Position origin, float originHeight, double budget, float radius)
+        private static void Pulse(Player p, Position origin, float originHeight, double budget, float radius, int maxTargets)
         {
             if (!p.IsAlive || !CharmEligible(p) || p.CurrentLandblock == null || !double.IsFinite(budget) || budget <= 0) return;
             var blocks = new List<Landblock> { p.CurrentLandblock };
             if (p.CurrentLandblock.Adjacents != null) blocks.AddRange(p.CurrentLandblock.Adjacents.Where(b => b != null));
             var targets = blocks.SelectMany(b => b.GetWorldObjectsForPhysicsHandling()).OfType<Creature>().DistinctBy(c => c.Guid.Full)
                 .Where(c => c.IsAlive && c.Location != null && c.Location.Variation == origin.Variation && CanTarget(p, c)
-                    && c.Location.Distance2D(origin) <= radius && Visible(origin, originHeight, c))
-                .OrderBy(c => c.Location.Distance2D(origin)).Take(NetherFractureMath.TargetCap).ToArray();
+                    && c.Location.Distance2D(origin) <= radius)
+                // nearest first, THEN the sight trace: lazily, so it stops once maxTargets are found (2026-11-22 review: a
+                // charm radius of up to 20 m holds whole packs - tracing every one of them per burst was wasted work)
+                .OrderBy(c => c.Location.Distance2D(origin)).Where(c => Visible(origin, originHeight, c)).Take(maxTargets).ToArray();
             if (targets.Length == 0) return;
             var share = (float)(budget / targets.Length);
             foreach (var c in targets)

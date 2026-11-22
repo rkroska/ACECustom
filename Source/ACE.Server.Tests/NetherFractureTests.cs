@@ -52,7 +52,7 @@ namespace ACE.Server.Tests
         {
             var store = new NetherFractureConfigurationStore(Valid);
             var old = store.Current;
-            foreach (var bad in new[] { "", "null", "{}", "{", Valid.Replace("0.5641", "-1"), Valid.Replace("\"Radius\":5", "\"Radius\":9"), Valid.Replace("\"Streak\":0.5641,", ""), Valid.Replace("\"SchemaVersion\":1", "\"SchemaVersion\":2"), Valid.Replace("\"Enabled\":true", "\"Enabled\":true,\"Enabled\":false"), Valid.Replace("\"Enabled\":true", "\"Enabeld\":true"), Valid.Replace("0.22564000000000003", "1e9999") })
+            foreach (var bad in new[] { "", "null", "{}", "{", Valid.Replace("0.5641", "-1"), Valid.Replace("\"Radius\":5", "\"Radius\":21"), Valid.Replace("\"Streak\":0.5641,", ""), Valid.Replace("\"SchemaVersion\":1", "\"SchemaVersion\":2"), Valid.Replace("\"Enabled\":true", "\"Enabled\":true,\"Enabled\":false"), Valid.Replace("\"Enabled\":true", "\"Enabeld\":true"), Valid.Replace("0.22564000000000003", "1e9999") })
             {
                 Assert.IsFalse(store.TryReload(bad, out var error), bad);
                 Assert.IsFalse(string.IsNullOrEmpty(error));
@@ -121,6 +121,114 @@ namespace ACE.Server.Tests
             Assert.AreEqual(8d, NetherFractureMath.BankSeconds);
             Assert.AreEqual(8d, NetherFractureMath.CooldownSeconds);
             Assert.AreEqual(4, NetherFractureMath.TargetCap);
+        }
+
+        [TestMethod]
+        public void PerZoneBankWindowTargetsDefaultToTheOldFixedValuesAndAreRangeChecked()
+        {
+            var z = NetherFractureConfiguration.Parse(Valid).Zones["14:Tou Tou 14"];
+            Assert.AreEqual(.20, z.BankShare(), 1e-12);
+            Assert.AreEqual(8d, z.WindowSeconds());
+            Assert.AreEqual(4, z.TargetCount());
+            Assert.IsFalse(JsonSerializer.Serialize(NetherFractureConfiguration.Parse(Valid)).Contains("Bank"), "Unset values are not written.");
+            var set = NetherFractureConfiguration.Parse(Valid.Replace("\"Radius\":5", "\"Radius\":20,\"Bank\":35,\"Window\":12,\"Targets\":7")).Zones["14:Tou Tou 14"];
+            Assert.AreEqual(.35, set.BankShare(), 1e-12);
+            Assert.AreEqual(12d, set.WindowSeconds());
+            Assert.AreEqual(7, set.TargetCount());
+            Assert.AreEqual(20d, set.Radius);
+            foreach (var bad in new[] { "\"Bank\":-1", "\"Bank\":101", "\"Window\":1", "\"Window\":31", "\"Targets\":0", "\"Targets\":11", "\"Targets\":2.5", "\"Radius\":1" })
+                Assert.ThrowsExactly<InvalidDataException>(() => NetherFractureConfiguration.Parse(Valid.Replace("\"Radius\":5", bad.StartsWith("\"Radius") ? bad : "\"Radius\":5," + bad)), bad);
+        }
+
+        [TestMethod]
+        public void BurstRadiusFollowsThePandemicSpreadRangeUnlessTheZoneSetsOne()
+        {
+            var zone = NetherFractureConfiguration.Parse(Valid).Zones["14:Tou Tou 14"];
+            Assert.AreEqual(5d, zone.BurstRadius(12.5), "A zone radius overrides the charm.");
+            var charm = NetherFractureConfiguration.Parse(Valid.Replace(",\"Radius\":5", "")).Zones["14:Tou Tou 14"];
+            Assert.IsNull(charm.Radius);
+            Assert.AreEqual(12.5, charm.BurstRadius(12.5), "No zone radius = the spread range.");
+            Assert.AreEqual(20d, charm.BurstRadius(35), "Kept to the zone limit of 20 m.");
+            Assert.AreEqual(2d, charm.BurstRadius(0), "Never below 2 m.");
+            Assert.AreEqual(2d, charm.BurstRadius(double.NaN));
+            Assert.IsFalse(JsonSerializer.Serialize(NetherFractureConfiguration.Parse(Valid.Replace(",\"Radius\":5", ""))).Contains("Radius"), "An unset radius is not written.");
+            Assert.AreEqual(10d, CharmSettingsManager.Pandemic.At("range", 1), "Pandemic default: 10 m at level 1.");
+            Assert.AreEqual(20d, CharmSettingsManager.Pandemic.At("range", 100), "Pandemic default: 20 m at level 100.");
+            Assert.IsTrue(NetherFractureManager.IsClearable("radius") && NetherFractureManager.IsClearable("Bank") && !NetherFractureManager.IsClearable("fracture"));
+        }
+
+        [TestMethod]
+        public void ClearRemovesOnlyThatKeyAndTheFileStillParses()
+        {
+            var cfg = NetherFractureConfiguration.Parse(Valid.Replace("\"Radius\":5", "\"Radius\":5,\"Bank\":35"));
+            var noRadius = NetherFractureManager.WithZoneValue(cfg, "14:Tou Tou 14", "Radius", null);
+            Assert.IsFalse(noRadius.Contains("Radius"), "Radius cleared.");
+            Assert.IsTrue(noRadius.Contains("\"Bank\": 35"), "The other set key stays.");
+            Assert.IsFalse(noRadius.Contains("Window") || noRadius.Contains("Targets"), "Unset keys stay unwritten.");
+            var z = NetherFractureConfiguration.Parse(noRadius).Zones["14:Tou Tou 14"];
+            Assert.IsNull(z.Radius);
+            Assert.AreEqual(35d, z.Bank);
+            var noBank = NetherFractureManager.WithZoneValue(NetherFractureConfiguration.Parse(noRadius), "14:Tou Tou 14", "Bank", null);
+            Assert.AreEqual(20d, NetherFractureConfiguration.Parse(noBank).Zones["14:Tou Tou 14"].BankPercent());
+            Assert.AreEqual(12d, NetherFractureConfiguration.Parse(NetherFractureManager.WithZoneValue(cfg, "14:Tou Tou 14", "Radius", 12)).Zones["14:Tou Tou 14"].Radius);
+            Assert.ThrowsExactly<InvalidDataException>(() => NetherFractureManager.WithZoneValue(cfg, "14:Tou Tou 14", "Radius", 21));
+            Assert.ThrowsExactly<ArgumentException>(() => NetherFractureManager.WithZoneValue(cfg, "14:tou tou 14", "Radius", 12), "Node lookup is exact: a wrong-case key is refused, not a crash.");
+            Assert.AreEqual("Radius", NetherFractureManager.Canonical("RADIUS"));
+            Assert.AreEqual("Window", NetherFractureManager.Canonical("cooldown"));
+            Assert.IsNull(NetherFractureManager.Canonical("nope"));
+        }
+
+        [TestMethod]
+        public void SetValueWordsParseAsIntended()
+        {
+            Assert.IsNull(ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("radius", "charm"));
+            Assert.IsNull(ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("Radius", "CHARM"));
+            Assert.IsNull(ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("bank", "clear"));
+            Assert.AreEqual(0d, ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("fracture", "off"));
+            Assert.AreEqual(1d, ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("streak", "on"));
+            Assert.AreEqual(12.5, ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("radius", "12.5"));
+            Assert.ThrowsExactly<FormatException>(() => ACE.Server.Command.Handlers.NetherFractureCommands.ParseSetValue("bank", "charm"));
+            Assert.IsFalse(NetherFractureManager.IsClearable("fracture"), "clear on fracture is refused by SetZone.");
+        }
+
+        [TestMethod]
+        public void StatusLineKeepsTheShapeThePluginParses()
+        {
+            var zone = NetherFractureConfiguration.Parse(Valid.Replace(",\"Radius\":5", ",\"Bank\":7")).Zones["14:Tou Tou 14"];
+            var line = NetherFractureManager.StatusLine("14:Tou Tou 14", true, zone, 12.5, 25);
+            Assert.IsTrue(line.StartsWith("Nether Fracture [14:Tou Tou 14] enabled=True: "), line);
+            Assert.IsTrue(line.EndsWith(". Group cap=2 strongest."), line);
+            var list = line.Substring(line.IndexOf(": ", StringComparison.Ordinal) + 2);
+            list = list.Substring(0, list.IndexOf(". Group", StringComparison.Ordinal));
+            var items = list.Split(", ").Select(i => i.Split('=')).ToDictionary(kv => kv[0], kv => kv[1]);
+            Assert.AreEqual("12.5m", items["radius"]);
+            Assert.AreEqual("charm", items["radiusfrom"]);
+            Assert.AreEqual("12.5m", items["spread"]);
+            Assert.AreEqual("25", items["pandemiclevel"]);
+            Assert.AreEqual("7%", items["bank"], "No 7.000000000000001.");
+            Assert.AreEqual("8s", items["window"]);
+            Assert.AreEqual("4", items["targets"]);
+            Assert.AreEqual("6", items["fracture"]);
+            var clamped = NetherFractureManager.StatusLine("14:Tou Tou 14", true, zone, 35, 100);
+            Assert.IsTrue(clamped.Contains("radius=20m, radiusfrom=charm, spread=35m"), clamped);
+            Assert.IsTrue(NetherFractureManager.StatusLine("14:Tou Tou 14", true, zone, 12.424242424242, 30).Contains("radius=12.42m, radiusfrom=charm, spread=12.42m"), "Rounded to cm.");
+            var own = NetherFractureManager.StatusLine("14:Tou Tou 14", true, NetherFractureConfiguration.Parse(Valid).Zones["14:Tou Tou 14"], 12.5, 25);
+            Assert.IsTrue(own.Contains("radius=5m, radiusfrom=zone, spread=12.5m"), own);
+            Assert.AreEqual("20%", NetherFractureManager.StatusLine("k:x", true, NetherFractureConfiguration.Parse(Valid).Zones["14:Tou Tou 14"], 10, 1).Split(", ").First(i => i.StartsWith("bank=")).Substring(5));
+        }
+
+        [TestMethod]
+        public void BankShareAndWindowComeFromTheCreditAndCooldownFromTheRelease()
+        {
+            var s = new NetherFractureState();
+            s.Credit(1000, 100, .5, 20);          // 50 pct, kept 20 s
+            Assert.IsTrue(s.Prime(1, 115));
+            Assert.IsTrue(s.Release(1, 115, 2, out var budget, 12));
+            Assert.AreEqual(1000d, budget, .00001);   // 1000 * .5 * 2, still in its 20 s window at +15
+            Assert.IsFalse(s.Prime(1, 126.9), "12 s cooldown");
+            Assert.IsTrue(s.Prime(1, 127));
+            s.Credit(1000, 127, .5, 3);
+            Assert.IsFalse(s.Release(1, 131, 2, out _), "3 s window: the credit is gone at +4");
         }
 
         [TestMethod]
@@ -239,7 +347,7 @@ namespace ACE.Server.Tests
                 var initial = NetherFractureManager.CurrentConfiguration;
                 NetherFractureManager.PollForTests();
                 Assert.AreSame(initial, NetherFractureManager.CurrentConfiguration, "An unchanged file must keep its existing snapshot.");
-                foreach (var invalid in new[] { "{", Valid.Replace("\"Radius\":5", "\"Radius\":9"), Valid.Replace("\"Enabled\":true", "\"Enabled\":true,\"Enabled\":false") })
+                foreach (var invalid in new[] { "{", Valid.Replace("\"Radius\":5", "\"Radius\":21"), Valid.Replace("\"Enabled\":true", "\"Enabled\":true,\"Enabled\":false") })
                 {
                     File.WriteAllText(path, invalid);
                     NetherFractureManager.ForceReloadForTests();
