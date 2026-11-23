@@ -4445,11 +4445,15 @@ namespace ACE.Server.WorldObjects
             // so the NPC is labeled here; otherwise every quest reward of coins or notes would be Unattributed
             using var ledgerScope = PyrealLedger.BeginFor(PyrealLedger.SrcEmote, emoter);
 
+            // a tinted reward is a different-looking item: give it its own stack
+            var mergeIntoCarried = palette <= 0 && shade <= 0;
+
             var itemsToReceive = new ItemsToReceive(this);
 
-            itemsToReceive.Add(weenieClassId, amount);
+            itemsToReceive.Add(weenieClassId, amount, mergeIntoCarried);
 
-            var itemStacks = itemsToReceive.RequiredSlots;
+            // stacks to create plus stacks topped up; 0 only when the wcid cannot be created as an item
+            var itemStacks = itemsToReceive.RequiredSlots + itemsToReceive.SlotsSavedByCarriedStacks;
 
             if (itemsToReceive.PlayerExceedsLimits)
             {
@@ -4477,6 +4481,9 @@ namespace ACE.Server.WorldObjects
             if (itemStacks > 0)
             {
                 var remaining = amount;
+
+                if (mergeIntoCarried && ServerConfig.emote_give_merge_stacks.Value)
+                    remaining -= GiveIntoCarriedStacks(emoter, weenieClassId, amount);
 
                 while (remaining > 0)
                 {
@@ -4516,6 +4523,62 @@ namespace ACE.Server.WorldObjects
                     TryCreateForGive(emoter, item);
                 }
             }
+        }
+
+        /// <summary>
+        /// Stacks of this wcid the player carries (main pack first, then side packs in pack-bar order)
+        /// that are not full. Equipped items are not included.
+        /// </summary>
+        public List<WorldObject> GetCarriedStacksWithRoom(uint weenieClassId)
+        {
+            return GetInventoryItemsOfWCID(weenieClassId)
+                .Where(i => i is Stackable && !i.IsDestroyed && (i.StackSize ?? 1) < (i.MaxStackSize ?? 1))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Emote Give: tops up stacks of the reward the player already carries, so repeated rewards
+        /// (quest currencies, coins) collect in one stack and need no free pack slot.
+        /// Returns how many units were merged; the caller creates new stacks for the rest.
+        /// </summary>
+        private int GiveIntoCarriedStacks(WorldObject giver, uint weenieClassId, int amount)
+        {
+            var merged = 0;
+            WorldObject firstStack = null;
+
+            foreach (var stack in GetCarriedStacksWithRoom(weenieClassId))
+            {
+                if (merged >= amount)
+                    break;
+
+                var add = Math.Min(amount - merged, (stack.MaxStackSize ?? 1) - (stack.StackSize ?? 1));
+
+                if (add <= 0 || !AdjustStack(stack, add, stack.Container as Container, this))
+                    continue;
+
+                Session.Network.EnqueueSend(new GameMessageSetStackSize(stack));
+
+                merged += add;
+                firstStack ??= stack;
+            }
+
+            if (merged == 0)
+                return 0;
+
+            // same record TryCreateInInventoryWithNetworking makes for a new stack (source = the emote's ledger scope)
+            PyrealLedger.OnCurrencyItem(this, weenieClassId, merged, true);
+
+            if (!(giver.GetProperty(PropertyBool.NpcInteractsSilently) ?? false))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"{giver.Name} gives you {(merged > 1 ? $"{merged} " : "")}{firstStack.GetNameWithMaterial(merged)}.", ChatMessageType.Broadcast));
+
+                EnqueueBroadcast(new GameMessageSound(Guid, Sound.ReceiveItem));
+            }
+
+            if (ServerConfig.player_receive_immediate_save.Value)
+                RushNextPlayerSave(5);
+
+            return merged;
         }
 
         public bool TryCreateForGive(WorldObject giver, WorldObject itemBeingGiven)

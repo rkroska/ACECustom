@@ -1,6 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Database;
+using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Entity
@@ -39,14 +44,57 @@ namespace ACE.Server.Entity
             (RequiredInventorySlots > playerFreeInventorySlots ? RequiredInventorySlots - playerFreeInventorySlots : 0)
             + (RequiredContainerSlots > playerFreeContainerSlots ? RequiredContainerSlots - playerFreeContainerSlots : 0);
 
-        public bool Add(uint weenieClassId, int amount)
+        /// <summary>
+        /// Slots this batch does not need because the items top up stacks the player already carries
+        /// (see <see cref="Player.GetCarriedStacksWithRoom"/>). <see cref="RequiredSlots"/> excludes them.
+        /// </summary>
+        public int SlotsSavedByCarriedStacks { get; private set; }
+
+        // room left in the player's carried stacks, per wcid, after earlier Adds in this batch claimed some
+        private readonly Dictionary<uint, int> carriedStackRoom = new();
+
+        /// <param name="intoCarriedStacks">true when the items will be handed out by <see cref="Player.GiveFromEmote"/>,
+        /// which tops up matching stacks the player carries before making new ones</param>
+        public bool Add(uint weenieClassId, int amount, bool intoCarriedStacks = false)
         {
+            if (intoCarriedStacks && amount > 0 && ServerConfig.emote_give_merge_stacks.Value)
+            {
+                if (!carriedStackRoom.TryGetValue(weenieClassId, out var room))
+                    room = player.GetCarriedStacksWithRoom(weenieClassId).Sum(s => (s.MaxStackSize ?? 1) - (s.StackSize ?? 1));
+
+                var merged = Math.Min(amount, room);
+                carriedStackRoom[weenieClassId] = room - merged;
+
+                if (merged > 0)
+                {
+                    // burden is charged for the full amount; only the slots for the merged part are saved
+                    var slotsWithout = GetItemSlotAndBurdenRequirements(weenieClassId, amount, out _, out _);
+                    var slotsWith = GetItemSlotAndBurdenRequirements(weenieClassId, amount - merged, out _, out _);
+                    SlotsSavedByCarriedStacks += slotsWithout - slotsWith;
+
+                    RequiredBurden += GetBurden(weenieClassId, merged);
+                    if (amount - merged == 0)
+                        return !PlayerExceedsLimits;
+
+                    return Process(weenieClassId, amount - merged);
+                }
+            }
+
             return Process(weenieClassId, amount);
         }
 
         public bool Remove(uint weenieClassId, int amount)
         {
+            // stacks counted as room may be the ones being taken: assume no room is left in them
+            carriedStackRoom[weenieClassId] = 0;
+
             return Process(weenieClassId, amount, true);
+        }
+
+        private static int GetBurden(uint weenieClassId, int amount)
+        {
+            GetItemSlotAndBurdenRequirements(weenieClassId, amount, out var burden, out _);
+            return burden;
         }
 
         private bool Process(uint weenieClassId, int amount, bool negate = false)

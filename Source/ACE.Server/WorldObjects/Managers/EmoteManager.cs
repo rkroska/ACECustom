@@ -1298,6 +1298,26 @@ namespace ACE.Server.WorldObjects.Managers
 
                     break;
 
+                case EmoteType.InqIPQuest:
+
+                    // ILT custom: "at most Amount per IP address" over the quest's MinDelta window (AccountQuestLimits, IP
+                    // section). Claims work as for InqAccountQuest. Give it its own @comment so its sets don't clash with an
+                    // InqAccountQuest on the same quest.
+                    if (player != null)
+                    {
+                        var ipDone = AccountQuestLimits.IpHasQuestAndCannotSolve(player, emote.Message, emote.Amount ?? 2, NewClaimChain(), out var ipClaim);
+
+                        if (ipClaim != null)
+                        {
+                            (heldAccountClaims ??= new List<AccountQuestLimits.Claim>()).Add(ipClaim);
+                            (executingClaims ??= new List<AccountQuestLimits.Claim>()).Add(ipClaim);
+                        }
+
+                        ExecuteEmoteSet(ipDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+
+                    break;
+
                 case EmoteType.InqMyQuestBitsOff:
                 case EmoteType.InqQuestBitsOff:
 
@@ -4457,6 +4477,7 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.UpdateQuest:
                 case EmoteType.InqQuest:
                 case EmoteType.InqAccountQuest:
+                case EmoteType.InqIPQuest:
                 case EmoteType.InqQuestSolves:
                 case EmoteType.InqServerQuestSolves:
                 case EmoteType.InqBoolStat:
@@ -4623,6 +4644,16 @@ namespace ACE.Server.WorldObjects.Managers
                     result = result.Replace("%aqt", account.HasValue ? AccountTimeText(account.Value) : "");
 
                     result = result.Replace("%aqc", account.HasValue ? account.Value.Completions.ToString() : "");
+                }
+
+                // ILT custom: the IP group's window for InqIPQuest content (limit 2, the InqIPQuest default)
+                if (result.Contains("%iqt") || result.Contains("%iqc"))
+                {
+                    var ip = !string.IsNullOrWhiteSpace(quest) ? AccountQuestLimits.GetIpStatus(targetPlayer, questName, 2) : null;
+
+                    result = result.Replace("%iqt", ip.HasValue ? (ip.Value.Hold == AccountQuestLimits.GateHold.InProgress ? "a moment" : ip.Value.NextSolveTime.GetFriendlyString()) : "");
+
+                    result = result.Replace("%iqc", ip.HasValue ? ip.Value.InWindow.ToString() : "");
                 }
             }
 
@@ -4929,7 +4960,9 @@ namespace ACE.Server.WorldObjects.Managers
                         // Gives are scheduled in data order before any later TakeItems run, so a
                         // running batch that exceeds here must fail now — a later Remove must not
                         // mask an earlier over-capacity Give.
-                        if (!batch.Add(action.WeenieClassId.Value, amount > 0 ? amount : 1))
+                        // Player.GiveFromEmote tops up carried stacks first, except for a tinted reward
+                        var intoCarriedStacks = (action.Palette ?? 0) <= 0 && (action.Shade ?? 0) <= 0;
+                        if (!batch.Add(action.WeenieClassId.Value, amount > 0 ? amount : 1, intoCarriedStacks))
                             return batch;
                         break;
 
