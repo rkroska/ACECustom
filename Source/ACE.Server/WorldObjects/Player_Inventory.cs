@@ -4480,38 +4480,51 @@ namespace ACE.Server.WorldObjects
 
             if (itemStacks > 0)
             {
-                var remaining = amount;
-
-                if (mergeIntoCarried && ServerConfig.emote_give_merge_stacks.Value)
-                    remaining -= GiveIntoCarriedStacks(emoter, weenieClassId, amount);
-
-                while (remaining > 0)
+                // creates new stacks for `count` units; false (and the emote chain aborted by TryCreateForGive) when one can't be added
+                bool CreateNew(int count)
                 {
-                    var item = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
-
-                    if (item == null)
+                    while (count > 0)
                     {
-                        log.Warn($"Player.GiveFromEmote: Emoter is {emoter.Name} (0x{emoter.Guid}) | WCID: {emoter.WeenieClassId} is not able to be created.");
-                        return;
+                        var item = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
+
+                        if (item == null)
+                        {
+                            log.Warn($"Player.GiveFromEmote: Emoter is {emoter.Name} (0x{emoter.Guid}) | WCID: {emoter.WeenieClassId} is not able to be created.");
+                            return false;
+                        }
+
+                        if (item is Stackable)
+                        {
+                            var stackSize = Math.Min(count, item.MaxStackSize ?? 1);
+
+                            item.SetStackSize(stackSize);
+                            count -= stackSize;
+                        }
+                        else
+                            count--;
+
+                        if (palette > 0)
+                            item.PaletteTemplate = palette;
+                        if (shade > 0)
+                            item.Shade = shade;
+
+                        if (!TryCreateForGive(emoter, item))
+                            return false;
                     }
-
-                    if (item is Stackable)
-                    {
-                        var stackSize = Math.Min(remaining, item.MaxStackSize ?? 1);
-
-                        item.SetStackSize(stackSize);
-                        remaining -= stackSize;
-                    }
-                    else
-                        remaining--;
-
-                    if (palette > 0)
-                        item.PaletteTemplate = palette;
-                    if (shade > 0)
-                        item.Shade = shade;
-
-                    TryCreateForGive(emoter, item);
+                    return true;
                 }
+
+                var toMerge = 0;
+                if (mergeIntoCarried && ServerConfig.emote_give_merge_stacks.Value)
+                    toMerge = Math.Min(amount, GetCarriedStacksWithRoom(weenieClassId).Sum(s => (s.MaxStackSize ?? 1) - (s.StackSize ?? 1)));
+
+                // New stacks first, top-ups last: if a new stack can't be added (the pack filled up after the pre-check), the
+                // give stops before anything is merged, so a retry of the hand-in can't pay the merged part twice.
+                if (!CreateNew(amount - toMerge))
+                    return;
+
+                if (toMerge > 0)
+                    CreateNew(toMerge - GiveIntoCarriedStacks(emoter, weenieClassId, toMerge));
             }
             else
             {
@@ -4527,12 +4540,24 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// Stacks of this wcid the player carries (main pack first, then side packs in pack-bar order)
-        /// that are not full. Equipped items are not included.
+        /// that are not full and that a reward may top up. Equipped items are not included. Never:
+        /// - an item type that expires (Lifespan): new units would expire with the older stack;
+        /// - a stack in an open trade: the trade partner would receive the reward;
+        /// - a stack whose name differs from its weenie's (renamed by the player).
         /// </summary>
         public List<WorldObject> GetCarriedStacksWithRoom(uint weenieClassId)
         {
+            var weenie = DatabaseManager.World.GetCachedWeenie(weenieClassId);
+            if (weenie == null || weenie.GetProperty(PropertyInt.Lifespan) != null)
+                return new List<WorldObject>();
+
+            var weenieName = weenie.GetName();
+
             return GetInventoryItemsOfWCID(weenieClassId)
-                .Where(i => i is Stackable && !i.IsDestroyed && (i.StackSize ?? 1) < (i.MaxStackSize ?? 1))
+                .Where(i => i is Stackable && !i.IsDestroyed && (i.StackSize ?? 1) < (i.MaxStackSize ?? 1)
+                    && i.Lifespan == null
+                    && i.Name == weenieName
+                    && !(IsTrading && ItemsInTradeWindow.Contains(i.Guid)))
                 .ToList();
         }
 
