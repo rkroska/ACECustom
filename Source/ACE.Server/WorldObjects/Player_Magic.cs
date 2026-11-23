@@ -191,6 +191,7 @@ namespace ACE.Server.WorldObjects
             MagicState.SetWindupParams(targetGuid, spell, casterItem);
 
             StartPos = new Physics.Common.Position(PhysicsObj.Position);
+            StartPosTime = DateTime.UtcNow;
 
             if (RecordCast.Enabled)
                 RecordCast.OnCastTargetedSpell(spell, target);
@@ -218,8 +219,13 @@ namespace ACE.Server.WorldObjects
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(rotateTime);
 
+                var castNum = MagicState.CastNum;
                 actionChain.AddAction(this, ActionType.PlayerMagic_FinishCast, () =>
                 {
+                    // the cast ended during the turn (NPK windup move fizzle) or a newer cast started: this chain is stale
+                    if (!IsCurrentCast(castNum))
+                        return;
+
                     // ensure target still exists
                     targetCategory = GetTargetCategory(targetGuid, spell, out target);
 
@@ -381,6 +387,7 @@ namespace ACE.Server.WorldObjects
             MagicState.OnCastStart();
 
             StartPos = new Physics.Common.Position(PhysicsObj.Position);
+            StartPosTime = DateTime.UtcNow;
 
             if (!CreatePlayerSpell(spell))
                 MagicState.OnCastDone();
@@ -425,8 +432,118 @@ namespace ACE.Server.WorldObjects
             Success
         }
 
-        public static float Windup_MaxMove = 6.0f;
-        public static float Windup_MaxMoveSq = Windup_MaxMove * Windup_MaxMove;
+        /// <summary>This caster's windup move cap in metres, 0 = none (see WindupMoveCap).</summary>
+        private float CurrentWindupMoveCap => WindupMoveCap.Get(PlayerKillerStatus, ServerConfig.npk_windup_max_move.Value);
+
+        // after-cast catch-up guard (see WindupMoveCap): where the last NPK cast started, when it landed, and its cap
+        private Physics.Common.Position windupGuardOrigin;
+        private DateTime windupGuardLandTime;
+        private float windupGuardCap;
+        private bool windupGuardLogged;
+
+        /// <summary>True while the cast numbered <paramref name="castNum"/> (MagicState.CastNum when its chain was built) is still
+        /// the one in progress. NPK cast chains check this so a chain left over from a fizzled cast cannot land the next one.</summary>
+        private bool IsCurrentCast(int castNum) => MagicState.IsCasting && MagicState.CastNum == castNum;
+
+        // the cast whose mid-cast fizzle is already queued, so a burst of positions queues it once
+        private Physics.Common.Position windupMoveFailQueuedFor;
+
+        /// <summary>
+        /// Mid-cast check, run after every accepted client position (Player.UpdateObjectPhysics). NPKs only: their position is
+        /// whatever the client reports, so checking only when the spell lands lets an out-and-back run through. PKs (FastTick)
+        /// keep their existing server-physics checks unchanged.
+        /// </summary>
+        public void CheckWindupMoveDuringCast()
+        {
+            if (FastTick || !MagicState.IsCasting || StartPos == null || PhysicsObj == null)
+                return;
+
+            var cap = CurrentWindupMoveCap;
+            if (cap <= 0)
+                return;
+
+            // early in the cast, a client position is the client catching the server up on where the cast really started (the
+            // server's StartPos is its last report, which can lag), so it becomes the start point instead of counting as movement
+            if (WindupMoveCap.MovesStartPoint((DateTime.UtcNow - StartPosTime).TotalSeconds))
+            {
+                StartPos = new Physics.Common.Position(PhysicsObj.Position);
+                return;
+            }
+
+            if (!WindupMoveCap.MovedTooFar(StartPos.Distance(PhysicsObj.Position), cap))
+                return;
+
+            var castStart = StartPos;
+            if (ReferenceEquals(windupMoveFailQueuedFor, castStart))
+                return;
+            windupMoveFailQueuedFor = castStart;
+
+            // this runs inside the physics update; end the cast through the action queue, as the rest of the cast code does
+            var chain = new ActionChain();
+            chain.AddAction(this, ActionType.PlayerMagic_FinishCast, () =>
+            {
+                // that cast already ended, or a new one started with its own start position
+                if (!MagicState.IsCasting || !ReferenceEquals(StartPos, castStart))
+                    return;
+
+                // FailCast shows the message through DoCastSpell_Inner, which treats this recorded violation as moved too far even
+                // if a later position came back inside the cap. During the pre-cast turn there are no cast parameters yet (so
+                // nothing is spent either) and FailCast skips DoCastSpell_Inner, so send the message here
+                if (MagicState.CastSpellParams == null)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("Your movement disrupted spell casting!", ChatMessageType.Magic));
+
+                FailCast();
+            });
+            chain.EnqueueChain();
+        }
+
+        /// <summary>
+        /// After-cast catch-up guard, called by UpdatePosition. For a few seconds after an NPK cast lands, a client position must be
+        /// within run reach of where the cast started. A client that stopped reporting positions during the windup (so the server
+        /// still had it at the start when the spell landed) and then catches up is refused; the caller sends it back.
+        /// </summary>
+        public bool WindupCatchUpRefuses(ACE.Entity.Position newPosition)
+        {
+            var origin = windupGuardOrigin;
+            if (origin == null || newPosition == null)
+                return false;
+
+            var secondsSinceLand = (DateTime.UtcNow - windupGuardLandTime).TotalSeconds;
+
+            // window over, a teleport since (recall spells, portals), or now a PK with server physics: stop guarding
+            if (secondsSinceLand > WindupMoveCap.GuardSeconds || LastTeleportTime >= windupGuardLandTime || FastTick)
+            {
+                windupGuardOrigin = null;
+                return false;
+            }
+
+            var runSpeed = WindupMoveCap.MaxRunSpeed;
+
+            // every position the guard accepts is within its allowance, so a server location beyond it means the server moved the
+            // player itself (a relocation that skips Teleport): stop guarding instead of pinning them there
+            if (Location != null)
+            {
+                var serverDist = (float)Math.Sqrt(origin.Distance2DSquared(new Physics.Common.Position(Location)));
+                if (WindupMoveCap.CatchUpTooFar(serverDist, windupGuardCap, runSpeed, secondsSinceLand))
+                {
+                    windupGuardOrigin = null;
+                    return false;
+                }
+            }
+
+            var groundDist = (float)Math.Sqrt(origin.Distance2DSquared(new Physics.Common.Position(newPosition)));
+
+            if (!WindupMoveCap.CatchUpTooFar(groundDist, windupGuardCap, runSpeed, secondsSinceLand))
+                return false;
+
+            if (!windupGuardLogged)
+            {
+                windupGuardLogged = true;
+                log.Warn($"[WINDUP GUARD] {Name} position {groundDist:N1} m from the cast start {secondsSinceLand:N2}s after the cast landed " +
+                    $"(allowed {WindupMoveCap.CatchUpAllowance(windupGuardCap, runSpeed, secondsSinceLand):N1} m, cap {windupGuardCap:N1}) - refused and sent back");
+            }
+            return true;
+        }
 
         public bool VerifyBusy()
         {
@@ -1006,7 +1123,12 @@ namespace ACE.Server.WorldObjects
 
                         var actionChain = new ActionChain();
                         actionChain.AddDelaySeconds(rotateTime);
-                        actionChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () => DoCastSpell(spell, casterItem, magicSkill, manaUsed, target, castingPreCheckStatus, false));
+                        var castNum = MagicState.CastNum;
+                        actionChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () =>
+                        {
+                            if (IsCurrentCast(castNum))
+                                DoCastSpell(spell, casterItem, magicSkill, manaUsed, target, castingPreCheckStatus, false);
+                        });
                         actionChain.EnqueueChain();
                     }
                     else
@@ -1076,6 +1198,9 @@ namespace ACE.Server.WorldObjects
 
         private Physics.Common.Position StartPos { get; set; }
 
+        /// <summary>When the current cast's StartPos was first set (cast start), for the NPK start settle window.</summary>
+        private DateTime StartPosTime { get; set; }
+
         private void DoCastSpell_Inner(Spell spell, WorldObject casterItem, uint manaUsed, WorldObject target, CastingPreCheckStatus castingPreCheckStatus, bool finishCast = true)
         {
             if (RecordCast.Enabled)
@@ -1114,8 +1239,14 @@ namespace ACE.Server.WorldObjects
             // check windup move distance cap
             var dist = StartPos.Distance(PhysicsObj.Position);
 
-            // only PKs affected by these caps?
-            if (dist > Windup_MaxMove && PlayerKillerStatus != PlayerKillerStatus.NPK)
+            // PKs: fixed 6 m. NPKs: npk_windup_max_move, 0 = uncapped (retail ACE default)
+            var windupCap = CurrentWindupMoveCap;
+
+            // the mid-cast check already caught this cast moving too far (its queued fizzle may not have run yet, and the player
+            // may be back inside the cap by now): the spell must not land
+            var windupViolated = !FastTick && windupCap > 0 && StartPos != null && ReferenceEquals(windupMoveFailQueuedFor, StartPos);
+
+            if (windupViolated || WindupMoveCap.MovedTooFar(dist, windupCap))
             {
                 //player.Session.Network.EnqueueSend(new GameEventWeenieError(player.Session, WeenieError.YouHaveMovedTooFar));
                 Session.Network.EnqueueSend(new GameMessageSystemChat("Your movement disrupted spell casting!", ChatMessageType.Magic));
@@ -1126,6 +1257,15 @@ namespace ACE.Server.WorldObjects
                     FinishCast();
 
                 return;
+            }
+
+            // arm the after-cast catch-up guard (NPK with a cap only; PKs have server physics)
+            if (!FastTick && windupCap > 0)
+            {
+                windupGuardOrigin = new Physics.Common.Position(StartPos);
+                windupGuardLandTime = DateTime.UtcNow;
+                windupGuardCap = windupCap;
+                windupGuardLogged = false;
             }
 
             var pk_error = CheckPKStatusVsTarget(target, spell);
@@ -1434,7 +1574,15 @@ namespace ACE.Server.WorldObjects
             MagicState.SetCastParams(spell, casterItem, magicSkill, manaUsed, target, castingPreCheckStatus);
 
             if (!FastTick)
-                spellChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () => DoCastSpell(MagicState));
+            {
+                // tie the landing to this cast: after a mid-cast fizzle the player may already be casting the next spell
+                var castNum = MagicState.CastNum;
+                spellChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () =>
+                {
+                    if (IsCurrentCast(castNum))
+                        DoCastSpell(MagicState);
+                });
+            }
 
             spellChain.EnqueueChain();
 
@@ -1597,7 +1745,15 @@ namespace ACE.Server.WorldObjects
             MagicState.SetCastParams(spell, null, magicSkill, manaUsed, null, castingPreCheckStatus);
 
             if (!FastTick)
-                spellChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () => DoCastSpell(MagicState));
+            {
+                // tie the landing to this cast: after a mid-cast fizzle the player may already be casting the next spell
+                var castNum = MagicState.CastNum;
+                spellChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () =>
+                {
+                    if (IsCurrentCast(castNum))
+                        DoCastSpell(MagicState);
+                });
+            }
 
             spellChain.EnqueueChain();
 
@@ -1779,7 +1935,7 @@ namespace ACE.Server.WorldObjects
             {
                 var dist = StartPos.Distance(PhysicsObj.Position);
 
-                if (dist > Windup_MaxMove && PlayerKillerStatus != PlayerKillerStatus.NPK)
+                if (WindupMoveCap.MovedTooFar(dist, CurrentWindupMoveCap))
                 {
                     FailCast();
                     return false;
