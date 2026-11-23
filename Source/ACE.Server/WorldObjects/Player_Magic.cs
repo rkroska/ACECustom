@@ -486,10 +486,10 @@ namespace ACE.Server.WorldObjects
                 if (!MagicState.IsCasting || !ReferenceEquals(StartPos, castStart))
                     return;
 
-                // FailCast shows the message through DoCastSpell_Inner's own distance check. Send it here when that check will not:
-                // during the pre-cast turn (no cast parameters yet, so nothing is spent either) or when a later position has come
-                // back inside the cap (out-and-back) before this ran
-                if (MagicState.CastSpellParams == null || !WindupMoveCap.MovedTooFar(StartPos.Distance(PhysicsObj.Position), CurrentWindupMoveCap))
+                // FailCast shows the message through DoCastSpell_Inner, which treats this recorded violation as moved too far even
+                // if a later position came back inside the cap. During the pre-cast turn there are no cast parameters yet (so
+                // nothing is spent either) and FailCast skips DoCastSpell_Inner, so send the message here
+                if (MagicState.CastSpellParams == null)
                     Session.Network.EnqueueSend(new GameMessageSystemChat("Your movement disrupted spell casting!", ChatMessageType.Magic));
 
                 FailCast();
@@ -1241,7 +1241,12 @@ namespace ACE.Server.WorldObjects
 
             // PKs: fixed 6 m. NPKs: npk_windup_max_move, 0 = uncapped (retail ACE default)
             var windupCap = CurrentWindupMoveCap;
-            if (WindupMoveCap.MovedTooFar(dist, windupCap))
+
+            // the mid-cast check already caught this cast moving too far (its queued fizzle may not have run yet, and the player
+            // may be back inside the cap by now): the spell must not land
+            var windupViolated = !FastTick && windupCap > 0 && StartPos != null && ReferenceEquals(windupMoveFailQueuedFor, StartPos);
+
+            if (windupViolated || WindupMoveCap.MovedTooFar(dist, windupCap))
             {
                 //player.Session.Network.EnqueueSend(new GameEventWeenieError(player.Session, WeenieError.YouHaveMovedTooFar));
                 Session.Network.EnqueueSend(new GameMessageSystemChat("Your movement disrupted spell casting!", ChatMessageType.Magic));
