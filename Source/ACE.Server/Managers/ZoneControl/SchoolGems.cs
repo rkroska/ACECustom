@@ -109,15 +109,24 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>
         /// As above, with each carried tier's floor: a pile counts only once the total reached so far meets its floor (the gem's
-        /// use refuses below it), so gems that cannot be used never make a usable pickup crumble.
+        /// use refuses below it), so gems that cannot be used never make a usable pickup crumble. The best order is used: each
+        /// step takes the usable pile with the LOWEST ceiling, then looks again - so a pile skipped for its floor counts once
+        /// another pile has lifted the total to it (floors and ceilings come from separate settings and need not climb with
+        /// the tier).
         /// </summary>
         /// <param name="carriedByTier">(tier, its floor, its ceiling, how many).</param>
         public static long PickupRoom(long pickedCeiling, long total, IEnumerable<(int Tier, long Floor, long Ceiling, int Count)> carriedByTier)
         {
             var reach = total;
-            foreach (var (_, tierFloor, tierCeiling, count) in carriedByTier.OrderBy(c => c.Tier))
-                if (reach >= tierFloor && reach < tierCeiling)
-                    reach = Math.Min(tierCeiling, reach + count);
+            var piles = carriedByTier.Where(c => c.Count > 0).OrderBy(c => c.Ceiling).ThenBy(c => c.Tier).ToList();
+            while (true)
+            {
+                var i = piles.FindIndex(c => reach >= c.Floor && reach < c.Ceiling);
+                if (i < 0)
+                    break;   // nothing left that can add (the rest are full or still below their floor)
+                reach = Math.Min(piles[i].Ceiling, reach + piles[i].Count);
+                piles.RemoveAt(i);
+            }
             return pickedCeiling - reach;
         }
 

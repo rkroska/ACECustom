@@ -128,6 +128,11 @@ namespace ACE.Server.Factories
         /// <summary>Item augmentations required to wield any tier-11+ drop (owner 2026-07-20).</summary>
         public const int ZoneLootSetWieldItemAugs = 2000;
 
+        /// <summary>The Item augmentations a tier's gear asks (StampTierGates): the row's MinWieldAugs, or the 2,000 floor when the
+        /// row has none (a stored 0). /testchar preset reads the same number, so a preset can always wear its own suit.</summary>
+        public static int WieldItemAugs(ACE.Server.Managers.WeaponScaling.WeaponScalingTier row)
+            => row != null && row.MinWieldAugs > 0 ? row.MinWieldAugs : ZoneLootSetWieldItemAugs;
+
         /// <summary>Chance that one HELM / GLOVE / BOOT draw ATTEMPT uses the retail CLOTHING table (owner 2026-10-06: cowls, caps,
         /// shoes and gloves belong to the armor slots they cover; robes take none - IsArmorSlotClothing). The share of drops that
         /// end up clothing also depends on how often each table yields that slot (rejected attempts re-roll).</summary>
@@ -347,7 +352,7 @@ namespace ACE.Server.Factories
             // ONE rule at every tier since the Triune retire (owner 2026-11-22): Item, Creature and Life augs at the row's numbers.
             // An item stamped with the old T16+ Triune gate (slot 3) is re-stamped here on its next wield check or appraise.
             var changed = 0;
-            var item = row != null && row.MinWieldAugs > 0 ? row.MinWieldAugs : ZoneLootSetWieldItemAugs;
+            var item = WieldItemAugs(row);
             changed += SetGate(wo, 1, PropertyInt64.LumAugItemCount, item);
             changed += SetGate(wo, 3, PropertyInt64.LumAugCreatureCount, row?.MinWieldCreature ?? 0);
             changed += SetGate(wo, 4, PropertyInt64.LumAugLifeCount, row?.MinWieldLife ?? 0);

@@ -261,18 +261,20 @@ namespace ACE.Server.Managers.ZoneControl
             long Read(PropertyInt64 p) => player.GetProperty(p) ?? 0;
             var add = Plan(Read);
             var oldFraction = player.GetProperty(PropertyFloat.TriuneFraction) ?? 0;
-            if (add.Count == 0 && !(oldFraction > 0) && zeroOnly != null)
-                return false;   // still nothing but zeros: the record already keeps them
             if (add.Count == 0 && !(oldFraction > 0))
             {
                 // nothing to move - but a stray zero counter still goes, so nothing old is ever sent to a client. A record keeps
-                // it, so a gate still reads it as held at 0 (not "never set").
+                // it, so a gate still reads it as held at 0 (not "never set"). A zero counter set again after an earlier cleanup
+                // (an admin, /testchar) goes the same way, merged into the record that is already there.
                 var held = Moves.Select(m => m.Old).Where(old => player.GetProperty(old).HasValue).ToList();
                 if (held.Count == 0)
-                    return false;
+                    return false;   // nothing held: the record (if any) already keeps them
                 var zeroRecord = new Record { At = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
                 foreach (var old in held)
                     zeroRecord.Old[(ushort)old] = player.GetProperty(old) ?? 0;
+                if (zeroOnly != null)
+                    foreach (var (id, v) in zeroOnly.Old)
+                        zeroRecord.Old.TryAdd(id, v);
                 var zeroJson = JsonConvert.SerializeObject(zeroRecord);
                 foreach (var old in held)
                     player.RemoveProperty(old);
@@ -317,15 +319,20 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var cfg = TriuneEarning.Current;
                 own = TierRewardScale.OwnTier(player);
-                TriuneEarning.EnsureRollTier(player, own);
-                if (priorRollTier != 0 && priorRollTier != own)
-                    dripFraction = 0;
-                foreach (var s in TriuneEarning.DripSchools)
+                // no own tier known right now (0: no zone of theirs is on, or below T11): the roll tier, its rolls and the part-way
+                // reward stay as they are - a later kill or login sets them once a tier is known again
+                if (own >= TriuneEarning.FirstTier)
                 {
-                    var seed = TriuneEarning.SeedRolls(cfg, own, triune, s.Count(player), s.IsCreature ? cfg.DripBaseCreature : cfg.DripBaseItem);
-                    seeds.Add($"{s.Name} {seed}");
-                    if (seed > 0)
-                        player.SetProperty(s.RollsProperty, Math.Max(player.GetProperty(s.RollsProperty) ?? 0, seed));
+                    TriuneEarning.EnsureRollTier(player, own);
+                    if (priorRollTier != 0 && priorRollTier != own)
+                        dripFraction = 0;
+                    foreach (var s in TriuneEarning.DripSchools)
+                    {
+                        var seed = TriuneEarning.SeedRolls(cfg, own, triune, s.Count(player), s.IsCreature ? cfg.DripBaseCreature : cfg.DripBaseItem);
+                        seeds.Add($"{s.Name} {seed}");
+                        if (seed > 0)
+                            player.SetProperty(s.RollsProperty, Math.Max(player.GetProperty(s.RollsProperty) ?? 0, seed));
+                    }
                 }
             }
             catch (Exception ex)

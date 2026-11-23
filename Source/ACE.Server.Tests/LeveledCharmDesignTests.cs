@@ -184,6 +184,14 @@ namespace ACE.Server.Tests
             };
             var augs12 = ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(12, t12, max: false);
             Assert.AreEqual("4500,2500,2500,2500,2500,2500,0,0,2500,2500", augs12);
+
+            // CodeRabbit #620: a row with minwield 0 stamps the suit at the 2,000 Item floor - the preset must hold that, not 0
+            var zeroItem = new ACE.Server.Managers.WeaponScaling.WeaponScalingTier
+            {
+                Tier = 16, MinWieldAugs = 0, MinWieldCreature = 6500, MinWieldLife = 4500, MinWieldSkillCharm = 4500,
+            };
+            Assert.AreEqual(ACE.Server.Factories.LootGenerationFactory.ZoneLootSetWieldItemAugs, ACE.Server.Factories.LootGenerationFactory.WieldItemAugs(zeroItem));
+            Assert.AreEqual("6500,2000,4500,4500,4500,4500,0,0,4500,4500", ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(16, zeroItem, max: false));
         }
 
         [TestMethod]

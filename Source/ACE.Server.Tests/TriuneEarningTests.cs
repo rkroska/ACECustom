@@ -236,6 +236,16 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Gem_Pickup_Revisits_A_Pile_Another_Pile_Unlocks()
+        {
+            // CodeRabbit #620 round 2: GemBaseCap 3,000 puts T15 (floor 3,000, ceiling 3,500) BELOW the drip T14 (floor 3,500,
+            // ceiling 4,000). At 3,499: one T15 gem -> 3,500, then the 500 T14 gems -> 4,000 = a T16 gem (ceiling 4,000) crumbles
+            Assert.AreEqual(0, SchoolGems.PickupRoom(4000, 3499, new[] { (14, 3500L, 4000L, 500), (15, 3000L, 3500L, 1) }));
+            Assert.AreEqual(501, SchoolGems.PickupRoom(4000, 3498, new[] { (14, 3500L, 4000L, 500), (15, 3000L, 3500L, 1) }), "one short of the T14 floor: T14 stays locked");
+            Assert.AreEqual(0, SchoolGems.PickupRoom(4000, 3498, new[] { (14, 3500L, 4000L, 500), (15, 3000L, 3500L, 2) }));
+        }
+
+        [TestMethod]
         public void Gem_Schools_Map_To_The_Four_Plus_One_Gems()
         {
             CollectionAssert.AreEqual(new uint[] { 777700052, 777700057, 777700062, 777700067 }, SchoolGems.Schools.Select(s => s.GemWcid).ToArray());

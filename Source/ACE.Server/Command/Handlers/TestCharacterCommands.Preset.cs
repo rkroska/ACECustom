@@ -155,9 +155,11 @@ namespace ACE.Server.Command.Handlers
         internal static string PresetAugs(int tier, WeaponScalingTier row, bool max)
         {
             long creature, item, life, school;
+            // the Item number the suit is stamped with (a row's 0 = the 2,000 floor there): the preset must wear its own gear
+            var wieldItem = LootGenerationFactory.WieldItemAugs(row);
             if (!max)
             {
-                item = row.MinWieldAugs;
+                item = wieldItem;
                 creature = row.MinWieldCreature;
                 life = row.MinWieldLife;
                 school = Math.Max(Math.Min(4000, item), row.MinWieldSkillCharm);
@@ -167,7 +169,7 @@ namespace ACE.Server.Command.Handlers
                 var zp = ZoneControlManager.EvaluateTierDefault(tier);
                 double CurveMax(string stat) => zp != null && zp.Has(stat) ? zp.Get(stat) : 0;
                 var top = (long)Math.Ceiling(Math.Max(CurveMax(ZoneStat.AugArmorMax), Math.Max(CurveMax(ZoneStat.AugProtMax), CurveMax(ZoneStat.ReliefAugMax))));
-                item = Math.Max(row.MinWieldAugs, Math.Max(4000, top));
+                item = Math.Max(wieldItem, Math.Max(4000, top));
                 life = Math.Max(row.MinWieldLife, item);
                 creature = Math.Max(row.MinWieldCreature, item + 2000);
                 school = Math.Max(row.MinWieldSkillCharm, item);
