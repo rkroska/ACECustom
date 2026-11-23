@@ -10,16 +10,18 @@ using ACE.Server.Network;
 namespace ACE.Server.Command.Handlers
 {
     /// <summary>
-    /// /zonecontrol triune ... - Triune earning per tier (TriuneEarning.cs, owner 2026-11-01): on / off, the weekly reset, and
-    /// each tier's floor / ceiling kills an hour, slow / fast weeks and points. Every edit is saved and live at once.
+    /// /zonecontrol triune ... - the hunting rewards per tier (TriuneEarning.cs, owner 2026-11-01; the Triune Weave itself is
+    /// retired 2026-11-22): on / off, the school gems, the T11-T14 drip, the login move, the weekly reset, and each tier's
+    /// floor / ceiling kills an hour, slow / fast weeks and points. Every edit is saved and live at once.
     /// </summary>
     public static partial class ZoneControlCommands
     {
         private const string TriuneUsage =
-            "triune [show] | get | on | off | gems on|off | gembase <n> | reload | reset <day> <hour 0-23> [time zone id...] | "
-            + "tier <15-25|all> [floor <kph>] [ceiling <kph>] [slow <weeks>] [fast <weeks>] [points <n>] [gemslow <weeks>] [gemfast <weeks>]";
+            "triune [show] | get | on | off | gems on|off | gembase <n> | drip on|off | dripbase <creature> <item/life> | reload | "
+            + "movestatus | move on|off | "
+            + "reset <day> <hour 0-23> [time zone id...] | tier <11-25|all> [floor <kph>] [ceiling <kph>] [slow <weeks>] [fast <weeks>] [points <n>] [gemslow <weeks>] [gemfast <weeks>]";
 
-        private static readonly HashSet<string> TriuneWriteVerbs = new() { "on", "off", "gems", "gembase", "reload", "reset", "tier" };
+        private static readonly HashSet<string> TriuneWriteVerbs = new() { "on", "off", "gems", "gembase", "drip", "dripbase", "reload", "reset", "tier", "move" };
 
         /// <param name="args">The re-tokenized /zonecontrol arguments: args[0] is "triune", args[1] the verb.</param>
         private static void HandleTriune(Session session, List<string> args, Action<string> Msg)
@@ -29,7 +31,7 @@ namespace ACE.Server.Command.Handlers
             // Triune is augmentation power: looking is Developer (the /zonecontrol level), changing it is Admin, like a Bounty
             // (a mistyped verb gets the usage line below, not this)
             if (TriuneWriteVerbs.Contains(verb) && session != null && session.AccessLevel < AccessLevel.Admin)
-            { Msg("Changing Triune earning needs Admin access."); return; }
+            { Msg("Changing the hunting rewards needs Admin access."); return; }
 
             try
             {
@@ -38,7 +40,7 @@ namespace ACE.Server.Command.Handlers
             catch (InvalidOperationException ex)
             {
                 // the store could not be read (TriuneEarning refuses to save over it) - nothing changed
-                Msg("Triune earning: " + ex.Message);
+                Msg("Hunting rewards: " + ex.Message);
             }
         }
 
@@ -64,7 +66,9 @@ namespace ACE.Server.Command.Handlers
                 case "off":
                 {
                     var on = verb == "on";
-                    ShowTriune(TriuneEarning.Mutate(c => c.Enabled = on), Msg);
+                    var cfg = TriuneEarning.Mutate(c => c.Enabled = on);
+                    ShowTriune(cfg, Msg);
+                    WarnTriuneVsHitGate(cfg, Msg);   // with rewards off nobody new climbs past the luminance caps
                     return;
                 }
 
@@ -73,7 +77,9 @@ namespace ACE.Server.Command.Handlers
                     var onOff = args.Count < 3 ? "" : args[2].ToLowerInvariant();
                     if (onOff != "on" && onOff != "off") { Msg("Usage: triune gems on|off"); return; }
                     var on = onOff == "on";
-                    ShowTriune(TriuneEarning.Mutate(c => c.GemsEnabled = on), Msg);
+                    var cfg = TriuneEarning.Mutate(c => c.GemsEnabled = on);
+                    ShowTriune(cfg, Msg);
+                    WarnTriuneVsHitGate(cfg, Msg);
                     return;
                 }
 
@@ -81,7 +87,54 @@ namespace ACE.Server.Command.Handlers
                 {
                     if (args.Count < 3 || !int.TryParse(args[2], out var b) || b < 0 || b > TriuneEarning.MaxGemBaseCap)
                     { Msg($"Usage: triune gembase <0-{TriuneEarning.MaxGemBaseCap:N0}>   (bought school augs a gem needs; 4000 default)"); return; }
-                    ShowTriune(TriuneEarning.Mutate(c => c.GemBaseCap = b), Msg);
+                    var cfg = TriuneEarning.Mutate(c => c.GemBaseCap = b);
+                    ShowTriune(cfg, Msg);
+                    WarnTriuneVsHitGate(cfg, Msg);   // the T15+ gem ladder starts here: it must still meet what T16+ asks
+                    return;
+                }
+
+                case "drip":
+                {
+                    var onOff = args.Count < 3 ? "" : args[2].ToLowerInvariant();
+                    if (onOff != "on" && onOff != "off") { Msg("Usage: triune drip on|off   (T11-T14 own-tier kills add +1 Creature / Item / Life)"); return; }
+                    var on = onOff == "on";
+                    var cfg = TriuneEarning.Mutate(c => c.DripEnabled = on);
+                    ShowTriune(cfg, Msg);
+                    WarnTriuneVsHitGate(cfg, Msg);
+                    return;
+                }
+
+                case "dripbase":
+                {
+                    if (args.Count < 4 || !int.TryParse(args[2], out var bc) || !int.TryParse(args[3], out var bi)
+                        || bc < 0 || bi < 0 || bc > TriuneEarning.MaxGemBaseCap || bi > TriuneEarning.MaxGemBaseCap)
+                    { Msg("Usage: triune dripbase <creature> <item/life>   (the T11 entry ladder; 4000 2000 default)"); return; }
+                    var cfg = TriuneEarning.Mutate(c => { c.DripBaseCreature = bc; c.DripBaseItem = bi; });
+                    ShowTriune(cfg, Msg);
+                    WarnTriuneVsHitGate(cfg, Msg);
+                    return;
+                }
+
+                case "movestatus":
+                    foreach (var line in AugMove.Status())
+                        Msg(line);
+                    return;
+
+                case "move":
+                {
+                    var onOff = args.Count < 3 ? "" : args[2].ToLowerInvariant();
+                    if (onOff != "on" && onOff != "off") { Msg("Usage: triune move on|off   (the login move of the retired Triune / charm counts)"); return; }
+                    var off = onOff == "off";
+                    if (!off && session == null)
+                    { Msg("Run 'triune move on' in game, not from the server console (it moves online characters)."); return; }
+                    var movedNow = 0;
+                    TriuneEarning.Mutate(c => c.MoveOff = off);
+                    // the audit line only once the change is saved (an unreadable store throws above: nothing changed)
+                    ACE.Server.Managers.PlayerManager.BroadcastToAuditChannel(session?.Player, $"{(session != null ? session.Player.Name : "CONSOLE")} set triune move {onOff}");
+                    if (!off)
+                        movedNow = AugMove.MoveOnline();   // online characters held back while it was off move now
+                    Msg($"Triune move at login: {(off ? "OFF" : "ON")}."
+                        + (!off ? $" {movedNow:N0} online characters were moved now; the rest move at their next login." : ""));
                     return;
                 }
 
@@ -89,10 +142,23 @@ namespace ACE.Server.Command.Handlers
                     try { TriuneEarning.Reload(); }
                     catch (Exception ex)
                     {
-                        Msg($"Triune earning: the stored settings could not be read ({ex.Message}) - the running settings are kept.");
+                        Msg($"Hunting rewards: the stored settings could not be read ({ex.Message}) - the running settings are kept.");
                         return;
                     }
                     ShowTriune(TriuneEarning.Current, Msg);
+                    // a reload can turn the move back on (a hand-edited store, or settings that read again): online characters
+                    // held back meanwhile move now in game; from the console they move at their next login
+                    if (!TriuneEarning.LoadFailed && !TriuneEarning.Current.MoveOff)
+                    {
+                        if (session != null)
+                        {
+                            var movedNow = AugMove.MoveOnline();
+                            if (movedNow > 0)
+                                Msg($"{movedNow:N0} online characters were moved now.");
+                        }
+                        else
+                            Msg("Online characters not moved yet move at their next login (or run 'triune move on' in game).");
+                    }
                     return;
 
                 case "reset":
@@ -116,11 +182,11 @@ namespace ACE.Server.Command.Handlers
 
                     var tiers = new List<int>();
                     if (args[2].Equals("all", StringComparison.OrdinalIgnoreCase))
-                        for (var t = TriuneEarning.MinTier; t <= TriuneEarning.MaxTier; t++) tiers.Add(t);
-                    else if (int.TryParse(args[2].TrimStart('t', 'T'), out var one) && one >= TriuneEarning.MinTier && one <= TriuneEarning.MaxTier)
+                        for (var t = TriuneEarning.FirstTier; t <= TriuneEarning.MaxTier; t++) tiers.Add(t);
+                    else if (int.TryParse(args[2].TrimStart('t', 'T'), out var one) && one >= TriuneEarning.FirstTier && one <= TriuneEarning.MaxTier)
                         tiers.Add(one);
                     else
-                    { Msg($"Tier must be {TriuneEarning.MinTier}-{TriuneEarning.MaxTier} or all."); return; }
+                    { Msg($"Tier must be {TriuneEarning.FirstTier}-{TriuneEarning.MaxTier} or all ({TriuneEarning.DripMinTier}-{TriuneEarning.DripMaxTier} = the aug drip, {TriuneEarning.MinTier}+ = hunting rewards)."); return; }
 
                     var edits = new List<Action<TriuneTierRow>>();
                     for (var i = 3; i + 1 < args.Count; i += 2)
@@ -168,18 +234,31 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// The Triune a tier completes at should be what the NEXT tier's hit / wield gate asks (WeaponScaling MinWieldTriune) -
-        /// the two are tuned separately, so say so when they part (e.g. points 400 at T15 strands players at 400 of the 500
-        /// T16 asks for).
+        /// Each tier's rewards should end where the NEXT tier's gates start (weapon scaling MinWieldCreature / MinWieldAugs /
+        /// MinWieldLife) - the two are tuned separately, so say so when they part (e.g. points 400 at T15 strands players 100
+        /// short of what T16 asks).
         /// </summary>
         private static void WarnTriuneVsHitGate(TriuneEarning.Config cfg, Action<string> Msg)
         {
-            for (var t = TriuneEarning.MinTier; t < TriuneEarning.MaxTier; t++)
+            // the coin-bought Triune and charms are retired: past the luminance caps only rewards and school gems climb
+            if (!cfg.Enabled || !cfg.GemsEnabled)
+                Msg($"  WARNING: hunting rewards {(cfg.Enabled ? "ON" : "OFF")}, school gems {(cfg.GemsEnabled ? "ON" : "OFF")} - with either OFF nobody new can climb past T15 (T16 asks past the luminance caps).");
+            for (var t = TriuneEarning.FirstTier; t < TriuneEarning.MaxTier; t++)
             {
                 var next = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(t + 1);
-                var cap = TriuneEarning.TierCap(cfg, t);
-                if (next != null && next.MinWieldTriune > 0 && next.MinWieldTriune != cap)
-                    Msg($"  WARNING: T{t} completes at {cap:N0} Triune, but T{t + 1} asks for {next.MinWieldTriune:N0} (weapon scaling MinWieldTriune).");
+                if (next == null) continue;
+                var c = TriuneEarning.DripCeiling(cfg, t, cfg.DripBaseCreature);
+                var i = TriuneEarning.DripCeiling(cfg, t, cfg.DripBaseItem);
+                if (next.MinWieldCreature > 0 && next.MinWieldCreature != c)
+                    Msg($"  WARNING: T{t} rewards end at Creature {c:N0}, but T{t + 1} asks for {next.MinWieldCreature:N0} (weapon scaling MinWieldCreature).");
+                if (next.MinWieldAugs > 0 && next.MinWieldAugs != i)
+                    Msg($"  WARNING: T{t} rewards end at Item {i:N0}, but T{t + 1} asks for {next.MinWieldAugs:N0} (weapon scaling MinWieldAugs).");
+                if (next.MinWieldLife > 0 && next.MinWieldLife != i)
+                    Msg($"  WARNING: T{t} rewards end at Life {i:N0}, but T{t + 1} asks for {next.MinWieldLife:N0} (weapon scaling MinWieldLife).");
+                // the attack school gate (every tier since 2026-11-22): a tier's school gems should end where the next tier asks
+                var g = TriuneEarning.GemCeiling(cfg, t);
+                if (!next.SchoolCheckOff && next.MinWieldSkillCharm > 0 && next.MinWieldSkillCharm != g)
+                    Msg($"  WARNING: T{t} school gems end at {g:N0}, but T{t + 1} asks for {next.MinWieldSkillCharm:N0} attack school augs (weapon scaling minwieldskillcharm).");
             }
         }
 
@@ -190,8 +269,11 @@ namespace ACE.Server.Command.Handlers
         private static string BuildTriunePayload(TriuneEarning.Config cfg)
         {
             static string N(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
-            var tiers = string.Join(";", cfg.Tiers.Select(r => string.Join("~", r.Tier.ToString(CultureInfo.InvariantCulture), N(r.FloorKph), N(r.CeilingKph),
-                N(r.SlowWeeks), N(r.FastWeeks), r.Points.ToString(CultureInfo.InvariantCulture), N(r.GemSlowWeeks), N(r.GemFastWeeks))));
+            static string Row(TriuneTierRow r) => string.Join("~", r.Tier.ToString(CultureInfo.InvariantCulture), N(r.FloorKph), N(r.CeilingKph),
+                N(r.SlowWeeks), N(r.FastWeeks), r.Points.ToString(CultureInfo.InvariantCulture), N(r.GemSlowWeeks), N(r.GemFastWeeks));
+            // t= stays T15+ (what the plugin page has always read); the T11-T14 drip rows ride at the END as dt= (append-only)
+            var tiers = string.Join(";", cfg.Tiers.Where(r => r.Tier >= TriuneEarning.MinTier).Select(Row));
+            var dripTiers = string.Join(";", cfg.Tiers.Where(r => TriuneEarning.IsDripTier(r.Tier)).Select(Row));
             return "[[ZCTR]]" + string.Join("|",
                 "on=" + (cfg.Enabled ? "1" : "0"),
                 "gems=" + (cfg.GemsEnabled ? "1" : "0"),
@@ -200,7 +282,10 @@ namespace ACE.Server.Command.Handlers
                 "hour=" + cfg.ResetHour.ToString(CultureInfo.InvariantCulture),
                 "tz=" + (cfg.ResetTimeZone ?? "UTC").Replace("|", "").Replace("~", "").Replace(";", ""),
                 "next=" + TriuneEarning.NextResetText(cfg).Replace("|", " "),
-                "t=" + tiers);
+                "t=" + tiers,
+                "drip=" + (cfg.DripEnabled ? "1" : "0"),
+                "dbase=" + cfg.DripBaseCreature.ToString(CultureInfo.InvariantCulture) + "~" + cfg.DripBaseItem.ToString(CultureInfo.InvariantCulture),
+                "dt=" + dripTiers);
         }
 
         private static bool TryParseDay(string s, out DayOfWeek day)
@@ -214,8 +299,9 @@ namespace ACE.Server.Command.Handlers
 
         private static void ShowTriune(TriuneEarning.Config cfg, Action<string> Msg)
         {
-            Msg($"Triune earning: {(cfg.Enabled ? "ON" : "OFF")}. Own-tier kills only, top damager, straight onto the character.");
-            Msg($"School gems: {(cfg.GemsEnabled ? "ON" : "OFF")}. On the top damager's corpse, a roll per school bought to {cfg.GemBaseCap:N0}+ and under the tier's ceiling.");
+            Msg($"Hunting rewards T15-T25 ('on' / 'off'): {(cfg.Enabled ? "ON" : "OFF")}. T11-T14 ('drip on' / 'drip off'): {(cfg.DripEnabled ? "ON" : "OFF")}. Own-tier kills only, top damager; each reward +1 to ONE of Creature / Item / Life at random (Points rolls per school per tier), straight onto the aug count, up to the tier's end.");
+            Msg($"  Ladder from Creature {cfg.DripBaseCreature:N0} / Item-Life {cfg.DripBaseItem:N0} at T11 ('dripbase'). Login move of the retired Triune / charm counts: {(cfg.MoveOff ? "OFF" : "ON")}.");
+            Msg($"Attack school gems: {(cfg.GemsEnabled ? "ON" : "OFF")}. On the top damager's corpse, a roll per school at the tier's floor (T15+: {cfg.GemBaseCap:N0}) and under its ceiling. T11-T14 gems need drip AND gems on.");
             Msg($"  Week turns {(DayOfWeek)cfg.ResetDay} {cfg.ResetHour:00}:00 {cfg.ResetTimeZone} (next: {TriuneEarning.NextResetText(cfg)}).");
             foreach (var r in cfg.Tiers)
                 Msg(DescribeTriuneTier(cfg, r));
@@ -223,9 +309,10 @@ namespace ACE.Server.Command.Handlers
 
         private static string DescribeTriuneTier(TriuneEarning.Config cfg, TriuneTierRow r)
         {
-            return $"  T{r.Tier}: {r.Points} points, complete at {TriuneEarning.TierCap(cfg, r.Tier):N0} | floor {r.FloorKph:0.#} kph = {r.SlowWeeks:0.#} wk"
-                + $" (1 per {TriuneEarning.KillsPerPoint(TriuneEarning.Rate1(r))} kills to {TriuneEarning.Band1Kills(r):N0}/wk)"
-                + $" | ceiling {r.CeilingKph:0.#} kph = {r.FastWeeks:0.#} wk (1 per {TriuneEarning.KillsPerPoint(TriuneEarning.Rate2(r))} kills to"
+            var done = $"ends at Creature {TriuneEarning.DripCeiling(cfg, r.Tier, cfg.DripBaseCreature):N0} / Item-Life {TriuneEarning.DripCeiling(cfg, r.Tier, cfg.DripBaseItem):N0}";
+            return $"  T{r.Tier}: {r.Points} rolls per school, {done} | floor {r.FloorKph:0.#} kph = {r.SlowWeeks:0.#} wk"
+                + $" ({TriuneEarning.RewardPace(TriuneEarning.Rate1(r))} to {TriuneEarning.Band1Kills(r):N0}/wk)"
+                + $" | ceiling {r.CeilingKph:0.#} kph = {r.FastWeeks:0.#} wk ({TriuneEarning.RewardPace(TriuneEarning.Rate2(r))} to"
                 + $" {TriuneEarning.Band1Kills(r) + TriuneEarning.Band2Kills(r):N0}/wk)"
                 + $" | gems {r.GemSlowWeeks:0.#} / {r.GemFastWeeks:0.#} wk: 1 per {TriuneEarning.KillsPerPoint(TriuneEarning.GemChance1(r))}"
                 + $" then 1 per {TriuneEarning.KillsPerPoint(TriuneEarning.GemChance2(r))} kills per school, school ceiling {TriuneEarning.GemCeiling(cfg, r.Tier):N0}";

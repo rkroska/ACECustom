@@ -480,27 +480,40 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("aug", AccessLevel.Player, CommandHandlerFlag.None, "Handles Augmentation Reporting", "")]
+        /// <summary>
+        /// /aug (and /augs, and the old /triune): every augmentation count - one number per school (owner 2026-11-22: luminance
+        /// bought, kills and gems all sit on it) - then this week's hunting rewards (TriuneEarning.StatusLines).
+        /// </summary>
+        [CommandHandler("aug", AccessLevel.Player, CommandHandlerFlag.None, "Shows your augmentations and this week's hunting rewards", "")]
         public static void HandleAugmentReport(Session session, params string[] parameters)
         {
-            session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Advanced Augmentation Levels:", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Creature:{session.Player.LuminanceAugmentCreatureCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Item:{session.Player.LuminanceAugmentItemCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Life:{session.Player.LuminanceAugmentLifeCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"War:{session.Player.LuminanceAugmentWarCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Void:{session.Player.LuminanceAugmentVoidCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Duration: {session.Player.LuminanceAugmentSpellDurationCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Specialization: {session.Player.LuminanceAugmentSpecializeCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Summon: {session.Player.LuminanceAugmentSummonCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Melee: {session.Player.LuminanceAugmentMeleeCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Missile: {session.Player.LuminanceAugmentMissileCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Triune Weave: {session.Player.TriuneWeaveCount:N0} (adds +{session.Player.TriuneWeaveCount:N0} to Creature, Item, and Life)", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Battlemage's Wrath Charm: {session.Player.GetProperty(PropertyInt64.BattlemagesWrathCharmCount) ?? 0:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Nether Veil Charm: {session.Player.GetProperty(PropertyInt64.NetherVeilCharmCount) ?? 0:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Crashing Steel Charm: {session.Player.GetProperty(PropertyInt64.CrashingSteelCharmCount) ?? 0:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"True Shot Charm: {session.Player.GetProperty(PropertyInt64.TrueShotCharmCount) ?? 0:N0}", ChatMessageType.Broadcast));
+            var player = session?.Player;
+            if (player == null)
+                return;
+
+            void Say(string line) => session.Network.EnqueueSend(new GameMessageSystemChat(line, ChatMessageType.Broadcast));
+
+            Say("---------------------------");
+            Say("Advanced Augmentation Levels:");
+            // the counts every gate reads: a character not moved yet (the move off) still shows its Triune / charm power
+            Say($"Creature: {player.EffectiveCreatureAugCount:N0}");
+            Say($"Item: {player.EffectiveItemAugCount:N0}");
+            Say($"Life: {player.EffectiveLifeAugCount:N0}");
+            Say($"War: {player.EffectiveWarAugCount:N0}");
+            Say($"Void: {player.EffectiveVoidAugCount:N0}");
+            Say($"Melee: {player.EffectiveMeleeAugCount:N0}");
+            Say($"Missile: {player.EffectiveMissileAugCount:N0}");
+            Say($"Duration: {player.LuminanceAugmentSpellDurationCount ?? 0:N0}");
+            Say($"Specialization: {player.LuminanceAugmentSpecializeCount ?? 0:N0}");
+            Say($"Summon: {player.LuminanceAugmentSummonCount ?? 0:N0}");
+
+            // one message per line: the client is not relied on to break a line inside one message
+            foreach (var line in ACE.Server.Managers.ZoneControl.TriuneEarning.StatusLines(player))
+                Say(line);
         }
+
+        [CommandHandler("augs", AccessLevel.Player, CommandHandlerFlag.None, "Shows your augmentations and this week's hunting rewards", "")]
+        public static void HandleAugmentReportAlias(Session session, params string[] parameters) => HandleAugmentReport(session, parameters);
 
         //custom commands
         /// <summary>

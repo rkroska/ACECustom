@@ -128,6 +128,11 @@ namespace ACE.Server.Factories
         /// <summary>Item augmentations required to wield any tier-11+ drop (owner 2026-07-20).</summary>
         public const int ZoneLootSetWieldItemAugs = 2000;
 
+        /// <summary>The Item augmentations a tier's gear asks (StampTierGates): the row's MinWieldAugs, or the 2,000 floor when the
+        /// row has none (a stored 0). /testchar preset reads the same number, so a preset can always wear its own suit.</summary>
+        public static int WieldItemAugs(ACE.Server.Managers.WeaponScaling.WeaponScalingTier row)
+            => row != null && row.MinWieldAugs > 0 ? row.MinWieldAugs : ZoneLootSetWieldItemAugs;
+
         /// <summary>Chance that one HELM / GLOVE / BOOT draw ATTEMPT uses the retail CLOTHING table (owner 2026-10-06: cowls, caps,
         /// shoes and gloves belong to the armor slots they cover; robes take none - IsArmorSlotClothing). The share of drops that
         /// end up clothing also depends on how often each table yields that slot (rejected attempts re-roll).</summary>
@@ -185,7 +190,7 @@ namespace ACE.Server.Factories
         public readonly record struct ZoneSetWeaponPick(int Family, ZoneSetWeaponVariant Variant);
 
         /// <summary>
-        /// The tier-11+ wield gates (StampTierGates: item / Creature / Life augs at T11-T15, Triune Weave from T16), replacing
+        /// The tier-11+ wield gates (StampTierGates: Item / Creature / Life augs at every tier since the 2026-11-22 Triune retire), replacing
         /// every requirement StripWieldRequirements removed. Validated server-side by the
         /// WieldRequirement.Int64Stat case. The client cannot render this requirement type, so
         /// the LongDesc block carries the lines instead (non-weapons; weapons show them in Property Details).
@@ -213,8 +218,8 @@ namespace ACE.Server.Factories
 
         /// <summary>LIVE re-stamp of a recorded piece's wield gates from the current tier row (owner 2026-08-23:
         /// "change live and for existing pieces"). Called from ZoneStatResolver.Apply so every equip / login /
-        /// ladder apply refreshes slots 1, 3 and 4 (StampTierGates: item / Creature / Life augs at T11-T15, Triune Weave
-        /// from T16) - weapons too since 2026-10-05 - and, for non-weapons, rewrites the LongDesc gate block. Returns the
+        /// ladder apply refreshes slots 1, 3 and 4 (StampTierGates: item / Creature / Life augs at every tier since 2026-11-22)
+        /// - weapons too since 2026-10-05 - and, for non-weapons, rewrites the LongDesc gate block. Returns the
         /// number of properties changed.</summary>
         public static int RefreshWieldGate(WorldObject wo, int tier)
         {
@@ -228,7 +233,7 @@ namespace ACE.Server.Factories
             // for anyone who equips during it: switch off -> gate gone -> a 0-aug character equips a T25
             // piece -> switch on -> the piece re-resolves to full ladder stats while the restored gate is
             // never rechecked, because they are already wearing it. They keep it until they choose to
-            // unequip. Keeping the gate costs only cosmetics (a T25 piece asks 5,000 Triune while its stats
+            // unequip. Keeping the gate costs only cosmetics (a T25 piece asks its full aug gate while its stats
             // read T10 in fallback); clearing it costs a hole. DO NOT re-add the clearing branch.
             // T11+ RARES, Ascendant (owner 2026-10-09): the gates are those of the tier the item DROPPED in, not of its own
             // (higher) tier. Resolved here as well as inside StampTierGates so the "is there a row" test below asks about
@@ -276,8 +281,8 @@ namespace ACE.Server.Factories
             return changed;
         }
 
-        /// <summary>The "Wield requires:" block: one line per tier gate, in the portal gem's order (Creature, Item, Life), then
-        /// Triune - armour / jewelry carry it in LongDesc, weapons in Property Details.</summary>
+        /// <summary>The "Wield requires:" block: one line per tier gate, in the portal gem's order (Creature, Item, Life) -
+        /// armour / jewelry carry it in LongDesc, weapons in Property Details.</summary>
         public static string WieldLineFor(WorldObject wo)
         {
             var lines = new List<string>();
@@ -303,11 +308,13 @@ namespace ACE.Server.Factories
             (int)PropertyInt64.LumAugCreatureCount => "Creature Augmentations",
             (int)PropertyInt64.LumAugItemCount => "Item Augmentations",
             (int)PropertyInt64.LumAugLifeCount => "Life Augmentations",
-            (int)PropertyInt64.TriuneWeaveCount => "Triune Weave",
-            (int)PropertyInt64.CrashingSteelCharmCount => "Crashing Steel",
-            (int)PropertyInt64.TrueShotCharmCount => "True Shot",
-            (int)PropertyInt64.BattlemagesWrathCharmCount => "Battlemage's Wrath",
-            (int)PropertyInt64.NetherVeilCharmCount => "Nether Veil",
+            // retired 2026-11-22 (Triune retire): an old gate that still names one of these reads the augmentations past the
+            // T15 caps (Creature.GetInt64ForGate) and is re-stamped to Creature / Item / Life on the next equip or login
+            (int)PropertyInt64.TriuneWeaveCount => "Creature, Item and Life Augmentations past T15",
+            (int)PropertyInt64.CrashingSteelCharmCount => "Melee Augmentations past 4,000",
+            (int)PropertyInt64.TrueShotCharmCount => "Missile Augmentations past 4,000",
+            (int)PropertyInt64.BattlemagesWrathCharmCount => "War Augmentations past 4,000",
+            (int)PropertyInt64.NetherVeilCharmCount => "Void Augmentations past 4,000",
             _ => null,
         };
 
@@ -322,9 +329,9 @@ namespace ACE.Server.Factories
 
         /// <summary>
         /// THE tier gate rule (owner 2026-10-05), shared by new drops and the live re-stamp of existing gear:
-        ///   T11-T15 (a tier row with no Triune): Item augs (slot 1) + Creature augs (slot 3) + Life augs (slot 4) - the same
+        ///   Every tier (one rule since 2026-11-22): Item augs (slot 1) + Creature augs (slot 3) + Life augs (slot 4) - the same
         ///           numbers as the tier's portal gem, from the weaponscaling tier row (minwield / minwieldcreature / minwieldlife).
-        ///   T16+   (a tier row with Triune):    Triune Weave only (slot 3); slots 1 and 4 are cleared.
+        ///           (Until 2026-11-22 T16+ asked Triune Weave only, in slot 3.)
         /// Slot 2 is never touched (the forge's training requirement lives there). Setting a gate takes its slot whatever it held
         /// (the tier gate must never be missing); CLEARING a slot only removes one of OUR gates, never an unrelated requirement.
         /// Returns the number of slots that changed.
@@ -334,29 +341,21 @@ namespace ACE.Server.Factories
         /// ApplyZoneWieldRequirement, and the live re-stamps before a wield check, on appraise, on re-resolve and after a
         /// Salvage Bag through RefreshWieldGate - ends here. So the Ascendant rule lives here and nowhere else: an item that
         /// stores the tier it dropped in (ZoneRare.GateTierOf) gets THAT tier's gates, whatever tier the caller passes. With
-        /// the row swapped before the T11-T15 / T16+ branch is chosen, a T18 item found in T15 gets the three aug gates and a
-        /// T25 item found in T22 gets the T22 Triune gate. Every other item has no stored gate tier and is untouched.
+        /// the row swapped first, a T18 item found in T15 gets the T15 aug gates and a T25 item found in T22 the T22 ones.
+        /// Every other item has no stored gate tier and is untouched.
         /// </summary>
         public static int StampTierGates(WorldObject wo, int tier)
         {
             if (wo == null) return 0;
             tier = ACE.Server.Managers.ZoneControl.ZoneRare.GateTierOf(wo, tier);
             var row = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier);
-            var triune = row?.MinWieldTriune ?? 0;
+            // ONE rule at every tier since the Triune retire (owner 2026-11-22): Item, Creature and Life augs at the row's numbers.
+            // An item stamped with the old T16+ Triune gate (slot 3) is re-stamped here on its next wield check or appraise.
             var changed = 0;
-            if (triune > 0)
-            {
-                changed += SetGate(wo, 1, null, 0);
-                changed += SetGate(wo, 3, PropertyInt64.TriuneWeaveCount, triune);
-                changed += SetGate(wo, 4, null, 0);
-            }
-            else
-            {
-                var item = row != null && row.MinWieldAugs > 0 ? row.MinWieldAugs : ZoneLootSetWieldItemAugs;
-                changed += SetGate(wo, 1, PropertyInt64.LumAugItemCount, item);
-                changed += SetGate(wo, 3, PropertyInt64.LumAugCreatureCount, row?.MinWieldCreature ?? 0);
-                changed += SetGate(wo, 4, PropertyInt64.LumAugLifeCount, row?.MinWieldLife ?? 0);
-            }
+            var item = WieldItemAugs(row);
+            changed += SetGate(wo, 1, PropertyInt64.LumAugItemCount, item);
+            changed += SetGate(wo, 3, PropertyInt64.LumAugCreatureCount, row?.MinWieldCreature ?? 0);
+            changed += SetGate(wo, 4, PropertyInt64.LumAugLifeCount, row?.MinWieldLife ?? 0);
             return changed;
         }
 

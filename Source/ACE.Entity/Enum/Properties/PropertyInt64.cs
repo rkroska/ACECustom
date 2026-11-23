@@ -28,7 +28,11 @@ namespace ACE.Entity.Enum.Properties
         AllegianceXPReceived  = 9002,
         VerifyXp              = 9003,
 
-        BankedPyreals         = 9004,
+        // Every bank balance goes to the owner's client (owner 2026-11-22): in the login packet ([SendOnLogin]) and on each
+        // change, batched with XP (Player_Xp.QueueBankUpdate) - a plugin reads them the way it reads XP and luminance.
+        [SendOnLogin]
+        BankedPyreals        = 9004,
+        [SendOnLogin]
         BankedLuminance       = 9005,
         QuestCount            = 9006,
         LumAugCreatureCount   = 9007,
@@ -40,26 +44,32 @@ namespace ACE.Entity.Enum.Properties
         AllegianceLumCached   = 9012,
         AllegianceLumGenerated= 9013,
         AllegianceLumReceived = 9014,
+        [SendOnLogin]
         BankedLegendaryKeys   = 9015,
         LumAugDurationCount   = 9016,
         LumAugSpecializeCount = 9017,
         LumAugSummonCount     = 9018,
+        [SendOnLogin]
         BankedEnlightenedCoins = 9020,
+        [SendOnLogin]
         BankedMythicalKeys     = 9021,
         LumAugMeleeCount       = 9022,
         LumAugMissileCount     = 9023,
         LumAugMeleeDefenseCount = 9024,
         LumAugMissileDefenseCount = 9025,
         LumAugMagicDefenseCount = 9026,
+        [SendOnLogin]
         BankedWeaklyEnlightenedCoins = 9027,
 
         // 50000+ block (matches the PropertyInt/PropertyBool charm-system ids)
-        /// <summary>Charm of the Triune Weave: each point grants +1 Creature, +1 Item, and +1 Life augmentation on top of the (capped) gem-bought counts.</summary>
+        /// <summary>RETIRED 2026-11-22 (Triune retire): was the Charm of the Triune Weave count (+1 Creature / Item / Life each).
+        /// The login move (AugMove) adds it onto LumAugCreature / Item / Life and removes it; nothing grants it any more. A gate
+        /// that still names it (old gear, quest checks, portals) reads the larger of "growth past T15" and the value the move
+        /// took (Creature.GetInt64ForGate).</summary>
         TriuneWeaveCount       = 50000,
-        // School charm counters. Each adds to its own school's effective augmentation count at
-        // bonus-application sites, which is how a player passes the 4,000 cap: the cap bounds what
-        // luminance can buy, and a charm is a separate path bought with Prestige Coins. Purchases,
-        // the caps themselves and progression gates all still read the raw LumAug counts.
+        // RETIRED 2026-11-22: the four school charm counters (War / Void / Melee / Missile). The login move adds each onto
+        // its LumAug school and removes it. A gate naming one reads the larger of that school past 4,000 and the value the move
+        // took (Creature.GetInt64ForGate).
         /// <summary>Charm of the Battlemage's Wrath (War).</summary>
         BattlemagesWrathCharmCount = 50001,
         /// <summary>Charm of the Nether Veil (Void).</summary>
@@ -78,17 +88,74 @@ namespace ACE.Entity.Enum.Properties
         /// Prestige Coin (19860000) bank balance (owner 2026-10-04): deposit / withdraw only - Bonded + Attuned, never transferable.
         /// 50601, free in EVERY Property enum - moved off 9028 before release (upstream ACE owns the 90xx range).
         /// </summary>
+        [SendOnLogin]
         BankedPrestigeCoins    = 50601,
         /// <summary>
         /// Enlightenment Token (300000) bank balance (owner 2026-10-13): deposit / withdraw only, exactly like Prestige Coins -
         /// Bonded + Attuned, never transferable. 50602, free in EVERY Property enum.
         /// </summary>
+        [SendOnLogin]
         BankedEnlightenmentTokens = 50602,
         /// <summary>
         /// Triune earning (owner 2026-11-01), on a CHARACTER: the start of the week its Triune kill count belongs to (Unix
         /// seconds of the last weekly reset). A kill in a newer week resets the count. 50650, free in EVERY Property enum.
         /// </summary>
         TriuneWeekStart        = 50650,
+        // RETIRED 2026-11-22 (one stat, owner): the T11-T14 drip counters were never live (TEST only). Earned augs now go
+        // straight onto LumAug*; the login move adds any held drip onto LumAug and removes these. 50660-50666, keep the ids.
+        /// <summary>T11-T14 drip: Creature augs earned from kills.</summary>
+        AugDripCreatureCount   = 50660,
+        /// <summary>T11-T14 drip: Item augs earned from kills.</summary>
+        AugDripItemCount       = 50661,
+        /// <summary>T11-T14 drip: Life augs earned from kills.</summary>
+        AugDripLifeCount       = 50662,
+        /// <summary>T11-T14 drip: War augs from earned T11-T14 school gems.</summary>
+        AugDripWarCount        = 50663,
+        /// <summary>T11-T14 drip: Void augs from earned T11-T14 school gems.</summary>
+        AugDripVoidCount       = 50664,
+        /// <summary>T11-T14 drip: Melee augs from earned T11-T14 school gems.</summary>
+        AugDripMeleeCount      = 50665,
+        /// <summary>T11-T14 drip: Missile augs from earned T11-T14 school gems.</summary>
+        AugDripMissileCount    = 50666,
+        // Hunting rewards (owner 2026-11-22, Triune retire): T11-T25 own-tier kills earn rewards, each +1 to ONE of Creature /
+        // Item / Life at random, from a budget of rolls per school per tier. PropertyInt64 50667-50677 (PropertyString 50667 is
+        // the move record, a different table).
+        // All of them are SENT to the owner's client (at login and whenever they change), so a plugin can draw the
+        // "Hunting rewards" block live, the way it reads banked luminance - no command to poll.
+        /// <summary>The tier the roll counts below belong to (the player's own tier when they last earned or logged in). 0 = none.</summary>
+        [SendOnLogin]
+        AugRollTier            = 50667,
+        /// <summary>Rolls taken this tier that landed on (or were lost on) Creature.</summary>
+        [SendOnLogin]
+        AugRollsCreature       = 50668,
+        /// <summary>Rolls taken this tier on Item.</summary>
+        [SendOnLogin]
+        AugRollsItem           = 50669,
+        /// <summary>Rolls taken this tier on Life.</summary>
+        [SendOnLogin]
+        AugRollsLife           = 50670,
+        /// <summary>Own-tier kills counted this week (a whole-number mirror of PropertyFloat.TriuneWeekKills). Read it as 0
+        /// once the time in AugHuntWeekResetAt has passed - the count only starts again on the next kill.</summary>
+        [SendOnLogin]
+        AugHuntWeekKills       = 50671,
+        /// <summary>When the week turns (Unix seconds, UTC).</summary>
+        [SendOnLogin]
+        AugHuntWeekResetAt     = 50672,
+        /// <summary>Kills a week at the full pace (the first band ends here: 33,600 at the defaults).</summary>
+        [SendOnLogin]
+        AugHuntBand1Kills      = 50673,
+        /// <summary>Kills a week after which nothing is earned (the second band ends here: 67,200 at the defaults).</summary>
+        [SendOnLogin]
+        AugHuntBand2Kills      = 50674,
+        /// <summary>Kills per reward in the first band, rounded (134 at T15). 0 = no rewards here right now.</summary>
+        [SendOnLogin]
+        AugHuntKillsPerReward1 = 50675,
+        /// <summary>Kills per reward in the second band, rounded (269 at T15). 0 = none.</summary>
+        [SendOnLogin]
+        AugHuntKillsPerReward2 = 50676,
+        /// <summary>Rolls each school has this tier (500 at the defaults). 0 = no rewards here right now.</summary>
+        [SendOnLogin]
+        AugHuntRollsPerSchool  = 50677,
         // Levelled charm coin ledger (owner 2026-10-24): the PLAYER keeps the Prestige Coins put into each levelled charm
         // with Charm Infusion Gems; the level (1-100) is worked out from them by the charm's live price curve, so a retune
         // re-levels everyone without touching what they spent. The charm item only shows the level (PropertyInt.CharmLevel

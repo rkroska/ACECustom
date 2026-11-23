@@ -15,7 +15,19 @@ namespace ACE.Server.Managers
         [JsonRequired] public double Curse { get; init; }
         [JsonRequired] public double Streak { get; init; }
         [JsonRequired] public double Fracture { get; init; }
-        [JsonRequired] public double Radius { get; init; }
+        // 2026-11-22 owner: the burst reaches as far as the releasing player's Pandemic spread range (/charm pandemic range, at
+        // their charm level). A zone's Radius, when set, overrides it (2-20 m); unset (or "set radius charm") = follow the charm.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? Radius { get; init; }
+        public double BurstRadius(double charmRange) => Radius ?? NetherFractureMath.CharmBurstRadius(charmRange);
+        // 2026-11-22 owner: per-zone bank / window / targets (were fixed in code). Optional - a zone without them uses the
+        // old fixed values (20 pct, 8 s, 4), and they are only written to the file once set, so an unchanged file stays as it was.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? Bank { get; init; }     // pct of DoT damage banked, 0-100
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? Window { get; init; }   // s the bank remembers = cooldown, 2-30
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? Targets { get; init; }  // most monsters one burst hits, 1-10
+        public double BankPercent() => Bank ?? NetherFractureMath.BankPercent;
+        public double BankShare() => BankPercent() / 100;
+        public double WindowSeconds() => Window ?? NetherFractureMath.BankSeconds;
+        public int TargetCount() => (int)(Targets ?? NetherFractureMath.TargetCap);
     }
 
     public sealed class NetherFractureConfiguration
@@ -41,7 +53,10 @@ namespace ACE.Server.Managers
                     throw new InvalidDataException("Invalid or duplicate Nether Fracture named zone.");
                 if (new[] { z.Corrosion, z.Corruption, z.Curse, z.Streak }.Any(n => !double.IsFinite(n) || n < 0 || n > 5)
                     || !double.IsFinite(z.Fracture) || z.Fracture < 0 || z.Fracture > 10
-                    || !double.IsFinite(z.Radius) || z.Radius < 2 || z.Radius > 8)
+                    || z.Radius is double r && (!double.IsFinite(r) || r < 2 || r > 20)
+                    || z.Bank is double b && (!double.IsFinite(b) || b < 0 || b > 100)
+                    || z.Window is double w && (!double.IsFinite(w) || w < 2 || w > 30)
+                    || z.Targets is double t && (!double.IsFinite(t) || t < 1 || t > 10 || t != Math.Floor(t)))
                     throw new InvalidDataException("Nether Fracture tuning is out of range.");
             }
             return new NetherFractureConfiguration { SchemaVersion = 1, Enabled = result.Enabled,
@@ -88,10 +103,15 @@ namespace ACE.Server.Managers
     public static class NetherFractureMath
     {
         public const double BankShare = .20;
+        public const double BankPercent = 20;   // the same default as a percent (printed as-is: 0.2 * 100 is not exactly 20)
         public const double GroupDotCap = 2;
         public const double BankSeconds = 8;
         public const double CooldownSeconds = 8;
         public const int TargetCap = 4;
+        public const double MinBurstRadius = 2, MaxBurstRadius = 20;
+        /// <summary>The Pandemic spread range as a burst radius: kept to the same 2-20 m a zone's own radius may be.</summary>
+        public static double CharmBurstRadius(double charmRange) =>
+            double.IsFinite(charmRange) ? Math.Clamp(charmRange, MinBurstRadius, MaxBurstRadius) : MinBurstRadius;
         public static double GroupFactor(int casters, double total, double strongest) =>
             casters <= 1 || total <= 0 ? 1 : Math.Min(1, GroupDotCap * strongest / total);
 

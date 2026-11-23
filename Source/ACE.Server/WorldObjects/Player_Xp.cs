@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 using ACE.Common.Extensions;
@@ -216,27 +217,29 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// The bank's luminance changed (owner 2026-09-23): send it to the client with the XP batch. It rides a batch that is
-        /// already running - no timer of its own - and starts the same batch when none is (a transfer, a card table, a
-        /// character that no longer gains XP). Only the luminance value is sent, never the rest of the bank, and at most once
-        /// per batch window however fast it changes. Called from the BankedLuminance setter (Player_Bank.cs).
+        /// A bank balance changed: send it to the client with the XP batch (luminance since 2026-09-23, every bank balance since
+        /// 2026-11-22 - a plugin shows them live). It rides a batch that is already running - no timer of its own - and starts
+        /// the same batch when none is (a transfer, a card table, a character that no longer gains XP). Only the balances that
+        /// changed are sent, each at most once per batch window however fast it changes. Called from the bank setters
+        /// (Player_Bank.cs).
         /// </summary>
-        private void QueueBankedLuminanceUpdate()
+        private void QueueBankUpdate(PropertyInt64 prop)
         {
             if (Session == null)
                 return;
 
             lock (xpBatchLock)
             {
-                bankedLumChanged = true;
+                bankChanged.Add(prop);
                 EnsureXpBatchChain();
             }
         }
 
-        private bool bankedLumChanged;
+        /// <summary>The bank balances changed since the last batch (guarded by xpBatchLock).</summary>
+        private readonly HashSet<PropertyInt64> bankChanged = new HashSet<PropertyInt64>();
 
         /// <summary>
-        /// Sends the accumulated XP update to the client, and the banked luminance when it changed in the same window.
+        /// Sends the accumulated XP update to the client, and every bank balance that changed in the same window.
         /// </summary>
         private void FlushBatchedXpUpdate()
         {
@@ -249,11 +252,9 @@ namespace ACE.Server.WorldObjects
                     pendingXpUpdate = 0;
                     CheckForLevelup();
                 }
-                if (bankedLumChanged)
-                {
-                    Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, BankedLuminance ?? 0));
-                    bankedLumChanged = false;
-                }
+                foreach (var prop in bankChanged)
+                    Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, prop, GetProperty(prop) ?? 0));   // the stored number, a locked bank (#618) included - as the login packet sends it (owner 2026-11-22)
+                bankChanged.Clear();
                 xpBatchChain = null;
             }
         }

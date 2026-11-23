@@ -1485,7 +1485,8 @@ namespace ACE.Server.WorldObjects
                     flatDamage:     flatDmg,
                     scanOrigin:     this,    // Scan the player's reliable ObjMaint (always populated) instead of target's (empty on static dummies like Winning Idol)
                     fromProc:       true,    // CR-4: suppress War Magic proficiency tick for procs
-                    losOrigin:      target); // line of sight is traced from the blast, not the archer
+                    losOrigin:      target,  // line of sight is traced from the blast, not the archer
+                    gateSchool:     ACE.Server.Managers.ZoneControl.TierHitGate.AttackSchool.Missile); // an arrow's blast: the hit gate asks Missile
             });
             actionChain.EnqueueChain();
         }
@@ -1685,6 +1686,8 @@ namespace ACE.Server.WorldObjects
                             {
                                 // this cast needed no line of sight, so a ring it procs gets no exemption for the target
                                 RingProcTriggerUnreached = true;
+                                var prevTriggerSchool = ProcTriggerSchool;
+                                ProcTriggerSchool = ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, null);
                                 try
                                 {
                                     TryProcEquippedItems(this, targetCreature, false, caster);
@@ -1692,6 +1695,7 @@ namespace ACE.Server.WorldObjects
                                 finally
                                 {
                                     RingProcTriggerUnreached = false;
+                                    ProcTriggerSchool = prevTriggerSchool;
                                 }
                             }
 
@@ -2089,6 +2093,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         internal bool RingProcTriggerUnreached;
 
+        /// <summary>
+        /// The hit-gate school of the War / Void spell whose hit is procing the equipped items right now (set around
+        /// TryProcEquippedItems for a spell hit). A worn Cast on Strike jewel that fires off it asks this school - a Void mage's
+        /// Flame Streak jewel proc asks Void, as the bolt that fired it did. Transient, never persisted.
+        /// </summary>
+        internal ACE.Server.Managers.ZoneControl.TierHitGate.AttackSchool? ProcTriggerSchool;
+
         /// <summary>TRUE if the object stands in an interior cell (dungeon, building interior, basement).</summary>
         internal static bool IsInteriorCell(WorldObject wo)
         {
@@ -2173,7 +2184,7 @@ namespace ACE.Server.WorldObjects
         /// player it hits (T11+ ZcCloakProcs and the retail ones) and the hit messages. The optional arguments are the
         /// overrides the proc paths pass (Explosive Arrow, Cast on Strike rings).
         /// </summary>
-        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null, WorldObject lowTierItem = null)
+        internal void ApplyRingSpellAreaDamage(Spell spell, Position centerOverride = null, float radiusOverride = 0f, float heightOverride = 0f, float flatDamage = 0f, WorldObject scanOrigin = null, bool fromProc = false, float lifeProjectileDamage = 0f, double procBaseDamage = 0, WorldObject procWeapon = null, double procVariance = 0, WorldObject losOrigin = null, WorldObject losExempt = null, WorldObject lowTierItem = null, ACE.Server.Managers.ZoneControl.TierHitGate.AttackSchool? gateSchool = null)
         {
             var center = centerOverride ?? Location;
             if (center == null) return;
@@ -2351,8 +2362,13 @@ namespace ACE.Server.WorldObjects
                     // a jewelry Cast on Strike ring (key 54) has no B value but its own spellcraft stamp - it resists on that too,
                     // not the wearer's own War / Void skill (2026-10-06)
                     var jewelProc = fromProc && (weapon?.GetProperty((PropertyInt)ACE.Server.Managers.ZoneControl.ZoneModifiers.JewelProcPowerPct) ?? 0) > 0;
-                    var resisted = TryResistSpell(creature, spell, fromProc && (procBaseDamage > 0 || jewelProc) ? weapon : null, true);
-                    if (resisted && !(Overpower != null && Creature.GetOverpower(this, creature)))
+                    // the hit gate asks the school of what FIRED the ring (a proc follows its weapon: a melee weapon -> Melee, a
+                    // launcher -> Missile), not the resist item, which is null for a proc with no B value
+                    var ringSchool = gateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, (fromProc ? weapon : null) ?? lowTierItem);   // a retail proc ring (fromProc off, procWeapon null) still follows its real proccing item
+                    var resisted = TryResistSpell(creature, spell, fromProc && (procBaseDamage > 0 || jewelProc) ? weapon : null, true, ringSchool);
+                    // Overpower lands an ordinary resist, never a hit-gate block (the gate already told the player in TryResistSpell)
+                    if (resisted && !(Overpower != null && Creature.GetOverpower(this, creature)
+                            && ACE.Server.Managers.ZoneControl.TierHitGate.CanHit(this, creature, out _, ringSchool)))
                     {
                         dbgResist++;
                         continue;
