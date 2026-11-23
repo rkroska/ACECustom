@@ -249,6 +249,7 @@ objects already in the world keep the emotes they spawned with.
 `InqIPQuest` limits a quest to **Amount** characters (default 2) per IP address within the quest's `min_Delta`.
 Use it beside `InqAccountQuest`, not instead of it: account gate first, then the IP gate, gives "once per account,
 at most N per IP".
+For a whole daily (locks, streak ladder, Marks of Favor rewards) see [DAILY_QUEST_TOOLKIT.md](DAILY_QUEST_TOOLKIT.md).
 
 - **Who counts:** every character on the player's own account, on every account with a character online from
   the same address, and on every account whose last login came from that address (`account.last_Login_I_P`).
