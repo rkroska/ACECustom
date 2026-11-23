@@ -2452,7 +2452,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false, SpellChain chain = null, bool splitCastExtra = false)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false, SpellChain chain = null, bool splitCastExtra = false, ACE.Server.Managers.ZoneControl.TierHitGate.AttackSchool? gateSchool = null)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2536,8 +2536,9 @@ namespace ACE.Server.WorldObjects
 
                 sp.ProjectileLauncher = weapon;
                 sp.IsWeaponSpell = isWeaponSpell;
-                // the hit gate's school, NOW (impact reads it): the same rule TryResistSpell applies to its resist item
-                sp.GateSchool = ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, isWeaponSpell ? weapon : this);
+                // the hit gate's school, NOW (impact reads it): the same rule TryResistSpell applies to its resist item. A fork or
+                // a chain jump passes its parent's school, so it is gated like the bolt that made it (not on the state at launch)
+                sp.GateSchool = gateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, isWeaponSpell ? weapon : this);
 
                 sp.SetProjectilePhysicsState(sp.ProjectileTarget, useGravity);
                 sp.SpawnPos = new Position(sp.Location);

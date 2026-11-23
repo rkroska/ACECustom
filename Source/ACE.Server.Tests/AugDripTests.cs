@@ -185,6 +185,16 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Kills_Per_Reward_Is_Bounded_For_A_Tiny_Paying_Rate()
+        {
+            // two almost equal week values: a rate so small its reciprocal does not fit in a long - still a paying band
+            Assert.AreEqual(TriuneEarning.MaxKillsPerReward, TriuneEarning.KillsPerReward(1e-300));
+            Assert.AreEqual(TriuneEarning.MaxKillsPerReward, TriuneEarning.KillsPerReward(double.Epsilon));
+            Assert.AreEqual(1, TriuneEarning.KillsPerReward(1e300), "a huge rate is still 1, never 0");
+            Assert.AreEqual(0, TriuneEarning.KillsPerReward(double.NaN));
+        }
+
+        [TestMethod]
         public void Left_Text_Reads_Like_The_Owners_Block()
         {
             Assert.AreEqual("2 days 4 hours", TriuneEarning.LeftText(new TimeSpan(2, 4, 30, 0)));

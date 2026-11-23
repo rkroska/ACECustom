@@ -253,6 +253,7 @@ namespace ACE.Server.Tests
             Assert.AreEqual((6000, 4000, 4000, 0, 0), (t15.MinWieldCreature, t15.MinWieldAugs, t15.MinWieldLife, t15.MinWieldTriune, t15.MinWieldSkillCharm), "below T16 untouched");
             Assert.AreEqual(WeaponScalingManager.DefaultMinWieldSchool(20), noSchool.MinWieldSkillCharm, "no school number = the default");
             Assert.AreEqual((8500, 6500, 6500), (noSchool.MinWieldCreature, noSchool.MinWieldAugs, noSchool.MinWieldLife));
+            Assert.AreEqual((500, 0, 2500), (old.FoldedTriune, t15.FoldedTriune, noSchool.FoldedTriune), "the fold keeps what it added (the tuning basis counts it once)");
         }
 
         [TestMethod]

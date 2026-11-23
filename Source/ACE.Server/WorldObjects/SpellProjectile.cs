@@ -1217,7 +1217,7 @@ namespace ACE.Server.WorldObjects
                     ProjectileLauncher, IsWeaponSpell, fromProc: true,
                     forkOrigins, forkVelocity, LifeProjectileDamage,
                     originOverride: hitTarget, directionOverride: hitTarget,
-                    isForkProjectile: true, forkDamageMult: damageMult, handCastFork: !FromProc);
+                    isForkProjectile: true, forkDamageMult: damageMult, handCastFork: !FromProc, gateSchool: GateSchool);
             }
         }
 

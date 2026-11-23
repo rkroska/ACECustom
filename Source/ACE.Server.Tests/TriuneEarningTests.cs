@@ -225,6 +225,17 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Gem_Pickup_Carried_Gems_Below_Their_Floor_Take_No_Room()
+        {
+            // CodeRabbit #620: at 4,450 a T15 gem (ceiling 5,000 here) is usable; 50 carried T14 gems whose floor was raised to
+            // 4,600 cannot be used (the use refuses below the floor), so they must not make the T15 gem crumble
+            Assert.AreEqual(550, SchoolGems.PickupRoom(5000, 4450, new[] { (14, 4600L, 5100L, 50) }));
+            Assert.AreEqual(500, SchoolGems.PickupRoom(5000, 4450, new[] { (14, 4400L, 5100L, 50) }), "a usable pile still takes its room");
+            // a lower pile can lift the count to a higher pile's floor: lowest tier first
+            Assert.AreEqual(0, SchoolGems.PickupRoom(5000, 4450, new[] { (15, 4500L, 5000L, 500), (14, 4000L, 4500L, 50) }));
+        }
+
+        [TestMethod]
         public void Gem_Schools_Map_To_The_Four_Plus_One_Gems()
         {
             CollectionAssert.AreEqual(new uint[] { 777700052, 777700057, 777700062, 777700067 }, SchoolGems.Schools.Select(s => s.GemWcid).ToArray());

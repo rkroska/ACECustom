@@ -105,10 +105,18 @@ namespace ACE.Server.Managers.ZoneControl
         /// </summary>
         /// <param name="carriedByTier">Earned gems carried at the picked-up gem's tier or lower: (tier, its ceiling, how many).</param>
         public static long PickupRoom(long pickedCeiling, long total, IEnumerable<(int Tier, long Ceiling, int Count)> carriedByTier)
+            => PickupRoom(pickedCeiling, total, carriedByTier.Select(c => (c.Tier, 0L, c.Ceiling, c.Count)));
+
+        /// <summary>
+        /// As above, with each carried tier's floor: a pile counts only once the total reached so far meets its floor (the gem's
+        /// use refuses below it), so gems that cannot be used never make a usable pickup crumble.
+        /// </summary>
+        /// <param name="carriedByTier">(tier, its floor, its ceiling, how many).</param>
+        public static long PickupRoom(long pickedCeiling, long total, IEnumerable<(int Tier, long Floor, long Ceiling, int Count)> carriedByTier)
         {
             var reach = total;
-            foreach (var (_, tierCeiling, count) in carriedByTier.OrderBy(c => c.Tier))
-                if (reach < tierCeiling)
+            foreach (var (_, tierFloor, tierCeiling, count) in carriedByTier.OrderBy(c => c.Tier))
+                if (reach >= tierFloor && reach < tierCeiling)
                     reach = Math.Min(tierCeiling, reach + count);
             return pickedCeiling - reach;
         }
@@ -130,7 +138,7 @@ namespace ACE.Server.Managers.ZoneControl
                 var killTier = TierRewardScale.KillTier(victim);
                 if (!GemsDropAt(cfg, killTier))
                     return;
-                var row = TriuneEarning.GetTier(killTier);
+                var row = cfg.Tiers.FirstOrDefault(r => r.Tier == killTier);   // the same settings read as the checks above
                 if (row == null || row.Points <= 0)
                     return;
                 if (!BountyManager.PaysBounty(victim))
@@ -212,7 +220,7 @@ namespace ACE.Server.Managers.ZoneControl
                     .Select(g => g != item ? Stamp(g) : null)
                     .Where(s => s is { } st && st.Earner == player.Guid.Full && st.Tier <= stamp.Value.Tier)
                     .GroupBy(s => s.Value.Tier)
-                    .Select(t => (t.Key, TriuneEarning.GemCeiling(cfg, t.Key), t.Count()));
+                    .Select(t => (t.Key, TriuneEarning.GemFloor(cfg, t.Key), TriuneEarning.GemCeiling(cfg, t.Key), t.Count()));
                 if (PickupRoom(ceiling, total, carried) > 0)
                     return false;
 

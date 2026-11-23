@@ -2835,9 +2835,10 @@ namespace ACE.Server.WorldObjects.Managers
                                         {
                                             if (!response) return;
                                             // the price above was worked out on creatureAugs: a reward or school gem that landed while the box was open changes it
-                                            if ((player.LuminanceAugmentCreatureCount ?? 0) != creatureAugs)
+                                            if ((player.LuminanceAugmentCreatureCount ?? 0) != creatureAugs
+                                                || ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Creature", creatureAugs) != priceFrom)   // the price start moved (own tier, drip settings)
                                             {
-                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations or the gem's price changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!CheckAugmentationCap(player, "Creature", player.LuminanceAugmentCreatureCount ?? 0, augCount))
@@ -2847,25 +2848,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct augmentation item based on the number of augmentations
+                                            int itemId = augCount == 1 ? 300005 :
+                                                         augCount == 10 ? 81000125 :
+                                                         augCount == 50 ? 81000135 :
+                                                         augCount == 100 ? 81000145 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentCreatureCount = (player.LuminanceAugmentCreatureCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
-
-                                            // Consume the correct augmentation item based on the number of augmentations
-                                            int itemId = augCount == 1 ? 300005 :
-                                                         augCount == 10 ? 81000125 :
-                                                         augCount == 50 ? 81000135 :
-                                                         augCount == 100 ? 81000145 : 0;
-
-                                            if (itemId != 0)
-                                            {
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
-                                            }
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Creature casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Creature spell effects. Are you sure?");
@@ -2933,9 +2941,10 @@ namespace ACE.Server.WorldObjects.Managers
                                         {
                                             if (!response) return;
                                             // the price above was worked out on itemAugs: a reward or school gem that landed while the box was open changes it
-                                            if ((player.LuminanceAugmentItemCount ?? 0) != itemAugs)
+                                            if ((player.LuminanceAugmentItemCount ?? 0) != itemAugs
+                                                || ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Item", itemAugs) != priceFrom)   // the price start moved (own tier, drip settings)
                                             {
-                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations or the gem's price changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!CheckAugmentationCap(player, "Item", player.LuminanceAugmentItemCount ?? 0, augCount))
@@ -2945,23 +2954,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300006 :
+                                                         augCount == 10 ? 81000126 :
+                                                         augCount == 50 ? 81000136 :
+                                                         augCount == 100 ? 81000146 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentItemCount = (player.LuminanceAugmentItemCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300006 :
-                                                         augCount == 10 ? 81000126 :
-                                                         augCount == 50 ? 81000136 :
-                                                         augCount == 100 ? 81000146 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Item casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Item spell effects. Are you sure?");
@@ -3030,9 +3048,10 @@ namespace ACE.Server.WorldObjects.Managers
                                         {
                                             if (!response) return;
                                             // the price above was worked out on lifeAugs: a reward or school gem that landed while the box was open changes it
-                                            if ((player.LuminanceAugmentLifeCount ?? 0) != lifeAugs)
+                                            if ((player.LuminanceAugmentLifeCount ?? 0) != lifeAugs
+                                                || ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Life", lifeAugs) != priceFrom)   // the price start moved (own tier, drip settings)
                                             {
-                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations or the gem's price changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!CheckAugmentationCap(player, "Life", player.LuminanceAugmentLifeCount ?? 0, augCount))
@@ -3042,23 +3061,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300007 :
+                                                         augCount == 10 ? 81000127 :
+                                                         augCount == 50 ? 81000137 :
+                                                         augCount == 100 ? 81000147 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentLifeCount = (player.LuminanceAugmentLifeCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300007 :
-                                                         augCount == 10 ? 81000127 :
-                                                         augCount == 50 ? 81000137 :
-                                                         augCount == 100 ? 81000147 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Life casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Life spell effects. Are you sure?");
@@ -3139,23 +3167,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300008 :
+                                                         augCount == 10 ? 81000128 :
+                                                         augCount == 50 ? 81000138 :
+                                                         augCount == 100 ? 81000148 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentWarCount = (player.LuminanceAugmentWarCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300008 :
-                                                         augCount == 10 ? 81000128 :
-                                                         augCount == 50 ? 81000138 :
-                                                         augCount == 100 ? 81000148 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your War casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your War spell effects. Are you sure?");
@@ -3235,23 +3272,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300009 :
+                                                         augCount == 10 ? 81000129 :
+                                                         augCount == 50 ? 81000139 :
+                                                         augCount == 100 ? 81000149 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentVoidCount = (player.LuminanceAugmentVoidCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300009 :
-                                                         augCount == 10 ? 81000129 :
-                                                         augCount == 50 ? 81000139 :
-                                                         augCount == 100 ? 81000149 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Void casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Void spell effects. Are you sure?");
@@ -3331,23 +3377,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 2003002 :
+                                                         augCount == 10 ? 81000133 :
+                                                         augCount == 50 ? 81000143 :
+                                                         augCount == 100 ? 81000153 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentMeleeCount = (player.LuminanceAugmentMeleeCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 2003002 :
-                                                         augCount == 10 ? 81000133 :
-                                                         augCount == 50 ? 81000143 :
-                                                         augCount == 100 ? 81000153 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Melee casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Melee spell effects. Are you sure?");
@@ -3427,23 +3482,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 2003003 :
+                                                         augCount == 10 ? 81000134 :
+                                                         augCount == 50 ? 81000144 :
+                                                         augCount == 100 ? 81000154 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentMissileCount = (player.LuminanceAugmentMissileCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 2003003 :
-                                                         augCount == 10 ? 81000134 :
-                                                         augCount == 50 ? 81000144 :
-                                                         augCount == 100 ? 81000154 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Missile casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Missile spell effects. Are you sure?");
@@ -3518,23 +3582,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300016 :
+                                                         augCount == 10 ? 81000130 :
+                                                         augCount == 50 ? 81000140 :
+                                                         augCount == 100 ? 81000150 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentSpellDurationCount = durationAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300016 :
-                                                         augCount == 10 ? 81000130 :
-                                                         augCount == 50 ? 81000140 :
-                                                         augCount == 100 ? 81000150 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your spell Duration by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {durationIncreasePercent}% to the duration of all of your spell effects. Are you sure?");
@@ -3606,23 +3679,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300021 :
+                                                         augCount == 10 ? 81000131 :
+                                                         augCount == 50 ? 81000141 :
+                                                         augCount == 100 ? 81000151 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentSpecializeCount = specAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300021 :
-                                                         augCount == 10 ? 81000131 :
-                                                         augCount == 50 ? 81000141 :
-                                                         augCount == 100 ? 81000151 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Max Specialized Skill Credits by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your max specialized skill credits. Are you sure?");
@@ -3694,23 +3776,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 2003001 :
+                                                         augCount == 10 ? 81000132 :
+                                                         augCount == 50 ? 81000142 :
+                                                         augCount == 100 ? 81000152 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentSummonCount = summonAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 2003001 :
-                                                         augCount == 10 ? 81000132 :
-                                                         augCount == 50 ? 81000142 :
-                                                         augCount == 100 ? 81000152 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your summons attributes and skills by {augCount} point(s) each.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} point(s) to all of your summons attributes and skills. Are you sure?");

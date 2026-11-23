@@ -1679,7 +1679,7 @@ namespace ACE.Server.Command.Handlers
         /// per line, FinalizeZoneLongDesc (asforge proper never runs it - the stamps would otherwise
         /// sit under inherited flavor text), then the forge provenance. Minted into a dedicated bag:
         /// 18 items in one frame through the main-pack path is the silent-loss window.</summary>
-        internal static void HandleAsForgePremade(Session session, Player player, string[] parameters)
+        internal static void HandleAsForgePremade(Session session, Player player, string[] parameters, bool keepCounters = false)
         {
             void Msg(string s) => ChatPacket.SendServerMessage(session, s, ChatMessageType.Broadcast);
 
@@ -1863,7 +1863,9 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            EnsureWieldCounters(player, tier, Msg);
+            // /testchar preset sets every counter itself (entry = the gates, max = the curve tops): the forge must not pin them
+            if (!keepCounters)
+                EnsureWieldCounters(player, tier, Msg);
             Msg($"Premade {tierLabel} {modeTag} suit: {minted} pieces created"
                 + (lines > 0 ? $", {lines} modifier lines" : "")
                 + (failed > 0 ? $", {failed} failed" : "")

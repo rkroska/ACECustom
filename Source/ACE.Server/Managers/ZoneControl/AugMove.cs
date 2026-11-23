@@ -230,7 +230,10 @@ namespace ACE.Server.Managers.ZoneControl
             }
         }
 
-        /// <summary>The move, when this character has no record and holds something to move. True when it moved.</summary>
+        /// <summary>
+        /// The move, when this character has no record and holds something to move. True when it changed the character: a
+        /// move, or stray 0 counters cleared (the caller then sends the client the new state either way).
+        /// </summary>
         public static bool RunMove(Player player)
         {
             // world thread only: the hunting rewards, the gems and the luminance buys write the same counts without this lock.
@@ -275,7 +278,7 @@ namespace ACE.Server.Managers.ZoneControl
                     player.RemoveProperty(old);
                 player.SetProperty(PropertyString.TriuneMoveRecord, zeroJson);
                 player.CharacterChangesDetected = true;
-                return false;
+                return true;    // the client still holds the old counters: it gets them at 0 (a later run finds the record and changes nothing)
             }
 
             var record = new Record { At = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), OldFraction = oldFraction };
@@ -305,11 +308,18 @@ namespace ACE.Server.Managers.ZoneControl
             // This reads the tier settings: an error here is logged and the move above stands (it is saved either way).
             var own = 0;
             var seeds = new List<string>();
+            // the part-way drip reward the character already holds, read BEFORE the roll tier is set: a character with no roll
+            // tier yet keeps it (setting the first tier must not wipe it). A roll tier that really moves to another tier still
+            // starts fresh, as it does in play.
+            var priorRollTier = player.GetProperty(PropertyInt64.AugRollTier) ?? 0;
+            var dripFraction = player.GetProperty(PropertyFloat.AugDripFraction) ?? 0;
             try
             {
                 var cfg = TriuneEarning.Current;
                 own = TierRewardScale.OwnTier(player);
                 TriuneEarning.EnsureRollTier(player, own);
+                if (priorRollTier != 0 && priorRollTier != own)
+                    dripFraction = 0;
                 foreach (var s in TriuneEarning.DripSchools)
                 {
                     var seed = TriuneEarning.SeedRolls(cfg, own, triune, s.Count(player), s.IsCreature ? cfg.DripBaseCreature : cfg.DripBaseItem);
@@ -323,8 +333,8 @@ namespace ACE.Server.Managers.ZoneControl
                 log.Error($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved, but the {TierText(own)} rolls could not be seeded (seeded so far: {string.Join(", ", seeds)}): {ex}");
             }
             // the part-way point goes in AFTER the roll tier is set: a new roll tier clears the part-way reward it finds
-            if (oldFraction > 0)
-                player.SetProperty(PropertyFloat.AugDripFraction, CarriedFraction(player.GetProperty(PropertyFloat.AugDripFraction) ?? 0, oldFraction));
+            if (oldFraction > 0 || dripFraction > 0)
+                player.SetProperty(PropertyFloat.AugDripFraction, CarriedFraction(dripFraction, oldFraction));
 
             var text = AddedText(add);
             log.Info($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved {(text.Length > 0 ? text : "a part-way Triune point only")}; {TierText(own)} rolls seeded {string.Join(", ", seeds)}.");

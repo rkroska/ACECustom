@@ -132,7 +132,8 @@ namespace ACE.Server.Managers.ZoneControl
                 {
                     if (_current == null || (_loadFailed && _firstLoadFailed && DateTime.UtcNow >= _retryLoadAt))
                     {
-                        try { _current = Load(); _loadFailed = false; _firstLoadFailed = false; }
+                        // a retry that reads again is a settings change like an edit: the revision moves, so clients get every number
+                        try { _current = Load(); _loadFailed = false; _firstLoadFailed = false; Interlocked.Increment(ref _settingsRev); }
                         catch (Exception ex)
                         {
                             // the defaults run (earning OFF) but are never saved over the store; retried once a minute
@@ -516,9 +517,18 @@ namespace ACE.Server.Managers.ZoneControl
         /// </summary>
         public static double RewardValue(TriuneTierRow r, double killsBefore) => KillValue(r, killsBefore) * DripSchools.Length;
 
+        /// <summary>The most kills per reward ever shown: a band that pays, but slower than this, shows this (never 0 = "no rewards").</summary>
+        public const long MaxKillsPerReward = 1_000_000_000_000;
+
         /// <summary>Kills per reward in each band (rounded; 0 when the band pays nothing).</summary>
-        public static long KillsPerReward(double pointRate) =>
-            pointRate > 0 ? Math.Max(1, (long)Math.Round(1.0 / (pointRate * DripSchools.Length))) : 0;   // a paying band is never "0" (= no rewards)
+        public static long KillsPerReward(double pointRate)
+        {
+            if (!(pointRate > 0))
+                return 0;
+            // bounded BEFORE the cast: a tiny rate (two almost equal week values) would not fit in a long
+            var k = Math.Round(1.0 / (pointRate * DripSchools.Length));
+            return k >= MaxKillsPerReward ? MaxKillsPerReward : Math.Max(1, (long)k);   // a paying band is never "0" (= no rewards)
+        }
 
         /// <summary>How much of the kill [k, k + 1) falls inside the band [from, to) - 1 inside, 0 outside, the share at an edge.</summary>
         private static double Overlap(double k, double from, double to) => Math.Max(0, Math.Min(k + 1, to) - Math.Max(k, from));
@@ -695,6 +705,9 @@ namespace ACE.Server.Managers.ZoneControl
                 return;
 
             var (whole, fraction) = TierRewardScale.AddCoins(player.GetProperty(PropertyFloat.AugDripFraction) ?? 0, value);
+            // one kill never grants more than this: whole rewards past it are dropped (not carried), so an extreme pace setting
+            // can never loop thousands of times and flood the client in one kill. The part-way fraction carries as always.
+            whole = Math.Min(whole, MaxRewardsPerKill);
             if (fraction > 0)
                 player.SetProperty(PropertyFloat.AugDripFraction, fraction);
             else
@@ -731,6 +744,9 @@ namespace ACE.Server.Managers.ZoneControl
                 player.RemoveProperty(PropertyFloat.AugDripFraction);
         }
 
+        /// <summary>The most whole rewards one kill grants (see GrantRewards; the default paces give one per ~134 kills).</summary>
+        public const int MaxRewardsPerKill = 100;
+
         // ---- the client copy (a plugin reads these the way it reads banked luminance) ------------------------------------
 
         private static readonly PropertyInt64[] HuntProps =
@@ -755,6 +771,9 @@ namespace ACE.Server.Managers.ZoneControl
         {
             if (player == null)
                 return;
+            // the revision BEFORE the settings: an edit publishes the settings first, then bumps the revision - read this way a
+            // change between the two reads only costs one extra full update, never a stale one marked as sent
+            var rev = Volatile.Read(ref _settingsRev);
             var cfg = Current;
             var own = TierRewardScale.OwnTier(player);
             // below T11 and never shown any: nothing to write (no rows of zeros on every retail character, every login)
@@ -767,7 +786,6 @@ namespace ACE.Server.Managers.ZoneControl
             if (on && EnsureRollTier(player, own))
                 full = true;
             // the settings changed since this client last got every number: send them all again
-            var rev = Volatile.Read(ref _settingsRev);
             var sentRev = SentRev.GetValue(player, _ => new StrongBox<int>(rev - 1));
             if (sentRev.Value != rev)
                 full = true;

@@ -237,7 +237,7 @@ namespace ACE.Server.WorldObjects
                         ProjectileLauncher, IsWeaponSpell, FromProc,
                         origins, velocity, LifeProjectileDamage,
                         originOverride: from, directionOverride: from,
-                        chain: chain);
+                        chain: chain, gateSchool: GateSchool);
                     SpellChain.Stop(label + (from.IsDead ? " (from a dying monster)" : ""));
                     return true;   // one jump at a time
                 }

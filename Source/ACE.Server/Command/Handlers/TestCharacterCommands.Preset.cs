@@ -130,7 +130,7 @@ namespace ACE.Server.Command.Handlers
             HandleCharacterSetter(session, player, new[] { "apply", "skills,spells,aetheria,manastone" });
 
             // 2. gear: the tier's 18-piece suit, the style's weapons (and shield / arrows)
-            HandleAsForgePremade(session, player, new[] { "premade", tier.ToString(), max ? "bis" : "avg" });
+            HandleAsForgePremade(session, player, new[] { "premade", tier.ToString(), max ? "bis" : "avg" }, keepCounters: true);
             var quality = max ? "1000" : "500";
             foreach (var (cls, element) in style.Weapons)
                 WeaponScalingCommands.HandleWsForge(session, cls, quality, element, tier.ToString());

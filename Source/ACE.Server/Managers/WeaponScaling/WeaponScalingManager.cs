@@ -41,6 +41,11 @@ namespace ACE.Server.Managers.WeaponScaling
         /// Item / Life once and leaves 0; nothing reads it after that. Kept so stored configs and older plugins still load.</summary>
         public int MinWieldTriune { get; set; }
 
+        /// <summary>The Triune the 2026-11-22 fold added onto this row's Creature / Item / Life (set once by FoldTriune; 0 = not
+        /// folded from a stored value, e.g. the defaults). The zone tuning basis counts it once, as it counted the Triune
+        /// before - so a custom row keeps its old basis even where its Creature sat below the 6,000 cap.</summary>
+        public int FoldedTriune { get; set; }
+
         /// <summary>
         /// The ATTACK SCHOOL augmentation count the hit gate asks at T11-T25 (owner 2026-11-22): Melee for a swing, Missile for
         /// a shot, War / Void for a spell - 2,000 at T11, +500/tier to 4,000 at T15, then 4,500 at T16 ... 9,000 at T25. 0 at
@@ -785,6 +790,8 @@ namespace ACE.Server.Managers.WeaponScaling
                 t.MinWieldCreature += n;
                 t.MinWieldAugs += n;
                 t.MinWieldLife += n;
+                if (n > 0)
+                    t.FoldedTriune = n;
                 t.MinWieldTriune = 0;
                 t.MinWieldSkillCharm = t.MinWieldSkillCharm > 0 ? t.MinWieldSkillCharm + 4000 : DefaultMinWieldSchool(t.Tier);
             }

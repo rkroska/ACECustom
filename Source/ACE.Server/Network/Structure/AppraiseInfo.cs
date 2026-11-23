@@ -68,7 +68,8 @@ namespace ACE.Server.Network.Structure
 
         /// <summary>
         /// A portal's Triune Weave requirement in the augmentation counts it now reads (the Triune retire, 2026-11-22): N asks
-        /// Creature 6,000 + N and Item and Life 4,000 + N each - the same numbers the portal's refusal names (Portal.cs).
+        /// Creature 6,000 + N and Item and Life 4,000 + N each - the same numbers the portal's refusal names (Portal.cs). The cap
+        /// also counts the Triune the login move took (GetInt64ForGate never reads less), so the line names that too.
         /// </summary>
         private static string TriunePortalLine(int min, int max)
         {
@@ -77,7 +78,7 @@ namespace ACE.Server.Network.Structure
                 ? $"Restricted to characters with {Creature.CreatureAugBase + min:N0} or more Creature Augmentations and {Creature.SchoolAugBase + min:N0} or more Item and Life Augmentations each."
                 : "";
             var cap = hasMax
-                ? $"Characters augmented past {Creature.CreatureAugBase + max:N0} Creature / {Creature.SchoolAugBase + max:N0} Item and Life cannot use it."
+                ? $"Characters augmented past {Creature.CreatureAugBase + max:N0} Creature / {Creature.SchoolAugBase + max:N0} Item and Life, or who held more than {max:N0} Triune Weave before it was retired, cannot use it."
                 : "";
             return string.Join(" ", new[] { need, cap }.Where(x => x.Length > 0));
         }

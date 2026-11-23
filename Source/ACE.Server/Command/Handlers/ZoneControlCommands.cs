@@ -5921,7 +5921,11 @@ namespace ACE.Server.Command.Handlers
             var row = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier);
             if (row == null)
                 return LifeAugCap;
-            var pastCaps = Math.Max(0, Math.Min(row.MinWieldCreature - 6000, Math.Min(row.MinWieldAugs - 4000, row.MinWieldLife - 4000)));
+            // the fold's own number when it left one (a custom row below a cap would read short from the gates); else the part
+            // of all three past the caps (the default rows, already on the folded ladder)
+            var pastCaps = row.FoldedTriune > 0
+                ? row.FoldedTriune
+                : Math.Max(0, Math.Min(row.MinWieldCreature - 6000, Math.Min(row.MinWieldAugs - 4000, row.MinWieldLife - 4000)));
             return row.MinWieldCreature + row.MinWieldAugs - pastCaps + LifeAugCap;
         }
 
