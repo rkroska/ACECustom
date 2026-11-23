@@ -437,15 +437,20 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>
         /// Moves the roll counts to <paramref name="tier"/> when they belong to another tier (a new own tier starts with every
         /// roll unused). Returns true when it changed anything (the caller pushes the new state to the client).
+        /// The part-way reward starts fresh only when the roll tier really moves between two tiers: a character with no roll
+        /// tier yet keeps it (the Triune move carries one there before any tier is known - a kill, the hunting numbers or the
+        /// move's own seed setting the first tier must not wipe it; /testchar clears both together).
         /// </summary>
         public static bool EnsureRollTier(Player player, int tier)
         {
-            if ((player.GetProperty(PropertyInt64.AugRollTier) ?? 0) == tier)
+            var prior = player.GetProperty(PropertyInt64.AugRollTier) ?? 0;
+            if (prior == tier)
                 return false;
             player.SetProperty(PropertyInt64.AugRollTier, tier);
             foreach (var s in DripSchools)
                 player.RemoveProperty(s.RollsProperty);
-            player.RemoveProperty(PropertyFloat.AugDripFraction);
+            if (prior != 0)
+                player.RemoveProperty(PropertyFloat.AugDripFraction);
             return true;
         }
 

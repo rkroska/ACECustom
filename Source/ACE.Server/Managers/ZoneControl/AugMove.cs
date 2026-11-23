@@ -415,13 +415,9 @@ namespace ACE.Server.Managers.ZoneControl
                 {
                     var cfg = TriuneEarning.Current;
                     var triune = record.Old.TryGetValue((ushort)PropertyInt64.TriuneWeaveCount, out var t) ? Math.Max(0, t) : 0;
-                    // as in the move: a first roll tier keeps the part-way reward, a roll tier that really moves starts fresh
-                    var priorRollTier = player.GetProperty(PropertyInt64.AugRollTier) ?? 0;
-                    var dripFraction = player.GetProperty(PropertyFloat.AugDripFraction) ?? 0;
+                    // EnsureRollTier keeps the part-way reward on a first roll tier; a roll tier that really moves starts fresh
                     TriuneEarning.EnsureRollTier(player, own);
                     SeedSchools(player, cfg, own, triune, seeds);
-                    if (priorRollTier == 0 && dripFraction > 0)
-                        player.SetProperty(PropertyFloat.AugDripFraction, dripFraction);
                     record.Seeded = true;
                     player.SetProperty(PropertyString.TriuneMoveRecord, JsonConvert.SerializeObject(record));
                     player.CharacterChangesDetected = true;
