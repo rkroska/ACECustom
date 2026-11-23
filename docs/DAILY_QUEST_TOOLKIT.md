@@ -135,6 +135,10 @@ breaks the streak on each of them.
 
 ## 4. Rules learned the hard way
 
+- **Keep helper quests out of QB.** Every quest name is worth up to 2 QB (1 when an account first gets it, 1 when its
+  count first reaches exactly 1), so timers, counters and flags inflate a quest's QB. Start the quest row's `message`
+  with `[NoQB]` and the server awards nothing for it (`QuestManager.NoQbMarker`). Give QB through a few deliberate
+  stamps instead: Pilfer's Hoard awards 6 (started a hunt, a tidy hunt, reached the top of the streak), 2 each.
 - **Helper quests need a `quest` row with `max_Solves -1`.** Without a row, the max solves read as 0 and every
   `SetQuestCompletions` / `SetQuestBitsOn` value is clamped to 0, so nothing sticks.
 - **A branching step ends its set.** `InqQuest`, `InqAccountQuest`, `InqIPQuest`, `InqQuestSolves`, `InqQuestBitsOn/Off`
