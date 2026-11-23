@@ -269,6 +269,15 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
+            // Windup catch-up guard (2026-11-23, see WindupMoveCap): right after an NPK cast lands, a position further from the
+            // cast start than the character could have run is refused, and the client is sent back like a trespass below.
+            if (player != null && !Teleporting && !forceUpdate && player.WindupCatchUpRefuses(newPosition))
+            {
+                Sequences.GetNextSequence(ACE.Server.Network.Sequence.SequenceType.ObjectForcePosition);
+                SendUpdatePosition();
+                return false;
+            }
+
             // Vaulted Dungeons (review 2026-09-24): a chamber is only for the account it belongs to. Walking, jumping or a crafted
             // position into someone else's chamber is refused like a wall - the client is sent back where it was.
             if (player != null && !Teleporting && newPosition.Cell != Location.Cell && RoomAssignManager.IsTrespass(player, newPosition))

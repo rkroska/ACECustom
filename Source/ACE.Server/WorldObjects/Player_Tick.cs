@@ -449,6 +449,9 @@ namespace ACE.Server.WorldObjects
                 {
                     landblockUpdate = UpdatePosition(RequestedLocation);
                     RequestedLocation = null;
+
+                    // NPK windup move cap, checked at every accepted position (see WindupMoveCap)
+                    CheckWindupMoveDuringCast();
                 }
 
                 if (FastTick && PhysicsObj.IsMovingOrAnimating || PhysicsObj.Velocity != Vector3.Zero)
