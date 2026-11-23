@@ -89,7 +89,7 @@ What he sells are **pouches**, Gems that turn into their contents when used (the
 | Bonded / Attuned | int 33 = 1, int 114 = 1 |
 
 Pouches exist because a vendor prices an item by its own Value, and a Trade Note's is fixed (250,000, sold at 1.15x). Current
-shop: Coin Purse (1 coin, 1 Mark), Pouch of Enlightened Coins (5 coins, 5 Marks), Trade Note Voucher (1 note, 6 Marks). To add
+shop: Coin Purse (1 coin, 1 Mark), Pouch of Enlightened Coins (5 coins, 5 Marks), Trade Note Bundle (8 notes, 1 Mark), Trade Note Crate (40 notes, 5 Marks). 8 MMD per Mark matches the player market (8-9 MMD per Enlightened Coin, 2026-11-23). To add
 an item, add a line to `SHOP` in the generator.
 
 ## 3. The streak ladder
