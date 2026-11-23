@@ -20,7 +20,8 @@ namespace ACE.Server.Managers.ZoneControl
     ///   - each school charm -> its school (War / Void / Melee / Missile);
     ///   - the drip counters -> their schools;
     ///   - the rolls already taken at the own tier are seeded from Triune (clamp(Triune - the Triune the tiers below asked,
-    ///     0, Points)), so the move hands out no second tier of rewards;
+    ///     0, Points)), so the move hands out no second tier of rewards; a character moved with no own tier known is seeded
+    ///     at its first login with one (SeedPending, once - Record.Seeded);
     ///   - what was added and the old values go in PropertyString.TriuneMoveRecord (server-only JSON): its presence = moved,
     ///     and the gates that still name a retired counter read the old value from it (MovedOld).
     /// It rides the character's normal save: a crash before the save runs it again from the same old values, nothing doubled.
@@ -69,6 +70,10 @@ namespace ACE.Server.Managers.ZoneControl
             public Dictionary<ushort, long> Old { get => _old; set => _old = value ?? new(); }
             /// <summary>The old Triune fraction (PropertyFloat.TriuneFraction), 0 when none.</summary>
             public double OldFraction { get; set; }
+            /// <summary>The own tier's rolls were seeded from the moved Triune. False = moved while no own tier was known (0, or
+            /// below T11): the first login with one seeds them (SeedPending). A record from before this flag reads false and
+            /// seeds once more - harmless, the rolls only ever go up.</summary>
+            public bool Seeded { get; set; }
         }
 
         /// <summary>
@@ -221,6 +226,14 @@ namespace ACE.Server.Managers.ZoneControl
             }
             try
             {
+                SeedPending(player);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[AugMove] roll seed for {player.Name}: {ex}");
+            }
+            try
+            {
                 SchoolGems.RenameHeldGems(player);
                 TriuneEarning.PushHuntState(player, full: true, send: false);
             }
@@ -326,13 +339,9 @@ namespace ACE.Server.Managers.ZoneControl
                     TriuneEarning.EnsureRollTier(player, own);
                     if (priorRollTier != 0 && priorRollTier != own)
                         dripFraction = 0;
-                    foreach (var s in TriuneEarning.DripSchools)
-                    {
-                        var seed = TriuneEarning.SeedRolls(cfg, own, triune, s.Count(player), s.IsCreature ? cfg.DripBaseCreature : cfg.DripBaseItem);
-                        seeds.Add($"{s.Name} {seed}");
-                        if (seed > 0)
-                            player.SetProperty(s.RollsProperty, Math.Max(player.GetProperty(s.RollsProperty) ?? 0, seed));
-                    }
+                    SeedSchools(player, cfg, own, triune, seeds);
+                    record.Seeded = true;
+                    player.SetProperty(PropertyString.TriuneMoveRecord, JsonConvert.SerializeObject(record));
                 }
             }
             catch (Exception ex)
@@ -348,6 +357,70 @@ namespace ACE.Server.Managers.ZoneControl
             if (text.Length > 0)
                 player.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your Triune Weave and charm counts now live in your augmentations: {text}.", ChatMessageType.Broadcast));
             return true;
+        }
+
+        /// <summary>
+        /// Seeds each school's rolls at <paramref name="own"/> (the roll tier must already be <paramref name="own"/>): the rolls
+        /// the moved Triune covers there, never more than the school climbed into the tier. Rolls only go up (max).
+        /// </summary>
+        private static void SeedSchools(Player player, TriuneEarning.Config cfg, int own, long triune, List<string> seeds)
+        {
+            foreach (var s in TriuneEarning.DripSchools)
+            {
+                var seed = TriuneEarning.SeedRolls(cfg, own, triune, s.Count(player), s.IsCreature ? cfg.DripBaseCreature : cfg.DripBaseItem);
+                seeds.Add($"{s.Name} {seed}");
+                if (seed > 0)
+                    player.SetProperty(s.RollsProperty, Math.Max(player.GetProperty(s.RollsProperty) ?? 0, seed));
+            }
+        }
+
+        /// <summary>
+        /// The roll seed for a character moved while no own tier was known (0: no zone of theirs on, or below T11): it runs
+        /// at the first login with a known own tier, from the Triune count the record kept, and once (the record then says
+        /// Seeded). Kills before that login cannot earn past the tier's end either (every reward stops there); the seed only
+        /// closes the rolls the moved Triune already used. Login only (OnLogin), before the hunting numbers go out.
+        /// Returns true when it seeded.
+        /// </summary>
+        public static bool SeedPending(Player player)
+        {
+            lock (MoveLock)
+            {
+                if (player == null || TriuneEarning.LoadFailed)
+                    return false;
+                var json = player.GetProperty(PropertyString.TriuneMoveRecord);
+                if (string.IsNullOrEmpty(json) || ZeroOnlyRecord(json) != null)
+                    return false;   // not moved, or only stray 0 counters cleared: nothing was added, nothing to seed
+                Record record;
+                try
+                {
+                    record = JsonConvert.DeserializeObject<Record>(json);
+                }
+                catch (JsonException)
+                {
+                    return false;
+                }
+                if (record == null || record.Seeded)
+                    return false;
+                var own = TierRewardScale.OwnTier(player);
+                if (own < TriuneEarning.FirstTier)
+                    return false;   // still no own tier: a later login tries again
+
+                var cfg = TriuneEarning.Current;
+                var triune = record.Old.TryGetValue((ushort)PropertyInt64.TriuneWeaveCount, out var t) ? Math.Max(0, t) : 0;
+                // as in the move: a first roll tier keeps the part-way reward, a roll tier that really moves starts fresh
+                var priorRollTier = player.GetProperty(PropertyInt64.AugRollTier) ?? 0;
+                var dripFraction = player.GetProperty(PropertyFloat.AugDripFraction) ?? 0;
+                TriuneEarning.EnsureRollTier(player, own);
+                var seeds = new List<string>();
+                SeedSchools(player, cfg, own, triune, seeds);
+                if (priorRollTier == 0 && dripFraction > 0)
+                    player.SetProperty(PropertyFloat.AugDripFraction, dripFraction);
+                record.Seeded = true;
+                player.SetProperty(PropertyString.TriuneMoveRecord, JsonConvert.SerializeObject(record));
+                player.CharacterChangesDetected = true;
+                log.Info($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved earlier with no own tier; T{own} rolls seeded {string.Join(", ", seeds)}.");
+                return true;
+            }
         }
 
         /// <summary>/zonecontrol triune movestatus: how many characters are moved, still to move, and hold retired counters.</summary>

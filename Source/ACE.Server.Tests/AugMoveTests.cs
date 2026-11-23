@@ -80,6 +80,16 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void A_Record_From_Before_The_Seed_Flag_Reads_Not_Seeded()
+        {
+            var old = Newtonsoft.Json.JsonConvert.DeserializeObject<AugMove.Record>("{\"V\":1,\"At\":1,\"Added\":{},\"Old\":{\"150\":141}}");
+            Assert.IsFalse(old.Seeded, "an older record seeds once more at login (rolls only go up)");
+            var seeded = new AugMove.Record { Seeded = true };
+            var back = Newtonsoft.Json.JsonConvert.DeserializeObject<AugMove.Record>(Newtonsoft.Json.JsonConvert.SerializeObject(seeded));
+            Assert.IsTrue(back.Seeded, "the flag survives the save");
+        }
+
+        [TestMethod]
         public void CarriedFraction_Is_Three_Rewards_Per_Triune_Point_Kept_Below_One()
         {
             Assert.AreEqual(0.9, AugMove.CarriedFraction(0, 0.3), 1e-9, "0.3 of a Triune point = 0.9 of a reward");
