@@ -668,6 +668,9 @@ namespace ACE.Server.Managers.ZoneControl
                 player.SetProperty(PropertyFloat.TriuneWeekKills, after);
 
                 var on = RewardsOn(cfg, killTier);
+                // a character moved while no own tier was known gets its roll seed before its first roll here (once)
+                if (on && AugMove.SeedPending(player))
+                    full = true;
                 if (on && EnsureRollTier(player, killTier))
                     full = true;
                 if (on && !RollsDone(player, row))
@@ -783,6 +786,9 @@ namespace ACE.Server.Managers.ZoneControl
             // paused (old counters waiting for the move) shows as off: kills grant nothing then
             var on = row != null && row.Points > 0 && RewardsOn(cfg, own) && !AugMove.AwaitsMove(player);
 
+            // the roll seed first (a character moved with no own tier known): setting the roll tier first would drop its part-way reward
+            if (on && AugMove.SeedPending(player))
+                full = true;
             if (on && EnsureRollTier(player, own))
                 full = true;
             // the settings changed since this client last got every number: send them all again

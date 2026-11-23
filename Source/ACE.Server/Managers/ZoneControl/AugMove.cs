@@ -317,6 +317,7 @@ namespace ACE.Server.Managers.ZoneControl
             player.RemoveProperty(PropertyFloat.TriuneFraction);
             player.SetProperty(PropertyString.TriuneMoveRecord, recordJson);
             player.CharacterChangesDetected = true;
+            SeedSettled.Remove(player);   // a new record: SeedPending looks at it again (a move made online, after 'move on')
 
             // the rolls the moved Triune already covers at the own tier (read with the NEW counts), per school: never more than
             // that school really climbed into the tier (a Triune holder below a luminance cap keeps the rolls to reach the end).
@@ -376,20 +377,24 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>
         /// The roll seed for a character moved while no own tier was known (0: no zone of theirs on, or below T11): it runs
-        /// at the first login with a known own tier, from the Triune count the record kept, and once (the record then says
-        /// Seeded). Kills before that login cannot earn past the tier's end either (every reward stops there); the seed only
-        /// closes the rolls the moved Triune already used. Login only (OnLogin), before the hunting numbers go out.
-        /// Returns true when it seeded.
+        /// the first time an own tier is known - at login (OnLogin, before the hunting numbers go out), or mid-session before
+        /// the first roll a kill takes or the hunting numbers set the roll tier (TriuneEarning.Credit / PushHuntState) - from
+        /// the Triune count the record kept, and once (the record then says Seeded). The world thread or the player's own
+        /// (a kill), so MoveLock keeps it apart from a move. Returns true when it changed the rolls (the caller sends the client
+        /// every number).
         /// </summary>
         public static bool SeedPending(Player player)
         {
+            // per kill: a character whose seed is settled this session costs one table lookup, never a record read
+            if (player == null || SeedSettled.TryGetValue(player, out _))
+                return false;
             lock (MoveLock)
             {
-                if (player == null || TriuneEarning.LoadFailed)
-                    return false;
+                if (TriuneEarning.LoadFailed)
+                    return false;   // settings unreadable: try again later
                 var json = player.GetProperty(PropertyString.TriuneMoveRecord);
                 if (string.IsNullOrEmpty(json) || ZeroOnlyRecord(json) != null)
-                    return false;   // not moved, or only stray 0 counters cleared: nothing was added, nothing to seed
+                    return Settle(player);   // not moved, or only stray 0 counters cleared: nothing was added, nothing to seed
                 Record record;
                 try
                 {
@@ -397,30 +402,52 @@ namespace ACE.Server.Managers.ZoneControl
                 }
                 catch (JsonException)
                 {
-                    return false;
+                    return Settle(player);   // an unreadable record never seeds
                 }
                 if (record == null || record.Seeded)
-                    return false;
+                    return Settle(player);
                 var own = TierRewardScale.OwnTier(player);
                 if (own < TriuneEarning.FirstTier)
-                    return false;   // still no own tier: a later login tries again
+                    return false;   // still no own tier: a later kill, hunting update or login tries again
 
-                var cfg = TriuneEarning.Current;
-                var triune = record.Old.TryGetValue((ushort)PropertyInt64.TriuneWeaveCount, out var t) ? Math.Max(0, t) : 0;
-                // as in the move: a first roll tier keeps the part-way reward, a roll tier that really moves starts fresh
-                var priorRollTier = player.GetProperty(PropertyInt64.AugRollTier) ?? 0;
-                var dripFraction = player.GetProperty(PropertyFloat.AugDripFraction) ?? 0;
-                TriuneEarning.EnsureRollTier(player, own);
                 var seeds = new List<string>();
-                SeedSchools(player, cfg, own, triune, seeds);
-                if (priorRollTier == 0 && dripFraction > 0)
-                    player.SetProperty(PropertyFloat.AugDripFraction, dripFraction);
-                record.Seeded = true;
-                player.SetProperty(PropertyString.TriuneMoveRecord, JsonConvert.SerializeObject(record));
-                player.CharacterChangesDetected = true;
-                log.Info($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved earlier with no own tier; T{own} rolls seeded {string.Join(", ", seeds)}.");
-                return true;
+                try
+                {
+                    var cfg = TriuneEarning.Current;
+                    var triune = record.Old.TryGetValue((ushort)PropertyInt64.TriuneWeaveCount, out var t) ? Math.Max(0, t) : 0;
+                    // as in the move: a first roll tier keeps the part-way reward, a roll tier that really moves starts fresh
+                    var priorRollTier = player.GetProperty(PropertyInt64.AugRollTier) ?? 0;
+                    var dripFraction = player.GetProperty(PropertyFloat.AugDripFraction) ?? 0;
+                    TriuneEarning.EnsureRollTier(player, own);
+                    SeedSchools(player, cfg, own, triune, seeds);
+                    if (priorRollTier == 0 && dripFraction > 0)
+                        player.SetProperty(PropertyFloat.AugDripFraction, dripFraction);
+                    record.Seeded = true;
+                    player.SetProperty(PropertyString.TriuneMoveRecord, JsonConvert.SerializeObject(record));
+                    player.CharacterChangesDetected = true;
+                    Settle(player);
+                    log.Info($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): moved earlier, not seeded yet; T{own} rolls seeded {string.Join(", ", seeds)}.");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    // never per kill: logged once, then left for this session (the next login tries again). True = the caller
+                    // sends the client every number, since the roll tier may have changed before the throw.
+                    log.Error($"[AugMove] {player.Name} (0x{player.Guid.Full:X8}): the T{own} roll seed failed (seeded so far: {string.Join(", ", seeds)}): {ex}");
+                    Settle(player);
+                    return true;
+                }
             }
+        }
+
+        /// <summary>Characters whose roll seed is settled this session (nothing to seed, or seeded). A move clears the entry.</summary>
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Player, object> SeedSettled = new();
+        private static readonly object SettledMark = new object();
+
+        private static bool Settle(Player player)
+        {
+            SeedSettled.AddOrUpdate(player, SettledMark);
+            return false;
         }
 
         /// <summary>/zonecontrol triune movestatus: how many characters are moved, still to move, and hold retired counters.</summary>
