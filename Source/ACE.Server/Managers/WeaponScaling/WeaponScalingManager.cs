@@ -430,7 +430,7 @@ namespace ACE.Server.Managers.WeaponScaling
                 return;
             }
 
-            var cfg = JsonConvert.DeserializeObject<WeaponScalingConfig>(json);
+            var cfg = StoreJson.Deserialize<WeaponScalingConfig>(json);
             _current = cfg != null ? Normalize(cfg) : BuildDefaults();
         }
 
@@ -450,13 +450,13 @@ namespace ACE.Server.Managers.WeaponScaling
         }
 
         /// <summary>The live config as JSON, exactly what Save writes (settings transfer, /settings export).</summary>
-        public static string ExportJson() => JsonConvert.SerializeObject(Current);
+        public static string ExportJson() => StoreJson.Serialize(Current);
 
         /// <summary>Replaces the config with a settings-transfer one (/settings import ... apply): read, normalized, saved
         /// and published at once, as Mutate does. Throws (nothing written) when it does not read as a config.</summary>
         public static void ImportJson(string json)
         {
-            var cfg = JsonConvert.DeserializeObject<WeaponScalingConfig>(json ?? "")
+            var cfg = StoreJson.Deserialize<WeaponScalingConfig>(json ?? "")
                       ?? throw new FormatException("the weapon scaling part does not read as a config.");
             Initialize();
             lock (_lock)
@@ -480,7 +480,7 @@ namespace ACE.Server.Managers.WeaponScaling
 
         private static WeaponScalingConfig Clone(WeaponScalingConfig cfg)
         {
-            return JsonConvert.DeserializeObject<WeaponScalingConfig>(JsonConvert.SerializeObject(cfg));
+            return StoreJson.Deserialize<WeaponScalingConfig>(StoreJson.Serialize(cfg));
         }
 
         /// <summary>The live EV-normalization multiplier for an effective variance. THE one
@@ -701,9 +701,17 @@ namespace ACE.Server.Managers.WeaponScaling
                     // in a way nobody authored.
                     if (s.Grades != null)
                     {
+                        // Exact key first, then case-insensitively: a store written with a
+                        // camelCase resolver holds "s"/"a+" and a deserialized dictionary is
+                        // case-sensitive, so an exact lookup alone would drop the whole ladder.
+                        var stored = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var gk in s.Grades)
+                            if (!string.IsNullOrWhiteSpace(gk.Key))
+                                stored.TryAdd(gk.Key.Trim(), gk.Value);
+
                         var ladder = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
                         foreach (var g in SubGradeBands)
-                            if (s.Grades.TryGetValue(g.Grade, out var k))
+                            if (s.Grades.TryGetValue(g.Grade, out var k) || stored.TryGetValue(g.Grade, out k))
                                 ladder[g.Grade] = Math.Max(0, k);
 
                         if (ladder.Count > 0)
@@ -728,7 +736,7 @@ namespace ACE.Server.Managers.WeaponScaling
             if (cfg.GradeWeights != null)
                 foreach (var kv in cfg.GradeWeights)
                     if (!string.IsNullOrWhiteSpace(kv.Key))
-                        gradeWeights[kv.Key.Trim()] = Math.Max(0, kv.Value);
+                        gradeWeights[kv.Key.Trim().ToUpperInvariant()] = Math.Max(0, kv.Value); // grade letters; a camelCase save left "s","a"
             cfg.GradeWeights = gradeWeights;
 
             // 2026-08-01 semantics migration: launcher rows became the EFFECTIVE DAMAGE MODIFIER
@@ -756,7 +764,7 @@ namespace ACE.Server.Managers.WeaponScaling
 
         private static void Save(WeaponScalingConfig cfg)
         {
-            var jsonOut = JsonConvert.SerializeObject(cfg);
+            var jsonOut = StoreJson.Serialize(cfg);
             if (DatabaseManager.ShardConfig.StringExists(StoreKey))
                 DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = StoreKey, Value = jsonOut, Description = "Weapon aug-scaling config (JSON)" });
             else
