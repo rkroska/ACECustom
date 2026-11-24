@@ -4567,7 +4567,7 @@ namespace ACE.Server.WorldObjects
         /// Stacks of this wcid the player carries (main pack first, then side packs in pack-bar order)
         /// that are not full and that a reward may top up. Equipped items are not included. Never:
         /// - an item type that expires (Lifespan): new units would expire with the older stack;
-        /// - a stack in an open trade: the trade partner would receive the reward;
+        /// - a stack in an open trade, or inside a side pack offered in one: the trade partner would receive the reward;
         /// - a stack whose name differs from its weenie's (renamed by the player);
         /// - a stack whose palette or shade differs from its weenie's (a tinted reward given earlier);
         /// - an item type with a Unique carry limit: new stacks are checked against it (CheckUniques), top-ups would not be.
@@ -4588,7 +4588,8 @@ namespace ACE.Server.WorldObjects
                     && i.Name == weenieName
                     && (i.PaletteTemplate ?? 0) == weeniePalette
                     && Math.Abs((i.Shade ?? 0) - weenieShade) < 0.0001
-                    && !(IsTrading && ItemsInTradeWindow.Contains(i.Guid)))
+                    // not offered in a trade, on its own or inside an offered side pack (the pack transfers with its contents)
+                    && !(IsTrading && (ItemsInTradeWindow.Contains(i.Guid) || (i.Container != null && ItemsInTradeWindow.Contains(i.Container.Guid)))))
                 .ToList();
         }
 
