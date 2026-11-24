@@ -8,7 +8,6 @@ using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
-using ACE.Server.Factories;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
@@ -16,26 +15,27 @@ using ACE.Server.WorldObjects;
 namespace ACE.Server.Managers.ZoneControl
 {
     /// <summary>
-    /// Attack school gems (owner 2026-11-01; one stat since 2026-11-22; floor 2,000, catch-up, no weekly stop and no drip gate
-    /// since 2026-11-24). One +1 gem per school - Gem
-    /// of War / Void / Melee / Missile Augmentation - dropped at T11-T25 and reused every tier. A gem adds +1 straight onto that
-    /// school's LumAug count (no separate counter):
-    ///   - a kill at the player's own tier, in the corpse of the top damager (the corpse owner), never straight into the pack -
-    ///     a player who skips looting gets no gems;
+    /// Attack school augmentations from kills (owner 2026-11-01 as gems; one stat since 2026-11-22; floor 2,000, catch-up, no
+    /// weekly stop, no drip gate and straight onto the count since 2026-11-24). War / Void / Melee / Missile, T11-T25:
+    ///   - a kill at the player's own tier that pays XP or lum, credited to the top damager (a pet's kill counts for its owner):
+    ///     TriuneEarning.Credit calls GrantOnKill on the player's thread, which rolls each school once and adds +1 straight onto
+    ///     the school's LumAug count, with a chat line - the way the Creature / Item / Life rewards grow. Since 2026-11-24 there is
+    ///     no gem to loot or use (until then a gem dropped in the top damager's corpse; a player who skipped looting got none);
     ///   - an independent roll per school while it is not yet at this tier's ceiling (T11-T14 the Item / Life ladder's end:
     ///     2,500 ... 4,000; T15+ base + the summed Points of T15..tier: 4,500 at T15 ... 9,500 at T25), from 2,000 at every tier
     ///     (GemFloor): the catch-up (2026-11-24) - a school below the luminance cap rolls too, so a player can build a second
     ///     school while hunting with their first. Until then a school needed the tier's floor (T15+: the 4,000 luminance cap)
-    ///     first. Each school has its own chance (TriuneEarning.SchoolGemChance): while it catches up (more than 500 below the
-    ///     tier's ceiling) the full first-band chance all week; within the last 500 the weekly kill bands of the hunting rewards,
-    ///     on the tier's own gem weeks (4 at the floor pace, 2.5 at the ceiling pace) - slower past the first band, but never
-    ///     stopped for the week (the Creature / Item / Life rewards still stop past the second band);
-    ///   - the gem is stamped with its earner (AllowedActivator + "Earned by ...") and its tier (PropertyInt.EarnedGemTier);
+    ///     first. Each school has its own chance (GrantChance / TriuneEarning.SchoolGemChance): while it catches up (more than
+    ///     500 below the tier's ceiling) the full first-band chance all week; within the last 500 the weekly kill bands of the
+    ///     hunting rewards, on the tier's own gem weeks (4 at the floor pace, 2.5 at the ceiling pace) - slower past the first
+    ///     band, but never stopped for the week (the Creature / Item / Life rewards still stop past the second band).
+    /// Gems earned before 2026-11-24 (Gem of War / Void / Melee / Missile Augmentation) keep working:
+    ///   - each is stamped with its earner (AllowedActivator + "Earned by ...") and its tier (PropertyInt.EarnedGemTier);
     ///   - used by anyone else: consumed, nothing added, a line about who really earned it;
     ///   - used by the earner: +1 while the school is under the gem's OWN tier's ceiling (T15 gems keep working in T16 up to
     ///     4,500); a gem that can never be used again crumbles; under the floor (2,000) = refused and kept;
-    ///   - picked up by the earner when the school + the carried earned gems of that school at that tier or lower already fill
-    ///     that tier's ceiling: it crumbles at once.
+    ///   - picked up off a corpse by the earner when the school + the carried earned gems of that school at that tier or lower
+    ///     already fill that tier's ceiling: it crumbles at once.
     /// Off unless /zonecontrol triune gems on - the one switch for every T11+ tier (until 2026-11-24 T11-T14 also needed the
     /// drip). Pace settings live in TriuneEarning's store.
     /// </summary>
@@ -78,8 +78,8 @@ namespace ACE.Server.Managers.ZoneControl
             _ => Total(p, s),
         };
 
-        /// <summary>Do gems drop at <paramref name="tier"/>? Every T11+ tier while the gems are on. Until 2026-11-24 T11-T14 also
-        /// needed the drip; the drip now switches only the Creature / Item / Life rewards there.</summary>
+        /// <summary>Do the attack schools roll on kills at <paramref name="tier"/>? Every T11+ tier while the gems switch is on.
+        /// Until 2026-11-24 T11-T14 also needed the drip; the drip now switches only the Creature / Item / Life rewards there.</summary>
         public static bool GemsDropAt(TriuneEarning.Config cfg, int tier) => cfg.GemsEnabled && tier >= TriuneEarning.DripMinTier;
 
         /// <summary>The earned stamp of a gem: (earner guid, tier), or null for a gem that was never earned (an old vendor gem).</summary>
@@ -95,7 +95,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Does a school roll a gem at this tier? At the tier's floor, still under its ceiling.</summary>
         public static bool Qualifies(long count, long floor, long ceiling) => count >= floor && count < ceiling;
 
-        /// <summary>True when gems are on and at least one school can still drop a gem for this player at this tier.</summary>
+        /// <summary>True when the attack schools roll here and at least one of this player's can still grow at this tier.</summary>
         public static bool CanEarnAny(Player player, TriuneEarning.Config cfg, int tier)
         {
             if (!GemsDropAt(cfg, tier))
@@ -105,8 +105,8 @@ namespace ACE.Server.Managers.ZoneControl
             return Schools.Any(s => Qualifies(Power(player, s), floor, ceiling));   // the same count the drop and the use test
         }
 
-        /// <summary>True when gems are on and at least one school that still rolls them for this player at this tier is within
-        /// 500 of the tier's ceiling, where the weekly bands slow it down (a school catching up keeps its full chance all week).</summary>
+        /// <summary>True when the attack schools roll here and at least one of this player's that can still grow is within 500
+        /// of the tier's ceiling, where the weekly bands slow it down (a school catching up keeps its full chance all week).</summary>
         public static bool AnySlowsDown(Player player, TriuneEarning.Config cfg, int tier)
         {
             if (!GemsDropAt(cfg, tier))
@@ -152,77 +152,42 @@ namespace ACE.Server.Managers.ZoneControl
             return pickedCeiling - reach;
         }
 
-        // ---- the drop (victim thread, while the corpse is filled) ------------------------------------------------------
+        // ---- the kill (the player's thread, from TriuneEarning.Credit) ----------------------------------------------------
 
-        /// <summary>Called from Creature.GenerateTreasure after the corpse's loot: rolls the corpse owner's school gems.</summary>
-        public static void AddToCorpse(Creature victim, Corpse corpse)
+        /// <summary>
+        /// One school's chance to grow by one on this kill (pure, tested): 0 outside [floor, ceiling); otherwise the full first-band
+        /// chance while the school is catching up (more than 500 below the ceiling), the weekly bands within the last 500
+        /// (TriuneEarning.SchoolGemChance).
+        /// </summary>
+        public static double GrantChance(long count, long floor, long ceiling, TriuneTierRow row, double killsBefore)
+            => Qualifies(count, floor, ceiling) ? TriuneEarning.SchoolGemChance(row, killsBefore, count, ceiling) : 0.0;
+
+        /// <summary>
+        /// Rolls each attack school once for this kill and adds +1 straight onto the count of every school that hits (owner
+        /// 2026-11-24: no gem to loot or use any more), with one chat line each - the way the Creature / Item / Life rewards
+        /// grow. Called by TriuneEarning.Credit on the player's own thread for an own-tier kill it counts, after the rewards;
+        /// <paramref name="killsBefore"/> = the week's kills before this one. Gems off, or a tier without gems: nothing.
+        /// </summary>
+        public static void GrantOnKill(Player player, TriuneEarning.Config cfg, int tier, TriuneTierRow row, double killsBefore)
         {
-            try
+            if (player == null || row == null || row.Points <= 0 || !GemsDropAt(cfg, tier))
+                return;
+
+            var ceiling = TriuneEarning.GemCeiling(cfg, tier);
+            var floor = TriuneEarning.GemFloor(cfg, tier);
+            foreach (var school in Schools)
             {
-                if (victim == null || corpse == null || victim is Player || corpse.KillerId == null)
-                    return;
+                // each school's own chance: the full first-band chance all week while it catches up, the weekly slowdown only
+                // within the last 500 below the tier's ceiling, never a stop
+                var chance = GrantChance(Power(player, school), floor, ceiling, row, killsBefore);
+                if (!(chance > 0) || ThreadSafeRandom.Next(0.0f, 1.0f) >= chance)
+                    continue;
 
-                var cfg = TriuneEarning.Current;
-                if (!cfg.GemsEnabled)
-                    return;
-
-                var killTier = TierRewardScale.KillTier(victim);
-                if (!GemsDropAt(cfg, killTier))
-                    return;
-                var row = cfg.Tiers.FirstOrDefault(r => r.Tier == killTier);   // the same settings read as the checks above
-                if (row == null || row.Points <= 0)
-                    return;
-                if (!BountyManager.PaysBounty(victim))
-                    return;
-
-                // the corpse owner: the top damager, or a pet's owner - the one whose corpse this is.
-                // These reads of the player happen on the VICTIM's thread (TierRewards reads only on the player's): the corpse is
-                // filled here, before it enters the world, so the roll cannot be deferred to the player's thread. Property reads go
-                // through the biota lock - the worst case is a value a moment old (e.g. the week count one kill off at a band edge).
-                var player = PlayerManager.GetOnlinePlayer(new ObjectGuid(corpse.KillerId.Value));
-                if (player == null || player.IsLoggingOut || player.IsMule || player.IsOlthoiPlayer)
-                    return;
-                if (AugMove.AwaitsMove(player))
-                    return;   // old counters not moved yet: no gem on them (the move adds them later)
-                if (TierRewardScale.OwnTier(player) != killTier)
-                    return;
-
-                // the week's band, as it stood BEFORE this kill: the count TriuneEarning took at the death, ahead of its credit
-                // (the count itself is moved on the player's own thread); a kill it did not see reads the count as it is now
-                var killsBefore = victim.TriuneWeekKillsAtDeath ?? TriuneEarning.WeekKills(player, cfg);
-
-                var ceiling = TriuneEarning.GemCeiling(cfg, killTier);
-                var floor = TriuneEarning.GemFloor(cfg, killTier);
-                foreach (var school in Schools)
-                {
-                    var count = Power(player, school);
-                    if (!Qualifies(count, floor, ceiling))
-                        continue;
-                    // each school's own chance (2026-11-24): the full first-band chance all week while it catches up, the
-                    // weekly slowdown only within the last 500 below the tier's ceiling
-                    var chance = TriuneEarning.SchoolGemChance(row, killsBefore, count, ceiling);
-                    if (!(chance > 0) || ThreadSafeRandom.Next(0.0f, 1.0f) >= chance)
-                        continue;
-
-                    var gem = WorldObjectFactory.CreateNewWorldObject(school.GemWcid);
-                    if (gem == null)
-                    {
-                        log.Warn($"[SchoolGems] gem {school.GemWcid} could not be created");
-                        continue;
-                    }
-                    gem.AllowedActivator = player.Guid.Full;
-                    gem.SetProperty(PropertyInt.EarnedGemTier, killTier);
-                    gem.SetProperty(PropertyString.LongDesc, $"Earned by {player.Name}.");
-                    if (!corpse.TryAddToInventory(gem))
-                    {
-                        log.Warn($"[SchoolGems] {corpse.Name} is full - {player.Name}'s {gem.Name} was not added");
-                        gem.Destroy();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                log.Error($"[SchoolGems] AddToCorpse: {ex}");
+                // the stored count + 1 (Power also adds a held charm: never written back)
+                var newCount = Total(player, school) + 1;
+                player.SetProperty(school.AugCount, newCount);
+                player.Session?.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, school.AugCount, newCount));
+                player.SendMessage($"Your {school.Name} augmentations grow to {newCount:N0}.", ChatMessageType.Broadcast);
             }
         }
 

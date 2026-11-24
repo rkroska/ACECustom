@@ -307,6 +307,21 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void School_Augs_Grow_On_The_Kill_From_The_Floor_Up_To_The_Ceiling()
+        {
+            // 2026-11-24: no gem to loot or use - each school rolls on the kill (GrantChance) with the floor, the ceiling and the
+            // catch-up window above
+            var r = Row();
+            const long floor = 2000, ceiling = 4500;   // T15
+            Assert.AreEqual(0.0, SchoolGems.GrantChance(1999, floor, ceiling, r, 0), "under the floor");
+            Assert.AreEqual(0.0, SchoolGems.GrantChance(4500, floor, ceiling, r, 0), "at the ceiling");
+            Assert.AreEqual(TriuneEarning.GemChance1(r), SchoolGems.GrantChance(2000, floor, ceiling, r, 50_000), "catching up: the full chance");
+            Assert.AreEqual(TriuneEarning.GemChance2(r), SchoolGems.GrantChance(4000, floor, ceiling, r, 50_000), "within 500: the reduced chance");
+            Assert.AreEqual(TriuneEarning.GemChance1(r), SchoolGems.GrantChance(4499, floor, ceiling, r, 0), "within 500, first band");
+            Assert.AreEqual(0.0, SchoolGems.GrantChance(3000, floor, ceiling, null, 0));
+        }
+
+        [TestMethod]
         public void Gem_Pickup_Room_Counts_Carried_Gems()
         {
             Assert.AreEqual(1, SchoolGems.PickupRoom(4500, 4490, new[] { (15, 4500L, 9) }));

@@ -25,10 +25,6 @@ namespace ACE.Server.WorldObjects
 
         private bool onDeathEntered = false;
 
-        /// <summary>School gems (CodeRabbit #590): the killer's Triune week count BEFORE this kill, taken by TriuneEarning in
-        /// OnDeath ahead of its credit, for SchoolGems.AddToCorpse's roll later on the same death. Not saved; null = not taken.</summary>
-        internal double? TriuneWeekKillsAtDeath;
-
         /// <summary>
         /// Called when a monster or player dies, in conjunction with Die()
         /// </summary>
@@ -1597,9 +1593,8 @@ namespace ACE.Server.WorldObjects
             // Zone Scaler: inject the custom bonus-currency token (independent of the loot table).
             InjectZoneBonusCurrency(zoneLoot, killer, corpse, droppedItems);
 
-            // School gems past the cap (owner 2026-11-01): the corpse owner's earned +1 school gems, on the corpse only.
-            // TriuneWeekKillsAtDeath (set by TriuneEarning in OnDeath, before its credit) is the killer's week count before this kill.
-            ACE.Server.Managers.ZoneControl.SchoolGems.AddToCorpse(this, corpse);
+            // (the attack school gems no longer drop here: since 2026-11-24 a kill adds the school augmentation straight onto the
+            // killer's count - SchoolGems.GrantOnKill, from TriuneEarning's credit)
 
             return droppedItems;
         }
