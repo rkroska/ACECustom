@@ -1298,6 +1298,26 @@ namespace ACE.Server.WorldObjects.Managers
 
                     break;
 
+                case EmoteType.InqIPQuest:
+
+                    // ILT custom: "at most Amount per IP address" over the quest's MinDelta window (AccountQuestLimits, IP
+                    // section). Claims work as for InqAccountQuest. Give it its own @comment so its sets don't clash with an
+                    // InqAccountQuest on the same quest.
+                    if (player != null)
+                    {
+                        var ipDone = AccountQuestLimits.IpHasQuestAndCannotSolve(player, emote.Message, emote.Amount ?? 2, NewClaimChain(), out var ipClaim);
+
+                        if (ipClaim != null)
+                        {
+                            (heldAccountClaims ??= new List<AccountQuestLimits.Claim>()).Add(ipClaim);
+                            (executingClaims ??= new List<AccountQuestLimits.Claim>()).Add(ipClaim);
+                        }
+
+                        ExecuteEmoteSet(ipDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+
+                    break;
+
                 case EmoteType.InqMyQuestBitsOff:
                 case EmoteType.InqQuestBitsOff:
 
@@ -2171,15 +2191,24 @@ namespace ACE.Server.WorldObjects.Managers
                             log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Parsing quest stamps from Message: {stampList}");
 
                             // Parse and deduplicate stamps (case-insensitive)
-                            var availableStamps = stampList.Split(',')
+                            var parsedStamps = stampList.Split(',')
                                 .Select(q => q.Trim())
                                 .Where(q => !string.IsNullOrWhiteSpace(q))
                                 .Distinct(StringComparer.OrdinalIgnoreCase)
                                 .ToList();
 
+                            // ILT: a quest marked [NoQB] earns no quest bonus, so it can never be "granted" - the player
+                            // would be charged for nothing and the stamp would stay on offer. Leave it out, before payment.
+                            var availableStamps = WithoutQbExempt(parsedStamps, QuestManager.IsQbExempt);
+                            if (availableStamps.Count < parsedStamps.Count)
+                                log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: GrantRandomQuestStamp lists quests marked [NoQB], which are skipped: {string.Join(", ", parsedStamps.Except(availableStamps))}");
+
                             log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found {availableStamps.Count} available quest stamps: {string.Join(", ", availableStamps)}");
 
-                            if (availableStamps.Count == 0)
+                            // Only an empty list exits here. A list that is empty only because every stamp is [NoQB] goes on
+                            // to the "nothing eligible" handling below, which refunds an old-style turn-in (REFUND:) that
+                            // an earlier TakeItems already consumed, and leaves a TAKE: turn-in untaken.
+                            if (parsedStamps.Count == 0)
                             {
                                 log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp has no valid quest stamps after parsing.");
                                 break;
@@ -4457,6 +4486,7 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.UpdateQuest:
                 case EmoteType.InqQuest:
                 case EmoteType.InqAccountQuest:
+                case EmoteType.InqIPQuest:
                 case EmoteType.InqQuestSolves:
                 case EmoteType.InqServerQuestSolves:
                 case EmoteType.InqBoolStat:
@@ -4538,6 +4568,40 @@ namespace ACE.Server.WorldObjects.Managers
             AccountQuestLimits.GateHold.ClosedUntilRestart => "a while (after the next server restart)",
             _ => status.NextSolveTime.GetFriendlyString(),
         };
+
+        /// <summary>ILT: a GrantRandomQuestStamp list without the quests marked [NoQB] (they can't be granted QB).</summary>
+        internal static List<string> WithoutQbExempt(IEnumerable<string> stamps, Func<string, bool> isQbExempt)
+            => stamps.Where(q => !isQbExempt(q)).ToList();
+
+        /// <summary>ILT: %iqt wording, as AccountTimeText words %aqt: a held gate says so instead of a time.</summary>
+        internal static string IpTimeText(AccountQuestLimits.IpStatus status) => status.Hold switch
+        {
+            AccountQuestLimits.GateHold.InProgress => "a moment",
+            AccountQuestLimits.GateHold.ClosedUntilRestart => "a while (after the next server restart)",
+            _ => status.NextSolveTime.GetFriendlyString(),
+        };
+
+        /// <summary>
+        /// ILT: the limit of this object's InqIPQuest step for a quest (its Amount, default 2), so %iqt in that step's sets
+        /// is worked out against the same limit as the gate. Matched on the full quest string ("Quest@ip") first, then on
+        /// the quest name.
+        /// </summary>
+        private int IpGateLimit(string quest)
+        {
+            var actions = _worldObject.Biota.PropertiesEmote?
+                .SelectMany(e => e.PropertiesEmoteAction ?? Enumerable.Empty<PropertiesEmoteAction>())
+                .Where(a => (EmoteType)a.Type == EmoteType.InqIPQuest && a.Message != null)
+                .ToList();
+
+            if (actions == null || actions.Count == 0)
+                return 2;
+
+            var name = QuestManager.GetQuestName(quest);
+            var gate = actions.FirstOrDefault(a => a.Message.Equals(quest, StringComparison.OrdinalIgnoreCase))
+                ?? actions.FirstOrDefault(a => QuestManager.GetQuestName(a.Message).Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            return gate?.Amount ?? 2;
+        }
 
         public string Replace(string message, WorldObject source, WorldObject target, string quest)
         {
@@ -4623,6 +4687,16 @@ namespace ACE.Server.WorldObjects.Managers
                     result = result.Replace("%aqt", account.HasValue ? AccountTimeText(account.Value) : "");
 
                     result = result.Replace("%aqc", account.HasValue ? account.Value.Completions.ToString() : "");
+                }
+
+                // ILT custom: the IP group's window for InqIPQuest content, at the limit of this NPC's InqIPQuest step
+                if (result.Contains("%iqt") || result.Contains("%iqc"))
+                {
+                    var ip = !string.IsNullOrWhiteSpace(quest) ? AccountQuestLimits.GetIpStatus(targetPlayer, questName, IpGateLimit(quest)) : null;
+
+                    result = result.Replace("%iqt", ip.HasValue ? IpTimeText(ip.Value) : "");
+
+                    result = result.Replace("%iqc", ip.HasValue ? ip.Value.InWindow.ToString() : "");
                 }
             }
 
@@ -4929,7 +5003,9 @@ namespace ACE.Server.WorldObjects.Managers
                         // Gives are scheduled in data order before any later TakeItems run, so a
                         // running batch that exceeds here must fail now — a later Remove must not
                         // mask an earlier over-capacity Give.
-                        if (!batch.Add(action.WeenieClassId.Value, amount > 0 ? amount : 1))
+                        // Player.GiveFromEmote tops up carried stacks first, except for a tinted reward
+                        var intoCarriedStacks = (action.Palette ?? 0) <= 0 && (action.Shade ?? 0) <= 0;
+                        if (!batch.Add(action.WeenieClassId.Value, amount > 0 ? amount : 1, intoCarriedStacks))
                             return batch;
                         break;
 

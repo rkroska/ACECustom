@@ -4445,11 +4445,15 @@ namespace ACE.Server.WorldObjects
             // so the NPC is labeled here; otherwise every quest reward of coins or notes would be Unattributed
             using var ledgerScope = PyrealLedger.BeginFor(PyrealLedger.SrcEmote, emoter);
 
+            // a tinted reward is a different-looking item: give it its own stack
+            var mergeIntoCarried = palette <= 0 && shade <= 0;
+
             var itemsToReceive = new ItemsToReceive(this);
 
-            itemsToReceive.Add(weenieClassId, amount);
+            itemsToReceive.Add(weenieClassId, amount, mergeIntoCarried);
 
-            var itemStacks = itemsToReceive.RequiredSlots;
+            // stacks to create plus stacks topped up; 0 only when the wcid cannot be created as an item
+            var itemStacks = itemsToReceive.RequiredSlots + itemsToReceive.SlotsSavedByCarriedStacks;
 
             if (itemsToReceive.PlayerExceedsLimits)
             {
@@ -4476,35 +4480,76 @@ namespace ACE.Server.WorldObjects
 
             if (itemStacks > 0)
             {
-                var remaining = amount;
+                var toMerge = 0;
+                if (mergeIntoCarried && ServerConfig.emote_give_merge_stacks.Value)
+                    toMerge = Math.Min(amount, GetCarriedStacksWithRoom(weenieClassId).Sum(s => (s.MaxStackSize ?? 1) - (s.StackSize ?? 1)));
 
-                while (remaining > 0)
+                // When part of the reward tops up a carried stack, the parts stay quiet and one "gives you" line covers
+                // the whole give (else a give split between a new stack and a top-up would read as two rewards).
+                var quiet = toMerge > 0;
+                var given = 0;
+
+                void AnnounceGiven()
                 {
-                    var item = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
-
-                    if (item == null)
-                    {
-                        log.Warn($"Player.GiveFromEmote: Emoter is {emoter.Name} (0x{emoter.Guid}) | WCID: {emoter.WeenieClassId} is not able to be created.");
+                    if (!quiet || given <= 0 || (emoter.GetProperty(PropertyBool.NpcInteractsSilently) ?? false))
                         return;
-                    }
 
-                    if (item is Stackable)
-                    {
-                        var stackSize = Math.Min(remaining, item.MaxStackSize ?? 1);
-
-                        item.SetStackSize(stackSize);
-                        remaining -= stackSize;
-                    }
-                    else
-                        remaining--;
-
-                    if (palette > 0)
-                        item.PaletteTemplate = palette;
-                    if (shade > 0)
-                        item.Shade = shade;
-
-                    TryCreateForGive(emoter, item);
+                    var weenie = DatabaseManager.World.GetCachedWeenie(weenieClassId);
+                    var name = given > 1 ? weenie.GetPluralName() : weenie.GetName();
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"{emoter.Name} gives you {(given > 1 ? $"{given:N0} " : "")}{name}.", ChatMessageType.Broadcast));
+                    EnqueueBroadcast(new GameMessageSound(Guid, Sound.ReceiveItem));
                 }
+
+                // creates new stacks for `count` units; false (and the emote chain aborted by TryCreateForGive) when one can't be added
+                bool CreateNew(int count)
+                {
+                    while (count > 0)
+                    {
+                        var item = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
+
+                        if (item == null)
+                        {
+                            log.Warn($"Player.GiveFromEmote: Emoter is {emoter.Name} (0x{emoter.Guid}) | WCID: {emoter.WeenieClassId} is not able to be created.");
+                            return false;
+                        }
+
+                        var units = 1;
+                        if (item is Stackable)
+                        {
+                            units = Math.Min(count, item.MaxStackSize ?? 1);
+                            item.SetStackSize(units);
+                        }
+                        count -= units;
+
+                        if (palette > 0)
+                            item.PaletteTemplate = palette;
+                        if (shade > 0)
+                            item.Shade = shade;
+
+                        if (!TryCreateForGive(emoter, item, announce: !quiet))
+                            return false;
+
+                        given += units;
+                    }
+                    return true;
+                }
+
+                // New stacks first, top-ups last: if a new stack can't be added (the pack filled up after the pre-check), the
+                // give stops before anything is merged, so a retry of the hand-in can't pay the merged part twice.
+                if (!CreateNew(amount - toMerge))
+                {
+                    AnnounceGiven();   // stacks made before the failure, if the reward needed several
+                    return;
+                }
+
+                if (toMerge > 0)
+                {
+                    var merged = GiveIntoCarriedStacks(weenieClassId, toMerge);
+                    given += merged;
+                    CreateNew(toMerge - merged);   // only if a stack refused its top-up
+                }
+
+                AnnounceGiven();
             }
             else
             {
@@ -4518,7 +4563,82 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        public bool TryCreateForGive(WorldObject giver, WorldObject itemBeingGiven)
+        /// <summary>
+        /// Stacks of this wcid the player carries (main pack first, then side packs in pack-bar order)
+        /// that are not full and that a reward may top up. Equipped items are not included. Never:
+        /// - an item type that expires (Lifespan): new units would expire with the older stack;
+        /// - a stack in an open trade, or inside a side pack offered in one: the trade partner would receive the reward;
+        /// - a stack whose name differs from its weenie's (renamed by the player);
+        /// - a stack whose palette or shade differs from its weenie's (a tinted reward given earlier);
+        /// - an item type with a Unique carry limit: new stacks are checked against it (CheckUniques), top-ups would not be.
+        /// </summary>
+        public List<WorldObject> GetCarriedStacksWithRoom(uint weenieClassId)
+        {
+            var weenie = DatabaseManager.World.GetCachedWeenie(weenieClassId);
+            if (weenie == null || weenie.GetProperty(PropertyInt.Lifespan) != null || weenie.GetProperty(PropertyInt.Unique) != null)
+                return new List<WorldObject>();
+
+            var weenieName = weenie.GetName();
+            var weeniePalette = weenie.GetProperty(PropertyInt.PaletteTemplate) ?? 0;
+            var weenieShade = weenie.GetProperty(PropertyFloat.Shade) ?? 0;
+
+            return GetInventoryItemsOfWCID(weenieClassId)
+                .Where(i => i is Stackable && !i.IsDestroyed && (i.StackSize ?? 1) < (i.MaxStackSize ?? 1)
+                    && i.Lifespan == null
+                    && i.Name == weenieName
+                    && (i.PaletteTemplate ?? 0) == weeniePalette
+                    && Math.Abs((i.Shade ?? 0) - weenieShade) < 0.0001
+                    // not offered in a trade, on its own or inside an offered side pack (the pack transfers with its contents)
+                    && !(IsTrading && (ItemsInTradeWindow.Contains(i.Guid) || (i.Container != null && ItemsInTradeWindow.Contains(i.Container.Guid)))))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Emote Give: tops up stacks of the reward the player already carries, so repeated rewards
+        /// (quest currencies, coins) collect in one stack and need no free pack slot. Does what receiving
+        /// a new stack does (TryCreateInInventoryWithNetworking): ledger record, burden update, coin value,
+        /// immediate save. The caller sends the "gives you" line. Returns how many units were merged.
+        /// </summary>
+        private int GiveIntoCarriedStacks(uint weenieClassId, int amount)
+        {
+            var merged = 0;
+            var isCoin = false;
+
+            foreach (var stack in GetCarriedStacksWithRoom(weenieClassId))
+            {
+                if (merged >= amount)
+                    break;
+
+                var add = Math.Min(amount - merged, (stack.MaxStackSize ?? 1) - (stack.StackSize ?? 1));
+
+                if (add <= 0 || !AdjustStack(stack, add, stack.Container as Container, this))
+                    continue;
+
+                Session.Network.EnqueueSend(new GameMessageSetStackSize(stack));
+                stack.SaveBiotaToDatabase();
+
+                merged += add;
+                isCoin |= stack.WeenieType == WeenieType.Coin;
+            }
+
+            if (merged == 0)
+                return 0;
+
+            // same record TryCreateInInventoryWithNetworking makes for a new stack (source = the emote's ledger scope)
+            PyrealLedger.OnCurrencyItem(this, weenieClassId, merged, true);
+
+            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
+
+            if (isCoin)
+                UpdateCoinValue();
+
+            if (ServerConfig.player_receive_immediate_save.Value)
+                RushNextPlayerSave(5);
+
+            return merged;
+        }
+
+        public bool TryCreateForGive(WorldObject giver, WorldObject itemBeingGiven, bool announce = true)
         {
             if (itemBeingGiven.IsUniqueOrContainsUnique && !CheckUniques(itemBeingGiven, giver))
                 return false;
@@ -4544,7 +4664,8 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            if (!(giver.GetProperty(PropertyBool.NpcInteractsSilently) ?? false))
+            // announce = false: GiveFromEmote sends one line for a give that also topped up a carried stack
+            if (announce && !(giver.GetProperty(PropertyBool.NpcInteractsSilently) ?? false))
             {
                 var msg = new GameMessageSystemChat($"{giver.Name} gives you {(itemBeingGiven.StackSize > 1 ? $"{itemBeingGiven.StackSize} " : "")}{itemBeingGiven.GetNameWithMaterial(itemBeingGiven.StackSize)}.", ChatMessageType.Broadcast);
                 Session.Network.EnqueueSend(msg);

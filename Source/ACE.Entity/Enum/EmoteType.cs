@@ -158,6 +158,7 @@ namespace ACE.Entity.Enum
         JailPlayer                    = 153, //Custom - Jails (amount=1), jails without counting it on the player's record (amount=2, for quests), or releases (amount=0) a player
         SingleLocalBroadcast          = 154, //Custom - LocalBroadcast that emits once per awake cycle
         InqAccountQuest               = 155, //Custom - InqQuest across every character on the account (QuestSuccess = done / timer running); text %aqt, %aqc. docs/ACCOUNT_LOCKED_CONTENT_GUIDE.md
+        InqIPQuest                    = 156, //Custom - QuestSuccess once Amount (default 2) characters on the player's IP address completed the quest within its MinDelta; text %iqt, %iqc. Use beside InqAccountQuest
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001

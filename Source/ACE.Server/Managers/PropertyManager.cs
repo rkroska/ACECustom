@@ -566,6 +566,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> house_per_char { get; private set; } = new(false, "if TRUE, allows 1 house per char instead of 1 house per account");
         public static ConfigProperty<bool> house_purchase_requirements { get; private set; } = new(true, "if disabled, requirements to purchase/rent house are not checked");
         public static ConfigProperty<bool> house_rent_enabled { get; private set; } = new(true, "If FALSE then rent is not required");
+        public static ConfigProperty<bool> emote_give_merge_stacks { get; private set; } = new(true, "(non-retail function) If enabled, stackable items an NPC gives (emote Give) first top up matching stacks the player already carries, so a reward needs no free pack slot when a stack has room");
         public static ConfigProperty<bool> iou_trades { get; private set; } = new(false, "(non-retail function) If enabled, IOUs can be traded for objects that are missing in DB but added/restored later on");
         public static ConfigProperty<bool> item_dispel { get; private set; } = new(false, "if enabled, allows players to dispel items. defaults to end of retail, where item dispels could only target creatures");
         public static ConfigProperty<bool> legacy_loot_system { get; private set; } = new(false, "use the previous iteration of the ace lootgen system");

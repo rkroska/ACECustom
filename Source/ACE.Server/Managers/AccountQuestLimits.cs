@@ -717,6 +717,233 @@ namespace ACE.Server.Managers
             return stamps.Where(s => s.NumTimesCompleted >= 0).Sum(s => (long)s.NumTimesCompleted);
         }
 
+        // ── IP-locked content (InqIPQuest, EmoteType 156) ────────────────────────────────────────────────────────────────
+        //
+        // "N per IP address": the quest's MinDelta window counted across every character on every account in the player's
+        // IP group, which is
+        //   - the player's own account,
+        //   - every account with a character online from the same IP address now,
+        //   - every account whose last login came from that address (account.last_Login_I_P).
+        // The gate is done (QuestSuccess) once that many characters in the group completed the quest within the last
+        // MinDelta seconds. It sits beside InqAccountQuest, it doesn't replace it: keep both for "once per account, at most
+        // N per IP". An address in AllowUnlimitedSessionsFromIPAddresses is not limited (shared offices, the server's own
+        // LAN). Claims use the account gate's machinery under a key of account 0 (no real account has id 0), so two
+        // characters on one address can't both pass before the first stamp lands.
+
+        private const string IpKeyPrefix = "ip:";
+
+        /// <summary>What %iqt and %iqc show: the time until the IP group can do the quest again and how many characters in
+        /// the group did it within the window.</summary>
+        public readonly record struct IpStatus(TimeSpan NextSolveTime, int InWindow, int Limit, GateHold Hold = GateHold.None);
+
+        /// <summary>
+        /// The IP-wide test: true (QuestSuccess) when <paramref name="limit"/> or more characters in the player's IP group
+        /// completed the quest within its MinDelta window, when another use on the address holds the gate, or when a database
+        /// can't be read (fails closed). False lets the character through and returns the address's claim in
+        /// <paramref name="claim"/>, released by EmoteManager when the object's emotes have finished.
+        /// </summary>
+        public static bool IpHasQuestAndCannotSolve(Player player, string questFormat, int limit, Func<ChainState> chain, out Claim claim)
+        {
+            claim = null;
+
+            if (player == null)
+                return true;
+
+            var questName = GetQuestName(questFormat);
+            if (string.IsNullOrWhiteSpace(questName) || limit < 1)
+            {
+                LogRateLimited(false, $"[InqIPQuest] An emote used by {player.Name} names no quest or a limit below 1; treating it as done.");
+                return true;
+            }
+
+            var address = PlayerAddress(player);
+            if (address == null)
+                return true;
+
+            if (IsUnlimitedAddress(address))
+                return false;
+
+            var taken = TryClaim(0, IpKeyPrefix + address + "|" + questName, chain);
+            if (taken == null)
+                return true;   // another use on this address holds the gate
+
+            bool done;
+            try
+            {
+                done = !TryReadIpStamps(player, address, questName, out var stamps) || !TryGetWorldQuest(questName, out var quest)
+                    || IpIsDone(stamps, quest, limit, ServerConfig.quest_mindelta_rate.Value, (uint)Time.GetUnixTime());
+            }
+            catch
+            {
+                Release(taken);
+                throw;
+            }
+
+            if (done)
+            {
+                Release(taken);
+                return true;
+            }
+
+            claim = taken;
+            return false;
+        }
+
+        /// <summary>The values behind %iqt and %iqc, or null when they can't be read.</summary>
+        public static IpStatus? GetIpStatus(Player player, string questFormat, int limit)
+        {
+            if (player == null || limit < 1)
+                return null;
+
+            var questName = GetQuestName(questFormat);
+            var address = PlayerAddress(player);
+            if (string.IsNullOrWhiteSpace(questName) || address == null)
+                return null;
+
+            if (IsUnlimitedAddress(address))
+                return new IpStatus(TimeSpan.MinValue, 0, limit);
+
+            if (!TryReadIpStamps(player, address, questName, out var stamps) || !TryGetWorldQuest(questName, out var quest))
+                return null;
+
+            var now = (uint)Time.GetUnixTime();
+            var next = IpNextSolveTime(stamps, quest, limit, ServerConfig.quest_mindelta_rate.Value, now);
+            var hold = next == TimeSpan.MinValue ? GetGateHold(0, IpKeyPrefix + address + "|" + questName) : GateHold.None;
+
+            return new IpStatus(next, IpInWindow(stamps, quest, ServerConfig.quest_mindelta_rate.Value, now), limit, hold);
+        }
+
+        /// <summary>The pure rule behind InqIPQuest: true when at least <paramref name="limit"/> stamps fall within the quest's
+        /// MinDelta window. A quest missing from the world never limits (InqAccountQuest decides those).</summary>
+        public static bool IpIsDone(IReadOnlyCollection<Stamp> stamps, WorldQuest quest, int limit, double minDeltaRate, uint currentTime)
+        {
+            return quest != null && IpInWindow(stamps, quest, minDeltaRate, currentTime) >= limit;
+        }
+
+        /// <summary>How many stamps (characters) completed the quest within its MinDelta window.</summary>
+        public static int IpInWindow(IReadOnlyCollection<Stamp> stamps, WorldQuest quest, double minDeltaRate, uint currentTime)
+        {
+            if (quest == null)
+                return 0;
+
+            var minDelta = QuestManager.CanScaleQuestMinDelta(quest) ? (uint)(quest.MinDelta * minDeltaRate) : quest.MinDelta;
+
+            return stamps.Count(s => s.NumTimesCompleted > 0 && (ulong)s.LastTimeCompleted + minDelta > currentTime);
+        }
+
+        /// <summary>Time until fewer than <paramref name="limit"/> stamps are in the window (TimeSpan.MinValue = now).</summary>
+        public static TimeSpan IpNextSolveTime(IReadOnlyCollection<Stamp> stamps, WorldQuest quest, int limit, double minDeltaRate, uint currentTime)
+        {
+            if (quest == null)
+                return TimeSpan.MinValue;
+
+            var minDelta = QuestManager.CanScaleQuestMinDelta(quest) ? (uint)(quest.MinDelta * minDeltaRate) : quest.MinDelta;
+
+            var ends = stamps.Where(s => s.NumTimesCompleted > 0)
+                .Select(s => (ulong)s.LastTimeCompleted + minDelta)
+                .Where(end => end > currentTime)
+                .OrderBy(end => end)
+                .ToList();
+
+            if (ends.Count < limit)
+                return TimeSpan.MinValue;
+
+            // the group is under the limit again once (count - limit + 1) of them have run out
+            return TimeSpan.FromSeconds((double)(ends[ends.Count - limit] - currentTime));
+        }
+
+        private static string PlayerAddress(Player player) => player.Session?.EndPoint?.Address?.ToString();
+
+        private static bool IsUnlimitedAddress(string address)
+        {
+            var unlimited = ConfigManager.Config.Server.Network.AllowUnlimitedSessionsFromIPAddresses;
+            return unlimited != null && unlimited.Contains(address);
+        }
+
+        /// <summary>
+        /// Every stamp in the player's IP group for one quest: characters in memory first (online ones of the group's accounts),
+        /// then the saved row of every other character of those accounts. False when a database can't be read.
+        /// </summary>
+        private static bool TryReadIpStamps(Player player, string address, string questName, out List<Stamp> stamps)
+        {
+            stamps = null;
+
+            var accountIds = new HashSet<uint>();
+            if (player.Account != null)
+                accountIds.Add(player.Account.AccountId);
+
+            var online = PlayerManager.GetAllOnline();
+
+            foreach (var other in online)
+            {
+                if (other.Account != null && PlayerAddress(other) == address)
+                    accountIds.Add(other.Account.AccountId);
+            }
+
+            try
+            {
+                var addressBytes = System.Net.IPAddress.Parse(address).GetAddressBytes();
+
+                using (var auth = new ACE.Database.Models.Auth.AuthDbContext())
+                {
+                    foreach (var id in auth.Account.Where(a => a.LastLoginIP == addressBytes).Select(a => a.AccountId).ToList())
+                        accountIds.Add(id);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogRateLimited(true, $"[InqIPQuest] Could not read the accounts last seen on {address}. {ex}");
+                return false;
+            }
+
+            var inMemory = new List<(uint CharacterId, Stamp Stamp)>();
+            var inMemoryIds = new HashSet<uint>();
+
+            foreach (var other in online)
+            {
+                if (other.Account == null || !accountIds.Contains(other.Account.AccountId))
+                    continue;
+
+                inMemoryIds.Add(other.Guid.Full);
+
+                var q = other.QuestManager.GetQuest(questName);
+                if (q != null)
+                    inMemory.Add((other.Guid.Full, new Stamp(q.LastTimeCompleted, q.NumTimesCompleted)));
+            }
+
+            if (!inMemoryIds.Contains(player.Guid.Full))
+            {
+                inMemoryIds.Add(player.Guid.Full);
+                var own = player.QuestManager.GetQuest(questName);
+                if (own != null)
+                    inMemory.Add((player.Guid.Full, new Stamp(own.LastTimeCompleted, own.NumTimesCompleted)));
+            }
+
+            var saved = new List<(uint CharacterId, Stamp Stamp)>();
+
+            try
+            {
+                using (var context = new ShardDbContext())
+                {
+                    var ids = accountIds.ToList();
+                    var rows = (from q in context.CharacterPropertiesQuestRegistry
+                                join c in context.Character on q.CharacterId equals c.Id
+                                where ids.Contains(c.AccountId) && q.QuestName == questName
+                                select new { q.CharacterId, q.LastTimeCompleted, q.NumTimesCompleted }).ToList();
+
+                    saved.AddRange(rows.Select(r => (r.CharacterId, new Stamp(r.LastTimeCompleted, r.NumTimesCompleted))));
+                }
+            }
+            catch (Exception ex)
+            {
+                LogRateLimited(true, $"[InqIPQuest] Could not read quest '{questName}' for the accounts on {address}. {ex}");
+                return false;
+            }
+
+            stamps = AccountStamps(inMemory, saved, inMemoryIds);
+            return true;
+        }
+
         /// <summary>Logs at error or warning level at most once a minute; otherwise at debug level.</summary>
         private static void LogRateLimited(bool error, string message)
         {
