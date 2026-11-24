@@ -116,9 +116,9 @@ namespace ACE.Server.Tests
             // T15+: ceiling = base cap 4,000 + the Triune points
             Assert.AreEqual(4500, TriuneEarning.GemCeiling(cfg, 15));
             Assert.AreEqual(9500, TriuneEarning.GemCeiling(cfg, 25));
-            // no floor at any tier since 2026-11-24 (catch-up): a school under the ceiling rolls from any count
+            // the floor is 2,000 at every tier since 2026-11-24 (catch-up): from there a school under the ceiling rolls gems
             for (var t = TriuneEarning.DripMinTier; t <= TriuneEarning.MaxTier; t++)
-                Assert.AreEqual(0, TriuneEarning.GemFloor(cfg, t), $"T{t} floor");
+                Assert.AreEqual(2000, TriuneEarning.GemFloor(cfg, t), $"T{t} floor");
             // ceilings never go down tier to tier (the pickup-room rule orders carried gems by tier)
             for (var t = TriuneEarning.DripMinTier; t < TriuneEarning.MaxTier; t++)
                 Assert.IsTrue(TriuneEarning.GemCeiling(cfg, t + 1) >= TriuneEarning.GemCeiling(cfg, t), $"T{t} -> T{t + 1}");

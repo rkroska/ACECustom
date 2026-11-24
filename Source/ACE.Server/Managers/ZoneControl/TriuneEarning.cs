@@ -31,8 +31,9 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>How far each of Creature / Item / Life climbs in this tier (= the rolls each school gets here; the next tier's
         /// gates ask this much more). Also each attack school gem's room at T15+: base + the summed Points of T15..this tier.</summary>
         public int Points { get; set; } = 500;
-        /// <summary>School gems (owner 2026-11-01): weeks for one school to gain Points at floor pace / at ceiling pace. Kills past
-        /// the ceiling pace keep the reduced chance (no weekly stop for gems since 2026-11-24).</summary>
+        /// <summary>School gems (owner 2026-11-01): weeks for one school to gain Points at floor pace / at ceiling pace. Since
+        /// 2026-11-24 these bands only pace a school within 500 of the tier's ceiling (below that it catches up at the first
+        /// band's chance all week), and kills past the ceiling pace keep the reduced chance (no weekly stop for gems).</summary>
         public double GemSlowWeeks { get; set; } = 4;
         public double GemFastWeeks { get; set; } = 2.5;
     }
@@ -45,8 +46,8 @@ namespace ACE.Server.Managers.ZoneControl
     ///   - only at the player's OWN tier (the tier they are in) - one tier below earns nothing, no dip;
     ///   - per tier, two weekly bands: the first FloorKph x 168 kills pay Points / SlowWeeks between them, the next
     ///     (CeilingKph - FloorKph) x 168 kills pay Points / FastWeeks - Points / SlowWeeks, kills past that pay nothing
-    ///     (the school gems do not stop there: past the first band they keep the reduced chance until the school reaches the
-    ///     tier's ceiling - GemChance, 2026-11-24);
+    ///     (the school gems do not stop there: within 500 of the tier's ceiling they keep the reduced chance past the first band,
+    ///     and further below they keep the first band's chance all week - SchoolGemChance, 2026-11-24);
     ///   - the week turns at a fixed local time (default Friday 12:00 US Eastern), checked lazily on the next kill;
     ///   - a whole reward (3 x that value, carried as a fraction in PropertyFloat.AugDripFraction) rolls ONE of Creature / Item /
     ///     Life among those with rolls left this tier (Points rolls each) and adds +1 straight onto its LumAug count - unless
@@ -85,7 +86,7 @@ namespace ACE.Server.Managers.ZoneControl
             /// off); they share the weekly kill count with the hunting rewards.</summary>
             public bool GemsEnabled { get; set; }
             /// <summary>The base of the T15+ school gem ceiling (this + the summed Points: 4,500 at T15 ... 9,500 at T25). Until
-            /// 2026-11-24 it was also the floor a school needed before its gems dropped; there is no floor now (GemFloor).</summary>
+            /// 2026-11-24 it was also the floor a school needed before its gems dropped; the floor is a flat 2,000 now (GemFloor).</summary>
             public int GemBaseCap { get; set; } = 4000;
             /// <summary>T11-T14 hunting rewards (owner 2026-11-08) - their own switch; T15-T25 use Enabled.</summary>
             public bool DripEnabled { get; set; }
@@ -352,15 +353,38 @@ namespace ACE.Server.Managers.ZoneControl
             return Math.Min(1.0, GemChance1(r) * Overlap(killsBefore, 0, b1) + GemChanceReduced(r) * Overlap(killsBefore, b1, double.PositiveInfinity));
         }
 
+        /// <summary>The slowdown window (owner 2026-11-24): a school this close to the tier's gem ceiling, or closer, rolls on the
+        /// weekly bands (GemChance); further below, it is catching up and keeps the first band's chance all week.</summary>
+        public const long GemSlowdownWindow = 500;
+
+        /// <summary>
+        /// One school's gem chance on the next kill, for a school at <paramref name="count"/> under the tier's gem
+        /// <paramref name="ceiling"/>: while it catches up (more than GemSlowdownWindow below the ceiling) the first band's chance
+        /// whatever the week's count; within the window the weekly bands - slower after the first band, never stopped.
+        /// </summary>
+        public static double SchoolGemChance(TriuneTierRow r, double killsBefore, long count, long ceiling)
+        {
+            if (r == null) return 0.0;
+            return count < ceiling - GemSlowdownWindow ? GemChance1(r) : GemChance(r, killsBefore);
+        }
+
+        /// <summary>Does a school at <paramref name="count"/> feel the weekly slowdown under this <paramref name="ceiling"/>? Only
+        /// within GemSlowdownWindow of it (pure, tested).</summary>
+        public static bool GemSlowsDown(long count, long ceiling) => count >= ceiling - GemSlowdownWindow;
+
         /// <summary>The school count a gem earned at <paramref name="tier"/> can raise a school to. T11-T14: the
         /// attack school follows the Item / Life ladder (T11 2,500 ... T14 4,000); T15+: the base cap + the Triune points.</summary>
         public static long GemCeiling(Config cfg, int tier) => IsDripTier(tier) ? DripCeiling(cfg, tier, cfg.DripBaseItem) : cfg.GemBaseCap + TierCap(cfg, tier);
 
-        /// <summary>The school count a school needs before its gems drop or work at <paramref name="tier"/>: none since
-        /// 2026-11-24 (catch-up). A school under the tier's ceiling rolls gems from any count, so a player can build a second
-        /// school while hunting with their first. Until then: T11-T14 that tier's entry on the Item / Life ladder, T15+ the base
-        /// cap (4,000). The drop, the use and the pickup rules all read the floor here.</summary>
-        public static long GemFloor(Config cfg, int tier) => 0;
+        /// <summary>The school count every attack school needs before its gems drop or work, at every tier (owner 2026-11-24):
+        /// 2,000, the T11 entry of the attack school ladder - the barrier to entry.</summary>
+        public const long GemFloorAugs = 2000;
+
+        /// <summary>The school count a school needs before its gems drop or work at <paramref name="tier"/>: GemFloorAugs (2,000)
+        /// at every tier since 2026-11-24 (catch-up). From there a school under the tier's ceiling rolls gems, so a player can
+        /// build a second school while hunting with their first. Until then: T11-T14 that tier's entry on the Item / Life
+        /// ladder, T15+ the base cap (4,000). The drop, the use and the pickup rules all read the floor here.</summary>
+        public static long GemFloor(Config cfg, int tier) => GemFloorAugs;
 
         // ---- the augmentation ladder ------------------------------------------------------------------------------------
 
@@ -724,7 +748,9 @@ namespace ACE.Server.Managers.ZoneControl
                     player.SendMessage(gemsLeft
                         ? $"Your kills here earn no more Creature, Item or Life augmentations until the week turns ({NextResetText(cfg, stored)}). Attack school gems keep dropping."
                         : $"Your kills here earn no augmentations until the week turns ({NextResetText(cfg, stored)}).", ChatMessageType.Broadcast);
-                else if (kills < b1 && after >= b1)
+                // the slower pace: the rewards, or a school gem within 500 of the tier's ceiling - a school still catching up keeps
+                // its full chance all week (2026-11-24), so a player with nothing else to slow down hears nothing here
+                else if (kills < b1 && after >= b1 && (canStillEarn || SchoolGems.AnySlowsDown(player, cfg, killTier)))
                     player.SendMessage($"Your hunting now earns augmentations at a slower pace until the week turns ({NextResetText(cfg, stored)}).", ChatMessageType.Broadcast);
             }
             catch (Exception ex)
@@ -936,7 +962,8 @@ namespace ACE.Server.Managers.ZoneControl
         ///       First 33,600 kills:    1 reward per 134 kills   &lt;- you are here (21,200 kills left)
         ///       After 33,600 kills:    1 reward per 269 kills
         ///       Beyond 67,200 kills:   no rewards until the week resets
-        ///       School gems (each school under 4,500): 1 per 269 kills, after 33,600 kills 1 per 448 - they keep dropping all week.
+        ///       School gems, each school from 2,000 up to 4,500: 1 per 269 kills.
+        ///       From 4,000: 1 per 448 after 33,600 kills this week. They never stop for the week.
         ///     Week resets Friday 12:00 Eastern (in 2 days 4 hours).
         ///     This tier so far: Creature 6,312 of 6,500, Item 4,298 of 4,500, Life 4,305 of 4,500.
         /// </summary>
@@ -980,11 +1007,15 @@ namespace ACE.Server.Managers.ZoneControl
                 lines.Add($"    After {b1:N0} kills:    {RewardPace(Rate2(row))}{Here(kills >= b1 && kills < b2, b2 - kills)}");
                 lines.Add($"    Beyond {b2:N0} kills:   no rewards until the week resets{Here(kills >= b2, 0)}");
             }
-            // the school gems slow down after the first band but never stop for the week (2026-11-24): a school's gems end only
-            // at this tier's cap
+            // the school gems (2026-11-24): from the floor up to this tier's cap, the full chance all week while a school catches
+            // up, the weekly slowdown only within 500 of the cap, and never a stop - a school's gems end only at the cap
             if (gems)
-                lines.Add($"    School gems (each school under {GemCeiling(cfg, own):N0}): 1 per {KillsPerPoint(GemChance1(row))} kills,"
-                    + $" after {b1:N0} kills 1 per {KillsPerPoint(GemChanceReduced(row))} - they keep dropping all week.");
+            {
+                var gemCeiling = GemCeiling(cfg, own);
+                var slowFrom = Math.Max(GemFloor(cfg, own), gemCeiling - GemSlowdownWindow);
+                lines.Add($"    School gems, each school from {GemFloor(cfg, own):N0} up to {gemCeiling:N0}: 1 per {KillsPerPoint(GemChance1(row))} kills.");
+                lines.Add($"    From {slowFrom:N0}: 1 per {KillsPerPoint(GemChanceReduced(row))} after {b1:N0} kills this week. They never stop for the week.");
+            }
             var storedStart = player.GetProperty(PropertyInt64.TriuneWeekStart) ?? 0;
             var (when, left) = NextResetParts(cfg, kills > 0 ? storedStart : 0);
             lines.Add($"  Week resets {when} (in {left}).");

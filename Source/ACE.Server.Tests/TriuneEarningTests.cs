@@ -263,22 +263,47 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void Gem_Qualifies_From_Any_Count_Under_The_Ceiling()
+        public void Gem_Qualifies_From_2000_Up_To_The_Ceiling()
         {
-            // catch-up (2026-11-24): no floor, so a school below the luminance cap rolls gems up to the tier's ceiling
+            // catch-up (2026-11-24): the floor is 2,000 at every tier, so a school below the luminance cap rolls gems from 2,000
+            // up to the tier's ceiling
             var cfg = TriuneEarning.Defaults();
             var floor = TriuneEarning.GemFloor(cfg, 15);
             var ceiling = TriuneEarning.GemCeiling(cfg, 15);
-            Assert.IsTrue(SchoolGems.Qualifies(0, floor, ceiling), "an unbought school");
-            Assert.IsTrue(SchoolGems.Qualifies(1999, floor, ceiling));
+            Assert.AreEqual(2000, floor);
+            Assert.IsFalse(SchoolGems.Qualifies(0, floor, ceiling), "an unbought school");
+            Assert.IsFalse(SchoolGems.Qualifies(1999, floor, ceiling), "just under the floor");
+            Assert.IsTrue(SchoolGems.Qualifies(2000, floor, ceiling), "at the floor");
             Assert.IsTrue(SchoolGems.Qualifies(3999, floor, ceiling), "just under the luminance cap");
             Assert.IsTrue(SchoolGems.Qualifies(4499, floor, ceiling));
             Assert.IsFalse(SchoolGems.Qualifies(4500, floor, ceiling), "full for T15");
-            // T11-T14 keep their ladder ceilings: an unbought school climbs to 2,500 at T11
-            Assert.IsTrue(SchoolGems.Qualifies(0, TriuneEarning.GemFloor(cfg, 11), TriuneEarning.GemCeiling(cfg, 11)));
+            // T11-T14 keep their ladder ceilings: a school at the floor climbs to 2,500 at T11
+            Assert.IsFalse(SchoolGems.Qualifies(1999, TriuneEarning.GemFloor(cfg, 11), TriuneEarning.GemCeiling(cfg, 11)));
+            Assert.IsTrue(SchoolGems.Qualifies(2000, TriuneEarning.GemFloor(cfg, 11), TriuneEarning.GemCeiling(cfg, 11)));
             Assert.IsFalse(SchoolGems.Qualifies(2500, TriuneEarning.GemFloor(cfg, 11), TriuneEarning.GemCeiling(cfg, 11)));
-            // a carried pile of any tier counts toward the pickup room from any count (floor 0)
-            Assert.AreEqual(100, SchoolGems.PickupRoom(ceiling, 0, new[] { (15, floor, ceiling, 4400) }));
+            // a carried pile counts toward the pickup room once the school reaches the floor
+            Assert.AreEqual(100, SchoolGems.PickupRoom(ceiling, 2000, new[] { (15, floor, ceiling, 2400) }));
+            Assert.AreEqual(ceiling - 1999, SchoolGems.PickupRoom(ceiling, 1999, new[] { (15, floor, ceiling, 2400) }), "under the floor: the pile cannot be used yet");
+        }
+
+        [TestMethod]
+        public void Gems_Catch_Up_At_The_Full_Chance_And_Slow_Down_Only_Near_The_Ceiling()
+        {
+            // 2026-11-24: more than 500 below the tier's ceiling a school keeps the first band's chance all week; within the last
+            // 500 the weekly bands apply (slower past the first band, never stopped)
+            var r = Row();
+            const long ceiling = 4500;   // T15
+            Assert.AreEqual(500, TriuneEarning.GemSlowdownWindow);
+            Assert.IsFalse(TriuneEarning.GemSlowsDown(3999, ceiling), "501 below the ceiling: catching up");
+            Assert.IsTrue(TriuneEarning.GemSlowsDown(4000, ceiling), "exactly 500 below: within the window");
+            Assert.IsTrue(TriuneEarning.GemSlowsDown(4499, ceiling));
+            Assert.AreEqual(TriuneEarning.GemChance1(r), TriuneEarning.SchoolGemChance(r, 0, 2000, ceiling));
+            Assert.AreEqual(TriuneEarning.GemChance1(r), TriuneEarning.SchoolGemChance(r, 50_000, 2000, ceiling), "no slowdown while catching up");
+            Assert.AreEqual(TriuneEarning.GemChance1(r), TriuneEarning.SchoolGemChance(r, 1_000_000, 3999, ceiling));
+            Assert.AreEqual(TriuneEarning.GemChance1(r), TriuneEarning.SchoolGemChance(r, 0, 4000, ceiling), "the first band within the window");
+            Assert.AreEqual(TriuneEarning.GemChance2(r), TriuneEarning.SchoolGemChance(r, 50_000, 4000, ceiling), "slower past the first band");
+            Assert.AreEqual(TriuneEarning.GemChance2(r), TriuneEarning.SchoolGemChance(r, 1_000_000, 4499, ceiling), "never stopped");
+            Assert.AreEqual(0.0, TriuneEarning.SchoolGemChance(null, 0, 2000, ceiling));
         }
 
         [TestMethod]
@@ -309,7 +334,7 @@ namespace ACE.Server.Tests
             };
             var byTier = SchoolGems.CarriedByTier(cfg, me, 15, carried);
             Assert.AreEqual(1, byTier.Count);
-            Assert.AreEqual((15, 0L, 4500L, 450), byTier[0]);
+            Assert.AreEqual((15, 2000L, 4500L, 450), byTier[0]);
             // a school at 4,000 carrying 450 earned T15 gems has room for 50 more at T15
             Assert.AreEqual(50, SchoolGems.PickupRoom(4500, 4000, byTier));
             Assert.AreEqual(0, SchoolGems.PickupRoom(4500, 4050, byTier), "4,050 + 450 fills T15: the next gem crumbles");

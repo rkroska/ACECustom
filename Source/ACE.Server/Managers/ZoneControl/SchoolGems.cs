@@ -16,23 +16,24 @@ using ACE.Server.WorldObjects;
 namespace ACE.Server.Managers.ZoneControl
 {
     /// <summary>
-    /// Attack school gems (owner 2026-11-01; one stat since 2026-11-22; no floor, no weekly stop, no drip gate and stacks of
-    /// 1,000 since 2026-11-24). One +1 gem per school - Gem
+    /// Attack school gems (owner 2026-11-01; one stat since 2026-11-22; floor 2,000, catch-up, no weekly stop, no drip gate and
+    /// stacks of 1,000 since 2026-11-24). One +1 gem per school - Gem
     /// of War / Void / Melee / Missile Augmentation - dropped at T11-T25 and reused every tier. A gem adds +1 straight onto that
     /// school's LumAug count (no separate counter):
     ///   - a kill at the player's own tier, in the corpse of the top damager (the corpse owner), never straight into the pack -
     ///     a player who skips looting gets no gems;
     ///   - an independent roll per school while it is not yet at this tier's ceiling (T11-T14 the Item / Life ladder's end:
-    ///     2,500 ... 4,000; T15+ base + the summed Points of T15..tier: 4,500 at T15 ... 9,500 at T25), from ANY count: the
-    ///     catch-up (2026-11-24) - a school below the luminance cap rolls too, so a player can build a second school while
-    ///     hunting with their first. Until then a school needed the tier's floor (T15+: the 4,000 luminance cap) first. The
-    ///     chance follows the same weekly kill bands as the hunting rewards, on the tier's own gem weeks (4 at the floor pace,
-    ///     2.5 at the ceiling pace), but never stops for the week: past the first band the reduced chance goes on until the
-    ///     school reaches the tier's ceiling (2026-11-24; the Creature / Item / Life rewards still stop past the second band);
+    ///     2,500 ... 4,000; T15+ base + the summed Points of T15..tier: 4,500 at T15 ... 9,500 at T25), from 2,000 at every tier
+    ///     (GemFloor): the catch-up (2026-11-24) - a school below the luminance cap rolls too, so a player can build a second
+    ///     school while hunting with their first. Until then a school needed the tier's floor (T15+: the 4,000 luminance cap)
+    ///     first. Each school has its own chance (TriuneEarning.SchoolGemChance): while it catches up (more than 500 below the
+    ///     tier's ceiling) the full first-band chance all week; within the last 500 the weekly kill bands of the hunting rewards,
+    ///     on the tier's own gem weeks (4 at the floor pace, 2.5 at the ceiling pace) - slower past the first band, but never
+    ///     stopped for the week (the Creature / Item / Life rewards still stop past the second band);
     ///   - the gem is stamped with its earner (AllowedActivator + "Earned by ...") and its tier (PropertyInt.EarnedGemTier);
     ///   - used by anyone else: consumed, nothing added, a line about who really earned it;
     ///   - used by the earner: +1 while the school is under the gem's OWN tier's ceiling (T15 gems keep working in T16 up to
-    ///     4,500); a gem that can never be used again crumbles; under the floor = refused and kept (no floor since 2026-11-24);
+    ///     4,500); a gem that can never be used again crumbles; under the floor (2,000) = refused and kept;
     ///   - picked up by the earner when the school + the carried earned gems of that school at that tier or lower already fill
     ///     that tier's ceiling: it crumbles at once;
     ///   - stacks of up to 1,000 (2026-11-24) with ONE stamp per stack: gems only merge with the same earner and tier (a merge
@@ -188,6 +189,21 @@ namespace ACE.Server.Managers.ZoneControl
             return Schools.Any(s => Qualifies(Power(player, s), floor, ceiling));   // the same count the drop and the use test
         }
 
+        /// <summary>True when gems are on and at least one school that still rolls them for this player at this tier is within
+        /// 500 of the tier's ceiling, where the weekly bands slow it down (a school catching up keeps its full chance all week).</summary>
+        public static bool AnySlowsDown(Player player, TriuneEarning.Config cfg, int tier)
+        {
+            if (!GemsDropAt(cfg, tier))
+                return false;
+            var ceiling = TriuneEarning.GemCeiling(cfg, tier);
+            var floor = TriuneEarning.GemFloor(cfg, tier);
+            return Schools.Any(s =>
+            {
+                var count = Power(player, s);
+                return Qualifies(count, floor, ceiling) && TriuneEarning.GemSlowsDown(count, ceiling);
+            });
+        }
+
         /// <summary>
         /// Room a newly picked-up gem would have: its tier's ceiling minus the highest total the earned gems already carried at
         /// that tier or lower can still reach. Used lowest tier first (the best order), each tier's gems add +1 only up to that
@@ -258,17 +274,18 @@ namespace ACE.Server.Managers.ZoneControl
                 // the week's band, as it stood BEFORE this kill: the count TriuneEarning took at the death, ahead of its credit
                 // (the count itself is moved on the player's own thread); a kill it did not see reads the count as it is now
                 var killsBefore = victim.TriuneWeekKillsAtDeath ?? TriuneEarning.WeekKills(player, cfg);
-                var chance = TriuneEarning.GemChance(row, killsBefore);
-                if (!(chance > 0))
-                    return;
 
                 var ceiling = TriuneEarning.GemCeiling(cfg, killTier);
                 var floor = TriuneEarning.GemFloor(cfg, killTier);
                 foreach (var school in Schools)
                 {
-                    if (!Qualifies(Power(player, school), floor, ceiling))
+                    var count = Power(player, school);
+                    if (!Qualifies(count, floor, ceiling))
                         continue;
-                    if (ThreadSafeRandom.Next(0.0f, 1.0f) >= chance)
+                    // each school's own chance (2026-11-24): the full first-band chance all week while it catches up, the
+                    // weekly slowdown only within the last 500 below the tier's ceiling
+                    var chance = TriuneEarning.SchoolGemChance(row, killsBefore, count, ceiling);
+                    if (!(chance > 0) || ThreadSafeRandom.Next(0.0f, 1.0f) >= chance)
                         continue;
 
                     var gem = WorldObjectFactory.CreateNewWorldObject(school.GemWcid);
