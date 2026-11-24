@@ -79,7 +79,8 @@ namespace ACE.Server.Managers.ZoneControl
             public string ResetTimeZone { get; set; } = "Eastern Standard Time";
             /// <summary>School gem drops (SchoolGems.cs) - their own switch; they share the weekly kill count with Triune.</summary>
             public bool GemsEnabled { get; set; }
-            /// <summary>The bought (luminance) school aug a player needs before that school's gems drop or work.</summary>
+            /// <summary>The base of the T15+ school gem ceiling (this + the summed Points: 4,500 at T15 ... 9,500 at T25). Until
+            /// 2026-11-24 it was also the floor a school needed before its gems dropped; there is no floor now (GemFloor).</summary>
             public int GemBaseCap { get; set; } = 4000;
             /// <summary>T11-T14 hunting rewards (owner 2026-11-08) - their own switch; T15-T25 use Enabled.</summary>
             public bool DripEnabled { get; set; }
@@ -337,9 +338,11 @@ namespace ACE.Server.Managers.ZoneControl
         /// attack school follows the Item / Life ladder (T11 2,500 ... T14 4,000); T15+: the base cap + the Triune points.</summary>
         public static long GemCeiling(Config cfg, int tier) => IsDripTier(tier) ? DripCeiling(cfg, tier, cfg.DripBaseItem) : cfg.GemBaseCap + TierCap(cfg, tier);
 
-        /// <summary>The school count a school needs before its gems drop or work at <paramref name="tier"/>:
-        /// T11-T14 = that tier's entry on the Item / Life ladder; T15+ = the base cap (4,000).</summary>
-        public static long GemFloor(Config cfg, int tier) => IsDripTier(tier) ? DripEntry(cfg, tier, cfg.DripBaseItem) : cfg.GemBaseCap;
+        /// <summary>The school count a school needs before its gems drop or work at <paramref name="tier"/>: none since
+        /// 2026-11-24 (catch-up). A school under the tier's ceiling rolls gems from any count, so a player can build a second
+        /// school while hunting with their first. Until then: T11-T14 that tier's entry on the Item / Life ladder, T15+ the base
+        /// cap (4,000). The drop, the use and the pickup rules all read the floor here.</summary>
+        public static long GemFloor(Config cfg, int tier) => 0;
 
         // ---- the augmentation ladder ------------------------------------------------------------------------------------
 

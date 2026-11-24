@@ -195,13 +195,32 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
-        public void Gem_Qualifies_Only_Bought_To_The_Base_And_Under_The_Ceiling()
+        public void Gem_Qualifies_Between_Its_Floor_And_The_Ceiling()
         {
-            // one stat (2026-11-22): the aug count itself against the tier's floor and ceiling
-            Assert.IsFalse(SchoolGems.Qualifies(3999, 4000, 4500), "under the floor");
+            // one stat (2026-11-22): the aug count itself against the tier's floor and ceiling (the rule, any floor)
+            Assert.IsFalse(SchoolGems.Qualifies(3999, 4000, 4500), "under a floor");
             Assert.IsTrue(SchoolGems.Qualifies(4000, 4000, 4500));
             Assert.IsTrue(SchoolGems.Qualifies(4499, 4000, 4500));
             Assert.IsFalse(SchoolGems.Qualifies(4500, 4000, 4500), "full for the tier");
+        }
+
+        [TestMethod]
+        public void Gem_Qualifies_From_Any_Count_Under_The_Ceiling()
+        {
+            // catch-up (2026-11-24): no floor, so a school below the luminance cap rolls gems up to the tier's ceiling
+            var cfg = TriuneEarning.Defaults();
+            var floor = TriuneEarning.GemFloor(cfg, 15);
+            var ceiling = TriuneEarning.GemCeiling(cfg, 15);
+            Assert.IsTrue(SchoolGems.Qualifies(0, floor, ceiling), "an unbought school");
+            Assert.IsTrue(SchoolGems.Qualifies(1999, floor, ceiling));
+            Assert.IsTrue(SchoolGems.Qualifies(3999, floor, ceiling), "just under the luminance cap");
+            Assert.IsTrue(SchoolGems.Qualifies(4499, floor, ceiling));
+            Assert.IsFalse(SchoolGems.Qualifies(4500, floor, ceiling), "full for T15");
+            // T11-T14 keep their ladder ceilings: an unbought school climbs to 2,500 at T11
+            Assert.IsTrue(SchoolGems.Qualifies(0, TriuneEarning.GemFloor(cfg, 11), TriuneEarning.GemCeiling(cfg, 11)));
+            Assert.IsFalse(SchoolGems.Qualifies(2500, TriuneEarning.GemFloor(cfg, 11), TriuneEarning.GemCeiling(cfg, 11)));
+            // a carried pile of any tier counts toward the pickup room from any count (floor 0)
+            Assert.AreEqual(100, SchoolGems.PickupRoom(ceiling, 0, new[] { (15, floor, ceiling, 4400) }));
         }
 
         [TestMethod]

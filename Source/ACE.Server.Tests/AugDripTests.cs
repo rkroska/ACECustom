@@ -110,15 +110,15 @@ namespace ACE.Server.Tests
         public void School_Gem_Floor_And_Ceiling_Per_Tier()
         {
             var cfg = TriuneEarning.Defaults();
-            // T11-T14: the attack school rides the Item / Life ladder
-            Assert.AreEqual(2000, TriuneEarning.GemFloor(cfg, 11));
+            // T11-T14: the attack school's ceiling rides the Item / Life ladder
             Assert.AreEqual(2500, TriuneEarning.GemCeiling(cfg, 11));
-            Assert.AreEqual(3500, TriuneEarning.GemFloor(cfg, 14));
             Assert.AreEqual(4000, TriuneEarning.GemCeiling(cfg, 14));
-            // T15+: unchanged (base cap 4,000, ceiling base + Triune points)
-            Assert.AreEqual(4000, TriuneEarning.GemFloor(cfg, 15));
+            // T15+: ceiling = base cap 4,000 + the Triune points
             Assert.AreEqual(4500, TriuneEarning.GemCeiling(cfg, 15));
             Assert.AreEqual(9500, TriuneEarning.GemCeiling(cfg, 25));
+            // no floor at any tier since 2026-11-24 (catch-up): a school under the ceiling rolls from any count
+            for (var t = TriuneEarning.DripMinTier; t <= TriuneEarning.MaxTier; t++)
+                Assert.AreEqual(0, TriuneEarning.GemFloor(cfg, t), $"T{t} floor");
             // ceilings never go down tier to tier (the pickup-room rule orders carried gems by tier)
             for (var t = TriuneEarning.DripMinTier; t < TriuneEarning.MaxTier; t++)
                 Assert.IsTrue(TriuneEarning.GemCeiling(cfg, t + 1) >= TriuneEarning.GemCeiling(cfg, t), $"T{t} -> T{t + 1}");

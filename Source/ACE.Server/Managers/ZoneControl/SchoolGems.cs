@@ -16,18 +16,21 @@ using ACE.Server.WorldObjects;
 namespace ACE.Server.Managers.ZoneControl
 {
     /// <summary>
-    /// Attack school gems past the cap (owner 2026-11-01, locked; one stat since 2026-11-22). One +1 gem per school - Gem of
-    /// War / Void / Melee / Missile Augmentation - dropped at T11-T25 and reused every tier. A gem adds +1 straight onto that
+    /// Attack school gems (owner 2026-11-01; one stat since 2026-11-22; no floor since 2026-11-24). One +1 gem per school - Gem
+    /// of War / Void / Melee / Missile Augmentation - dropped at T11-T25 and reused every tier. A gem adds +1 straight onto that
     /// school's LumAug count (no separate counter):
     ///   - a kill at the player's own tier, in the corpse of the top damager (the corpse owner), never straight into the pack -
     ///     a player who skips looting gets no gems;
-    ///   - an independent roll per school at the tier's floor (T15+: the 4,000 luminance cap) and not yet at this tier's
-    ///     ceiling (base + the summed Points of T15..tier: 4,500 at T15 ... 9,500 at T25); the chance follows the same weekly
-    ///     kill bands as the hunting rewards, on the tier's own gem weeks (4 at the floor, 2.5 at the ceiling);
+    ///   - an independent roll per school while it is not yet at this tier's ceiling (T11-T14 the Item / Life ladder's end:
+    ///     2,500 ... 4,000; T15+ base + the summed Points of T15..tier: 4,500 at T15 ... 9,500 at T25), from ANY count: the
+    ///     catch-up (2026-11-24) - a school below the luminance cap rolls too, so a player can build a second school while
+    ///     hunting with their first. Until then a school needed the tier's floor (T15+: the 4,000 luminance cap) first. The
+    ///     chance follows the same weekly kill bands as the hunting rewards, on the tier's own gem weeks (4 at the floor pace,
+    ///     2.5 at the ceiling pace);
     ///   - the gem is stamped with its earner (AllowedActivator + "Earned by ...") and its tier (PropertyInt.EarnedGemTier);
     ///   - used by anyone else: consumed, nothing added, a line about who really earned it;
     ///   - used by the earner: +1 while the school is under the gem's OWN tier's ceiling (T15 gems keep working in T16 up to
-    ///     4,500); a gem that can never be used again crumbles; under the floor = refused and kept;
+    ///     4,500); a gem that can never be used again crumbles; under the floor = refused and kept (no floor since 2026-11-24);
     ///   - picked up by the earner when the school + the carried earned gems of that school at that tier or lower already fill
     ///     that tier's ceiling: it crumbles at once.
     /// Off unless /zonecontrol triune gems on. Pace settings live in TriuneEarning's store.

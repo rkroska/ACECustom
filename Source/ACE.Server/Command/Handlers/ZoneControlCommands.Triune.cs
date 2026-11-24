@@ -86,7 +86,7 @@ namespace ACE.Server.Command.Handlers
                 case "gembase":
                 {
                     if (args.Count < 3 || !int.TryParse(args[2], out var b) || b < 0 || b > TriuneEarning.MaxGemBaseCap)
-                    { Msg($"Usage: triune gembase <0-{TriuneEarning.MaxGemBaseCap:N0}>   (bought school augs a gem needs; 4000 default)"); return; }
+                    { Msg($"Usage: triune gembase <0-{TriuneEarning.MaxGemBaseCap:N0}>   (base of the T15+ school gem ceiling; 4000 default)"); return; }
                     var cfg = TriuneEarning.Mutate(c => c.GemBaseCap = b);
                     ShowTriune(cfg, Msg);
                     WarnTriuneVsHitGate(cfg, Msg);   // the T15+ gem ladder starts here: it must still meet what T16+ asks
@@ -301,7 +301,7 @@ namespace ACE.Server.Command.Handlers
         {
             Msg($"Hunting rewards T15-T25 ('on' / 'off'): {(cfg.Enabled ? "ON" : "OFF")}. T11-T14 ('drip on' / 'drip off'): {(cfg.DripEnabled ? "ON" : "OFF")}. Own-tier kills only, top damager; each reward +1 to ONE of Creature / Item / Life at random (Points rolls per school per tier), straight onto the aug count, up to the tier's end.");
             Msg($"  Ladder from Creature {cfg.DripBaseCreature:N0} / Item-Life {cfg.DripBaseItem:N0} at T11 ('dripbase'). Login move of the retired Triune / charm counts: {(cfg.MoveOff ? "OFF" : "ON")}.");
-            Msg($"Attack school gems: {(cfg.GemsEnabled ? "ON" : "OFF")}. On the top damager's corpse, a roll per school at the tier's floor (T15+: {cfg.GemBaseCap:N0}) and under its ceiling. T11-T14 gems need drip AND gems on.");
+            Msg($"Attack school gems: {(cfg.GemsEnabled ? "ON" : "OFF")}. On the top damager's corpse, a roll per school from any count up to the tier's ceiling (T15+ ceilings start at {cfg.GemBaseCap:N0} + the tier points). T11-T14 gems need drip AND gems on.");
             Msg($"  Week turns {(DayOfWeek)cfg.ResetDay} {cfg.ResetHour:00}:00 {cfg.ResetTimeZone} (next: {TriuneEarning.NextResetText(cfg)}).");
             foreach (var r in cfg.Tiers)
                 Msg(DescribeTriuneTier(cfg, r));
