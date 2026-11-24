@@ -763,7 +763,6 @@ namespace ACE.Server.Managers
             if (IsUnlimitedAddress(address))
                 return false;
 
-            claim = null;
             var taken = TryClaim(0, IpKeyPrefix + address + "|" + questName, chain);
             if (taken == null)
                 return true;   // another use on this address holds the gate

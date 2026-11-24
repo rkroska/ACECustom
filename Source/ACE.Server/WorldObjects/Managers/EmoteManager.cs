@@ -2191,11 +2191,17 @@ namespace ACE.Server.WorldObjects.Managers
                             log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Parsing quest stamps from Message: {stampList}");
 
                             // Parse and deduplicate stamps (case-insensitive)
-                            var availableStamps = stampList.Split(',')
+                            var parsedStamps = stampList.Split(',')
                                 .Select(q => q.Trim())
                                 .Where(q => !string.IsNullOrWhiteSpace(q))
                                 .Distinct(StringComparer.OrdinalIgnoreCase)
                                 .ToList();
+
+                            // ILT: a quest marked [NoQB] earns no quest bonus, so it can never be "granted" - the player
+                            // would be charged for nothing and the stamp would stay on offer. Leave it out, before payment.
+                            var availableStamps = WithoutQbExempt(parsedStamps, QuestManager.IsQbExempt);
+                            if (availableStamps.Count < parsedStamps.Count)
+                                log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: GrantRandomQuestStamp lists quests marked [NoQB], which are skipped: {string.Join(", ", parsedStamps.Except(availableStamps))}");
 
                             log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found {availableStamps.Count} available quest stamps: {string.Join(", ", availableStamps)}");
 
@@ -4560,6 +4566,40 @@ namespace ACE.Server.WorldObjects.Managers
             _ => status.NextSolveTime.GetFriendlyString(),
         };
 
+        /// <summary>ILT: a GrantRandomQuestStamp list without the quests marked [NoQB] (they can't be granted QB).</summary>
+        internal static List<string> WithoutQbExempt(IEnumerable<string> stamps, Func<string, bool> isQbExempt)
+            => stamps.Where(q => !isQbExempt(q)).ToList();
+
+        /// <summary>ILT: %iqt wording, as AccountTimeText words %aqt: a held gate says so instead of a time.</summary>
+        internal static string IpTimeText(AccountQuestLimits.IpStatus status) => status.Hold switch
+        {
+            AccountQuestLimits.GateHold.InProgress => "a moment",
+            AccountQuestLimits.GateHold.ClosedUntilRestart => "a while (after the next server restart)",
+            _ => status.NextSolveTime.GetFriendlyString(),
+        };
+
+        /// <summary>
+        /// ILT: the limit of this object's InqIPQuest step for a quest (its Amount, default 2), so %iqt in that step's sets
+        /// is worked out against the same limit as the gate. Matched on the full quest string ("Quest@ip") first, then on
+        /// the quest name.
+        /// </summary>
+        private int IpGateLimit(string quest)
+        {
+            var actions = _worldObject.Biota.PropertiesEmote?
+                .SelectMany(e => e.PropertiesEmoteAction ?? Enumerable.Empty<PropertiesEmoteAction>())
+                .Where(a => (EmoteType)a.Type == EmoteType.InqIPQuest && a.Message != null)
+                .ToList();
+
+            if (actions == null || actions.Count == 0)
+                return 2;
+
+            var name = QuestManager.GetQuestName(quest);
+            var gate = actions.FirstOrDefault(a => a.Message.Equals(quest, StringComparison.OrdinalIgnoreCase))
+                ?? actions.FirstOrDefault(a => QuestManager.GetQuestName(a.Message).Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            return gate?.Amount ?? 2;
+        }
+
         public string Replace(string message, WorldObject source, WorldObject target, string quest)
         {
             var result = message;
@@ -4646,12 +4686,12 @@ namespace ACE.Server.WorldObjects.Managers
                     result = result.Replace("%aqc", account.HasValue ? account.Value.Completions.ToString() : "");
                 }
 
-                // ILT custom: the IP group's window for InqIPQuest content (limit 2, the InqIPQuest default)
+                // ILT custom: the IP group's window for InqIPQuest content, at the limit of this NPC's InqIPQuest step
                 if (result.Contains("%iqt") || result.Contains("%iqc"))
                 {
-                    var ip = !string.IsNullOrWhiteSpace(quest) ? AccountQuestLimits.GetIpStatus(targetPlayer, questName, 2) : null;
+                    var ip = !string.IsNullOrWhiteSpace(quest) ? AccountQuestLimits.GetIpStatus(targetPlayer, questName, IpGateLimit(quest)) : null;
 
-                    result = result.Replace("%iqt", ip.HasValue ? (ip.Value.Hold == AccountQuestLimits.GateHold.InProgress ? "a moment" : ip.Value.NextSolveTime.GetFriendlyString()) : "");
+                    result = result.Replace("%iqt", ip.HasValue ? IpTimeText(ip.Value) : "");
 
                     result = result.Replace("%iqc", ip.HasValue ? ip.Value.InWindow.ToString() : "");
                 }
