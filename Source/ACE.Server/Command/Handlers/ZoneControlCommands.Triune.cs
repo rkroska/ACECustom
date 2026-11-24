@@ -301,7 +301,7 @@ namespace ACE.Server.Command.Handlers
         {
             Msg($"Hunting rewards T15-T25 ('on' / 'off'): {(cfg.Enabled ? "ON" : "OFF")}. T11-T14 ('drip on' / 'drip off'): {(cfg.DripEnabled ? "ON" : "OFF")}. Own-tier kills only, top damager; each reward +1 to ONE of Creature / Item / Life at random (Points rolls per school per tier), straight onto the aug count, up to the tier's end.");
             Msg($"  Ladder from Creature {cfg.DripBaseCreature:N0} / Item-Life {cfg.DripBaseItem:N0} at T11 ('dripbase'). Login move of the retired Triune / charm counts: {(cfg.MoveOff ? "OFF" : "ON")}.");
-            Msg($"Attack school gems: {(cfg.GemsEnabled ? "ON" : "OFF")}. On the top damager's corpse, a roll per school from any count up to the tier's ceiling (T15+ ceilings start at {cfg.GemBaseCap:N0} + the tier points). T11-T14 gems need drip AND gems on.");
+            Msg($"Attack school gems: {(cfg.GemsEnabled ? "ON" : "OFF")}, every T11+ tier (the drip no longer gates T11-T14). On the top damager's corpse, a roll per school from any count up to the tier's ceiling (T15+ ceilings start at {cfg.GemBaseCap:N0} + the tier points); slower after the first band, no weekly stop.");
             Msg($"  Week turns {(DayOfWeek)cfg.ResetDay} {cfg.ResetHour:00}:00 {cfg.ResetTimeZone} (next: {TriuneEarning.NextResetText(cfg)}).");
             foreach (var r in cfg.Tiers)
                 Msg(DescribeTriuneTier(cfg, r));
@@ -315,7 +315,7 @@ namespace ACE.Server.Command.Handlers
                 + $" | ceiling {r.CeilingKph:0.#} kph = {r.FastWeeks:0.#} wk ({TriuneEarning.RewardPace(TriuneEarning.Rate2(r))} to"
                 + $" {TriuneEarning.Band1Kills(r) + TriuneEarning.Band2Kills(r):N0}/wk)"
                 + $" | gems {r.GemSlowWeeks:0.#} / {r.GemFastWeeks:0.#} wk: 1 per {TriuneEarning.KillsPerPoint(TriuneEarning.GemChance1(r))}"
-                + $" then 1 per {TriuneEarning.KillsPerPoint(TriuneEarning.GemChance2(r))} kills per school, school ceiling {TriuneEarning.GemCeiling(cfg, r.Tier):N0}";
+                + $" then 1 per {TriuneEarning.KillsPerPoint(TriuneEarning.GemChanceReduced(r))} kills per school (no weekly stop), school ceiling {TriuneEarning.GemCeiling(cfg, r.Tier):N0}";
         }
     }
 }

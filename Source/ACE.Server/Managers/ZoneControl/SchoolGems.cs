@@ -16,7 +16,8 @@ using ACE.Server.WorldObjects;
 namespace ACE.Server.Managers.ZoneControl
 {
     /// <summary>
-    /// Attack school gems (owner 2026-11-01; one stat since 2026-11-22; no floor since 2026-11-24). One +1 gem per school - Gem
+    /// Attack school gems (owner 2026-11-01; one stat since 2026-11-22; no floor, no weekly stop and no drip gate since
+    /// 2026-11-24). One +1 gem per school - Gem
     /// of War / Void / Melee / Missile Augmentation - dropped at T11-T25 and reused every tier. A gem adds +1 straight onto that
     /// school's LumAug count (no separate counter):
     ///   - a kill at the player's own tier, in the corpse of the top damager (the corpse owner), never straight into the pack -
@@ -26,14 +27,16 @@ namespace ACE.Server.Managers.ZoneControl
     ///     catch-up (2026-11-24) - a school below the luminance cap rolls too, so a player can build a second school while
     ///     hunting with their first. Until then a school needed the tier's floor (T15+: the 4,000 luminance cap) first. The
     ///     chance follows the same weekly kill bands as the hunting rewards, on the tier's own gem weeks (4 at the floor pace,
-    ///     2.5 at the ceiling pace);
+    ///     2.5 at the ceiling pace), but never stops for the week: past the first band the reduced chance goes on until the
+    ///     school reaches the tier's ceiling (2026-11-24; the Creature / Item / Life rewards still stop past the second band);
     ///   - the gem is stamped with its earner (AllowedActivator + "Earned by ...") and its tier (PropertyInt.EarnedGemTier);
     ///   - used by anyone else: consumed, nothing added, a line about who really earned it;
     ///   - used by the earner: +1 while the school is under the gem's OWN tier's ceiling (T15 gems keep working in T16 up to
     ///     4,500); a gem that can never be used again crumbles; under the floor = refused and kept (no floor since 2026-11-24);
     ///   - picked up by the earner when the school + the carried earned gems of that school at that tier or lower already fill
     ///     that tier's ceiling: it crumbles at once.
-    /// Off unless /zonecontrol triune gems on. Pace settings live in TriuneEarning's store.
+    /// Off unless /zonecontrol triune gems on - the one switch for every T11+ tier (until 2026-11-24 T11-T14 also needed the
+    /// drip). Pace settings live in TriuneEarning's store.
     /// </summary>
     public static class SchoolGems
     {
@@ -74,9 +77,9 @@ namespace ACE.Server.Managers.ZoneControl
             _ => Total(p, s),
         };
 
-        /// <summary>Do gems drop at <paramref name="tier"/>? T11-T14 need the drip on as well as the gems.</summary>
-        public static bool GemsDropAt(TriuneEarning.Config cfg, int tier) =>
-            cfg.GemsEnabled && tier >= TriuneEarning.DripMinTier && (!TriuneEarning.IsDripTier(tier) || cfg.DripEnabled);
+        /// <summary>Do gems drop at <paramref name="tier"/>? Every T11+ tier while the gems are on. Until 2026-11-24 T11-T14 also
+        /// needed the drip; the drip now switches only the Creature / Item / Life rewards there.</summary>
+        public static bool GemsDropAt(TriuneEarning.Config cfg, int tier) => cfg.GemsEnabled && tier >= TriuneEarning.DripMinTier;
 
         /// <summary>The earned stamp of a gem: (earner guid, tier), or null for a gem that was never earned (an old vendor gem).</summary>
         public static (uint Earner, int Tier)? Stamp(WorldObject gem)

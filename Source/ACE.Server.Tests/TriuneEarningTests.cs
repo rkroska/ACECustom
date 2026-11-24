@@ -178,9 +178,67 @@ namespace ACE.Server.Tests
             Assert.AreEqual(4, r.GemSlowWeeks); Assert.AreEqual(2.5, r.GemFastWeeks);
             Assert.AreEqual(500.0 / 4, GemWeek(r, 200), 1e-6);
             Assert.AreEqual(500.0 / 2.5, GemWeek(r, 400), 1e-6);
-            Assert.AreEqual(500.0 / 2.5, GemWeek(r, 900), 1e-6, "nothing past the ceiling");
+            // no weekly stop for gems (2026-11-24): 125 in the first band, then 117,600 kills at the reduced chance (1 per 448)
+            Assert.AreEqual(387.5, GemWeek(r, 900), 1e-6, "past the ceiling pace the reduced chance goes on");
             Assert.AreEqual(269, Math.Round(1 / TriuneEarning.GemChance1(r)));
             Assert.AreEqual(448, Math.Round(1 / TriuneEarning.GemChance2(r)));
+        }
+
+        [TestMethod]
+        public void Gems_Keep_The_Reduced_Chance_All_Week_While_The_Rewards_Stop()
+        {
+            var r = Row();
+            Assert.AreEqual(TriuneEarning.GemChance1(r), TriuneEarning.GemChance(r, 0));
+            Assert.AreEqual(TriuneEarning.GemChance1(r), TriuneEarning.GemChance(r, 33_599));
+            Assert.AreEqual(TriuneEarning.GemChance2(r), TriuneEarning.GemChance(r, 33_600), "slower after the first band");
+            Assert.AreEqual(TriuneEarning.GemChance2(r), TriuneEarning.GemChance(r, 67_200), "no stop where the rewards stop");
+            Assert.AreEqual(TriuneEarning.GemChance2(r), TriuneEarning.GemChance(r, 1_000_000));
+            Assert.AreEqual(TriuneEarning.GemChance2(r), TriuneEarning.GemChanceReduced(r));
+            // the Creature / Item / Life rewards keep their weekly stop
+            Assert.AreEqual(0.0, TriuneEarning.KillValue(r, 67_200));
+            Assert.AreEqual(0.0, TriuneEarning.GemChance(null, 0));
+            Assert.AreEqual(0.0, TriuneEarning.GemChanceReduced(null));
+        }
+
+        [TestMethod]
+        public void Gems_Never_Stop_When_The_Second_Band_Adds_Nothing()
+        {
+            // gemfast = gemslow: the second band adds no gems, so the reduced chance falls back to the first band's
+            var r = Row();
+            r.GemFastWeeks = r.GemSlowWeeks;
+            Assert.AreEqual(0.0, TriuneEarning.GemChance2(r));
+            Assert.AreEqual(TriuneEarning.GemChance1(r), TriuneEarning.GemChanceReduced(r));
+            Assert.AreEqual(TriuneEarning.GemChance1(r), TriuneEarning.GemChance(r, 50_000));
+            Assert.AreEqual(TriuneEarning.GemChance1(r), TriuneEarning.GemChance(r, 100_000));
+        }
+
+        [TestMethod]
+        public void Gems_Drop_At_Every_T11_Plus_Tier_On_The_Gems_Switch_Alone()
+        {
+            // 2026-11-24: the drip no longer gates the T11-T14 gems; their kills count toward the week (the slowdown) with the
+            // gems alone, while the drip still switches only the Creature / Item / Life rewards there
+            var cfg = TriuneEarning.Defaults();
+            cfg.GemsEnabled = true;
+            cfg.DripEnabled = false;
+            cfg.Enabled = false;
+            for (var t = TriuneEarning.DripMinTier; t <= TriuneEarning.MaxTier; t++)
+            {
+                Assert.IsTrue(SchoolGems.GemsDropAt(cfg, t), $"T{t} gems with the drip off");
+                Assert.IsTrue(TriuneEarning.CountsKills(cfg, t), $"T{t} kills count for the gem pace");
+                Assert.IsFalse(TriuneEarning.RewardsOn(cfg, t), $"T{t} rewards stay off");
+            }
+            Assert.IsFalse(SchoolGems.GemsDropAt(cfg, 10), "no gems below T11");
+            Assert.IsFalse(TriuneEarning.CountsKills(cfg, 10));
+
+            cfg.GemsEnabled = false;
+            Assert.IsFalse(SchoolGems.GemsDropAt(cfg, 12));
+            Assert.IsFalse(TriuneEarning.CountsKills(cfg, 12), "drip and gems off: T11-T14 kills are not counted");
+            cfg.DripEnabled = true;
+            Assert.IsFalse(SchoolGems.GemsDropAt(cfg, 12), "the drip alone drops no gems");
+            Assert.IsTrue(TriuneEarning.CountsKills(cfg, 12), "the drip counts T11-T14 kills for its rewards");
+            Assert.IsFalse(TriuneEarning.CountsKills(cfg, 15), "T15+ counts with its own switch or the gems");
+            cfg.Enabled = true;
+            Assert.IsTrue(TriuneEarning.CountsKills(cfg, 15));
         }
 
         [TestMethod]
