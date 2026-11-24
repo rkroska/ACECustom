@@ -2205,7 +2205,10 @@ namespace ACE.Server.WorldObjects.Managers
 
                             log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found {availableStamps.Count} available quest stamps: {string.Join(", ", availableStamps)}");
 
-                            if (availableStamps.Count == 0)
+                            // Only an empty list exits here. A list that is empty only because every stamp is [NoQB] goes on
+                            // to the "nothing eligible" handling below, which refunds an old-style turn-in (REFUND:) that
+                            // an earlier TakeItems already consumed, and leaves a TAKE: turn-in untaken.
+                            if (parsedStamps.Count == 0)
                             {
                                 log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp has no valid quest stamps after parsing.");
                                 break;
