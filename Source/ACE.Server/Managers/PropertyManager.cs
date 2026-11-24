@@ -1071,6 +1071,9 @@ namespace ACE.Server.Managers
         // (percent_hp_base, vuln_cap, true_damage ...) work regardless.
         public static ConfigProperty<bool> zc_combat_rules_enabled { get; private set; } = new(true, "Zone Control endgame combat rules for monsters at variation 11+: the %HP floor (where it is the fallback), the attack-skill floor, vuln compression, crit compression (zc_crit_compress) and damage-taken mitigation. Zone-authored stats work regardless.");
 
+        // No run and gun (owner 2026-11-23): see Player_Missile.cs LaunchMissile
+        public static ConfigProperty<bool> missile_block_while_moving { get; private set; } = new(false, "if TRUE, a player's missile shot (bow, crossbow, atlatl, thrown weapon) is refused while a walk, run or strafe key is down (no run and gun); OFF = retail");
+
         // Crit compression (owner 2026-10-21): crits on Zone Control monsters follow a power curve set by the tier's
         // crit_damage_resist_rating row, instead of being divided by it - see Entity/CritCompression.cs
         public static ConfigProperty<bool> zc_crit_compress { get; private set; } = new(true, "if TRUE, a PLAYER's crit on a Zone Control monster (variation 11+) lands at the bigger of raw^p times a normal hit and the old Crit Damage Resist division, with p read from the monster's Crit Damage Resist so the stack its row was solved for still crits at zc_crit_target_ratio - never below today's crit, and at least zc_crit_floor_ratio times a normal hit (that floor capped at the target and at the un-resisted crit). Pets and monsters keep the old rule. Also needs zc_combat_rules_enabled. FALSE = Crit Damage Resist divides the crit as before (below BiS a crit can land under a normal hit).");

@@ -495,7 +495,7 @@ namespace ACE.Server.WorldObjects
         /// True while the player's last movement report has a walk, run or strafe key down. Turning on the spot is not
         /// movement. The client sends this the moment a key changes, so it is current to within the network delay.
         /// </summary>
-        private bool IsHoldingMovementKey()
+        internal bool IsHoldingMovementKey()
         {
             var raw = LastMoveToState?.RawMotionState;
             if (raw == null)
