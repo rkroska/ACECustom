@@ -399,8 +399,6 @@ namespace ACE.Server.WorldObjects
         {
             // create a new item w/ stacksize = amount for the slumlord's inventory
             var newItem = WorldObjectFactory.CreateNewWorldObject(item.WeenieClassId);
-            // an earned attack school gem keeps its stamp when split (stacks since 2026-11-24)
-            ACE.Server.Managers.ZoneControl.SchoolGems.CopyStamp(item, newItem);
             newItem.SetStackSize(amount);
 
             // verify it can be added to slumlord's inventory

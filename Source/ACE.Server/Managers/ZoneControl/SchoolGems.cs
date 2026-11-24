@@ -16,8 +16,8 @@ using ACE.Server.WorldObjects;
 namespace ACE.Server.Managers.ZoneControl
 {
     /// <summary>
-    /// Attack school gems (owner 2026-11-01; one stat since 2026-11-22; floor 2,000, catch-up, no weekly stop, no drip gate and
-    /// stacks of 1,000 since 2026-11-24). One +1 gem per school - Gem
+    /// Attack school gems (owner 2026-11-01; one stat since 2026-11-22; floor 2,000, catch-up, no weekly stop and no drip gate
+    /// since 2026-11-24). One +1 gem per school - Gem
     /// of War / Void / Melee / Missile Augmentation - dropped at T11-T25 and reused every tier. A gem adds +1 straight onto that
     /// school's LumAug count (no separate counter):
     ///   - a kill at the player's own tier, in the corpse of the top damager (the corpse owner), never straight into the pack -
@@ -35,10 +35,7 @@ namespace ACE.Server.Managers.ZoneControl
     ///   - used by the earner: +1 while the school is under the gem's OWN tier's ceiling (T15 gems keep working in T16 up to
     ///     4,500); a gem that can never be used again crumbles; under the floor (2,000) = refused and kept;
     ///   - picked up by the earner when the school + the carried earned gems of that school at that tier or lower already fill
-    ///     that tier's ceiling: it crumbles at once;
-    ///   - stacks of up to 1,000 (2026-11-24) with ONE stamp per stack: gems only merge with the same earner and tier (a merge
-    ///     keeps the target's stamp), a split keeps the stamp (CopyStamp at every split), a use takes one gem from the stack,
-    ///     and a stack that can never add anything again crumbles whole.
+    ///     that tier's ceiling: it crumbles at once.
     /// Off unless /zonecontrol triune gems on - the one switch for every T11+ tier (until 2026-11-24 T11-T14 also needed the
     /// drip). Pace settings live in TriuneEarning's store.
     /// </summary>
@@ -92,87 +89,6 @@ namespace ACE.Server.Managers.ZoneControl
             var earner = gem?.AllowedActivator ?? 0;
             return tier > 0 && earner != 0 ? (earner, tier) : null;
         }
-
-        // ---- stacks (owner 2026-11-24) ----------------------------------------------------------------------------------
-
-        /// <summary>The most gems one stack holds.</summary>
-        public const int MaxStack = 1000;
-
-        /// <summary>True for an attack school gem of any kind (earned, or an old unstamped one).</summary>
-        public static bool IsSchoolGem(WorldObject wo) => wo != null && ForGem(wo.WeenieClassId) != null;
-
-        /// <summary>Lets a school gem stack to MaxStack. Set on every school gem the server makes or meets - the corpse drop, a
-        /// split, a merge, the login pass over the packs - so gems made before 2026-11-24, or from a weenie that still says 1,
-        /// stack too.</summary>
-        public static void MakeStackable(WorldObject gem)
-        {
-            if (gem is Stackable && IsSchoolGem(gem) && (gem.MaxStackSize ?? 1) < MaxStack)
-                gem.MaxStackSize = (ushort)MaxStack;
-        }
-
-        /// <summary>Can gems with these two stamps share a stack? Only the same earner and the same tier: a merge keeps the
-        /// target's stamp, so anything else would move gems to another tier's ceiling or to another earner. Unstamped (retired)
-        /// gems only stack with each other. Pure, tested.</summary>
-        public static bool StampsMatch((uint Earner, int Tier)? a, (uint Earner, int Tier)? b)
-            => a.HasValue == b.HasValue && (!a.HasValue || (a.Value.Earner == b.Value.Earner && a.Value.Tier == b.Value.Tier));
-
-        /// <summary>May <paramref name="source"/> merge into <paramref name="target"/>? Items that are not school gems are not
-        /// this rule's business (true); a school gem only joins the same school's gems with the same stamp.</summary>
-        public static bool StacksMatch(WorldObject source, WorldObject target)
-        {
-            if (!IsSchoolGem(source) && !IsSchoolGem(target))
-                return true;
-            return source != null && target != null && source.WeenieClassId == target.WeenieClassId && StampsMatch(Stamp(source), Stamp(target));
-        }
-
-        /// <summary>A stack this player carries that can take <paramref name="amount"/> more of <paramref name="gem"/>: the same
-        /// school and stamp, room left, not the gem itself and not offered in a trade. Null when there is none.</summary>
-        public static WorldObject FindStackFor(Player player, WorldObject gem, int amount)
-        {
-            if (player == null || !IsSchoolGem(gem))
-                return null;
-            foreach (var stack in player.GetInventoryItemsOfWCID(gem.WeenieClassId))
-            {
-                if (stack == gem || stack.IsDestroyed || !(stack is Stackable) || !StampsMatch(Stamp(stack), Stamp(gem)))
-                    continue;
-                if (player.IsTrading && (player.ItemsInTradeWindow.Contains(stack.Guid) || (stack.Container != null && player.ItemsInTradeWindow.Contains(stack.Container.Guid))))
-                    continue;
-                if ((stack.StackSize ?? 1) + amount > MaxStack)
-                    continue;
-                MakeStackable(stack);
-                return stack;
-            }
-            return null;
-        }
-
-        /// <summary>Copies a school gem's stamp (earner, tier, the "Earned by" line, its name) and its stack limit onto a stack
-        /// split off it: a split makes the new stack from the weenie, which knows none of them.</summary>
-        public static void CopyStamp(WorldObject from, WorldObject to)
-        {
-            if (from == null || to == null || !IsSchoolGem(from) || to.WeenieClassId != from.WeenieClassId)
-                return;
-            MakeStackable(to);
-            var stamp = Stamp(from);
-            if (stamp == null)
-                return;   // an unstamped (retired) gem splits into one just like it
-            to.AllowedActivator = from.AllowedActivator;
-            to.SetProperty(PropertyInt.EarnedGemTier, stamp.Value.Tier);
-            var earnedBy = from.GetProperty(PropertyString.LongDesc);
-            if (earnedBy != null)
-                to.SetProperty(PropertyString.LongDesc, earnedBy);
-            if (to.Name != from.Name)
-                to.Name = from.Name;
-        }
-
-        /// <summary>The earned gems of one school a player carries, by tier, for the pickup room: the earner's own, at
-        /// <paramref name="upToTier"/> or lower - (tier, floor, ceiling, how many), every gem of a stack counted. Pure, tested.</summary>
-        public static List<(int Tier, long Floor, long Ceiling, int Count)> CarriedByTier(TriuneEarning.Config cfg, uint earner, int upToTier,
-            IEnumerable<((uint Earner, int Tier)? Stamp, int Count)> carried)
-            => carried
-                .Where(c => c.Stamp is { } st && st.Earner == earner && st.Tier <= upToTier && c.Count > 0)
-                .GroupBy(c => c.Stamp.Value.Tier)
-                .Select(t => (t.Key, TriuneEarning.GemFloor(cfg, t.Key), TriuneEarning.GemCeiling(cfg, t.Key), t.Sum(c => c.Count)))
-                .ToList();
 
         // ---- pure rules (tested) ----------------------------------------------------------------------------------------
 
@@ -297,7 +213,6 @@ namespace ACE.Server.Managers.ZoneControl
                     gem.AllowedActivator = player.Guid.Full;
                     gem.SetProperty(PropertyInt.EarnedGemTier, killTier);
                     gem.SetProperty(PropertyString.LongDesc, $"Earned by {player.Name}.");
-                    MakeStackable(gem);   // stacks to 1,000 even while the weenie still says 1
                     if (!corpse.TryAddToInventory(gem))
                     {
                         log.Warn($"[SchoolGems] {corpse.Name} is full - {player.Name}'s {gem.Name} was not added");
@@ -333,9 +248,11 @@ namespace ACE.Server.Managers.ZoneControl
                 var cfg = TriuneEarning.Current;
                 var ceiling = TriuneEarning.GemCeiling(cfg, stamp.Value.Tier);
                 var total = Power(player, school);
-                // every gem of a carried stack counts (stacks of 1,000 since 2026-11-24)
-                var carried = CarriedByTier(cfg, player.Guid.Full, stamp.Value.Tier,
-                    player.GetInventoryItemsOfWCID(school.GemWcid).Where(g => g != item).Select(g => (Stamp(g), g.StackSize ?? 1)));
+                var carried = player.GetInventoryItemsOfWCID(school.GemWcid)
+                    .Select(g => g != item ? Stamp(g) : null)
+                    .Where(s => s is { } st && st.Earner == player.Guid.Full && st.Tier <= stamp.Value.Tier)
+                    .GroupBy(s => s.Value.Tier)
+                    .Select(t => (t.Key, TriuneEarning.GemFloor(cfg, t.Key), TriuneEarning.GemCeiling(cfg, t.Key), t.Count()));
                 if (PickupRoom(ceiling, total, carried) > 0)
                     return false;
 
@@ -407,13 +324,9 @@ namespace ACE.Server.Managers.ZoneControl
             var ceiling = TriuneEarning.GemCeiling(cfg, stamp.Value.Tier);
             if (total >= ceiling)
             {
-                // counts never go down: this gem can never add anything again - nor can the rest of its stack (one stamp per
-                // stack), so the whole stack crumbles at once
-                var dead = gem.StackSize ?? 1;
-                if (player.TryConsumeFromInventoryWithNetworking(gem, dead))
-                    player.SendMessage(dead > 1
-                        ? $"The {dead:N0} gems crumble. Your {school.Name} augmentations have already taken all they can from the lands these gems came from."
-                        : $"The gem crumbles. Your {school.Name} augmentations have already taken all they can from the lands this gem came from.", ChatMessageType.Broadcast);
+                // counts never go down: this gem can never add anything again
+                if (player.TryConsumeFromInventoryWithNetworking(gem, 1))
+                    player.SendMessage($"The gem crumbles. Your {school.Name} augmentations have already taken all they can from the lands this gem came from.", ChatMessageType.Broadcast);
                 return true;
             }
 
@@ -432,24 +345,19 @@ namespace ACE.Server.Managers.ZoneControl
             return true;
         }
 
-        // ---- login: held gems take the new names and stack ------------------------------------------------------------
+        // ---- login: held gems take the new names ---------------------------------------------------------------------
 
-        /// <summary>Brings the attack school gems this player carries up to date. Every login, before the client first sees the
-        /// pack; cheap when nothing to do. Earned copies take the names of 2026-11-22 (Gem of War / Void / Melee / Missile
-        /// Augmentation), so copies made before the rename read the same as new ones, and every school gem stacks to MaxStack
-        /// (2026-11-24), so gems made before that stack too.</summary>
-        public static void UpdateHeldGems(Player player)
+        /// <summary>Renames the attack school gems this player carries (owner 2026-11-22: Gem of War / Void / Melee / Missile
+        /// Augmentation), so copies made before the rename read the same as new ones. Every login; cheap when nothing to do.</summary>
+        public static void RenameHeldGems(Player player)
         {
             if (player == null)
                 return;
             foreach (var school in Schools)
+                // only EARNED gems take the new name: an old vendor gem of the same wcid keeps its name (it is no longer used)
                 foreach (var gem in player.GetInventoryItemsOfWCID(school.GemWcid))
-                {
-                    MakeStackable(gem);
-                    // only EARNED gems take the new name: an old vendor gem of the same wcid keeps its name (it is no longer used)
                     if (Stamp(gem) != null && gem.Name != school.GemName)
                         gem.Name = school.GemName;
-                }
         }
     }
 }

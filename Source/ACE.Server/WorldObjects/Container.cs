@@ -1204,10 +1204,6 @@ namespace ACE.Server.WorldObjects
                     if (destinationItem.WeenieClassId != sourceItem.WeenieClassId || destinationItem.StackSize == destinationItem.MaxStackSize)
                         continue;
 
-                    // earned attack school gems keep one earner and tier stamp per stack (2026-11-24): never fold others together
-                    if (!ACE.Server.Managers.ZoneControl.SchoolGems.StacksMatch(sourceItem, destinationItem))
-                        continue;
-
                     var amount = Math.Min(sourceItem.StackSize ?? 0, (destinationItem.MaxStackSize - destinationItem.StackSize) ?? 0);
 
                     sourceItem.SetStackSize(sourceItem.StackSize - amount);

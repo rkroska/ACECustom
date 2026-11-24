@@ -234,7 +234,7 @@ namespace ACE.Server.Managers.ZoneControl
             }
             try
             {
-                SchoolGems.UpdateHeldGems(player);   // the gem renames, and stacks of 1,000 (2026-11-24)
+                SchoolGems.RenameHeldGems(player);
                 TriuneEarning.PushHuntState(player, full: true, send: false);
             }
             catch (Exception ex)

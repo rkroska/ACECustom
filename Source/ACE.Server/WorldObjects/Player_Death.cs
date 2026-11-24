@@ -571,8 +571,6 @@ namespace ACE.Server.WorldObjects
                         Session.Network.EnqueueSend(new GameMessageSetStackSize(stack));
 
                         var dropItem = WorldObjectFactory.CreateNewWorldObject(deathItem.WorldObject.WeenieClassId);
-                        // an earned attack school gem keeps its stamp when one drops off its stack (stacks since 2026-11-24)
-                        ACE.Server.Managers.ZoneControl.SchoolGems.CopyStamp(stack, dropItem);
                         dropItem.SetStackSize(1);
 
                         //Console.WriteLine("Dropping " + deathItem.WorldObject.Name + " (stack)");
