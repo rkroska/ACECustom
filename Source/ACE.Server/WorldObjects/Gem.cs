@@ -242,6 +242,11 @@ namespace ACE.Server.WorldObjects
             if (UseSound > 0)
                 player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, UseSound));
 
+            // attack school gems stack (2026-11-24): their Use emote (PromptAddAugment -> SchoolGems.TryUse) already took the one
+            // gem a use spends, or kept a retired gem on purpose - a stack is still here afterwards and must not lose a second gem
+            if (ACE.Server.Managers.ZoneControl.SchoolGems.IsSchoolGem(this))
+                return;
+
             if ((GetProperty(PropertyBool.UnlimitedUse) ?? false) == false)
                 player.TryConsumeFromInventoryWithNetworking(this, 1);
         }

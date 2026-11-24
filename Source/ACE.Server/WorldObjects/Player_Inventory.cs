@@ -2810,6 +2810,9 @@ namespace ACE.Server.WorldObjects
                             return;
                         }
 
+                        // an earned attack school gem keeps its stamp when split (stacks since 2026-11-24): the weenie knows none of it
+                        ACE.Server.Managers.ZoneControl.SchoolGems.CopyStamp(stack, newStack);
+
                         newStack.SetStackSize(amount);
 
                         if (DoHandleActionStackableSplitToContainer(stack, stackFoundInContainer, stackRootOwner, container, containerRootOwner, newStack, placementPosition, amount))
@@ -2842,6 +2845,9 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, stackId));
                     return;
                 }
+
+                // an earned attack school gem keeps its stamp when split (stacks since 2026-11-24): the weenie knows none of it
+                ACE.Server.Managers.ZoneControl.SchoolGems.CopyStamp(stack, newStack);
 
                 newStack.SetStackSize(amount);
 
@@ -3066,6 +3072,9 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
+                // an earned attack school gem keeps its stamp when split (stacks since 2026-11-24): the weenie knows none of it
+                ACE.Server.Managers.ZoneControl.SchoolGems.CopyStamp(stack, newStack);
+
                 newStack.SetStackSize(amount);
 
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
@@ -3271,6 +3280,9 @@ namespace ACE.Server.WorldObjects
                             return;
                         }
 
+                        // an earned attack school gem keeps its stamp when split (stacks since 2026-11-24): the weenie knows none of it
+                        ACE.Server.Managers.ZoneControl.SchoolGems.CopyStamp(stack, newStack);
+
                         newStack.SetStackSize(amount);
 
                         if (DoHandleActionGetAndWieldItem(newStack, stackFoundInContainer, stackRootOwner, false, wieldedLocation, true))
@@ -3330,6 +3342,9 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, stackId));
                     return;
                 }
+
+                // an earned attack school gem keeps its stamp when split (stacks since 2026-11-24): the weenie knows none of it
+                ACE.Server.Managers.ZoneControl.SchoolGems.CopyStamp(stack, newStack);
 
                 newStack.SetStackSize(amount);
 
@@ -3451,6 +3466,39 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // attack school gems stack to 1,000 (2026-11-24) with one earner and tier stamp per stack: gems only join a stack stamped
+            // the same, with room for them. The client picks the target by wcid alone (a loot click tops up the first stack it
+            // finds), so a merge the target cannot take goes to a carried stack that can, or into the target's pack as a stack of
+            // its own; one into a stack that is not ours is refused
+            if (ACE.Server.Managers.ZoneControl.SchoolGems.IsSchoolGem(sourceStack))
+            {
+                ACE.Server.Managers.ZoneControl.SchoolGems.MakeStackable(sourceStack);
+                ACE.Server.Managers.ZoneControl.SchoolGems.MakeStackable(targetStack);
+
+                if (!ACE.Server.Managers.ZoneControl.SchoolGems.StacksMatch(sourceStack, targetStack)
+                    || (targetStack.StackSize ?? 1) + amount > (targetStack.MaxStackSize ?? 1))
+                {
+                    var gemStack = targetStackRootOwner == this ? ACE.Server.Managers.ZoneControl.SchoolGems.FindStackFor(this, sourceStack, amount) : null;
+                    if (gemStack != null)
+                        targetStack = gemStack;
+                    else if (targetStackRootOwner == this)
+                    {
+                        var gemContainerGuid = (targetStack.Container ?? this).Guid.Full;
+                        if (amount >= (sourceStack.StackSize ?? 1))
+                            HandleActionPutItemInContainer(mergeFromGuid, gemContainerGuid);
+                        else
+                            HandleActionStackableSplitToContainer(mergeFromGuid, gemContainerGuid, 0, amount);
+                        return;
+                    }
+                    else
+                    {
+                        Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Those gems were earned differently and cannot share a stack."));
+                        Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, mergeFromGuid, WeenieError.YouCannotMergeDifferentStacks));
+                        return;
+                    }
+                }
+            }
+
             if (sourceStack.StackSize == null || sourceStack.StackSize == 0)
             {
                 log.WarnFormat("Player 0x{0:X8}:{1} tried to merge invalid source item 0x{2:X8}:{3}.", Guid.Full, Name, sourceStack.Guid.Full, sourceStack.Name);
@@ -3555,6 +3603,14 @@ namespace ACE.Server.WorldObjects
                             log.DebugFormat("Player 0x{0}:{1} tried to merge an item that's no longer valid 0x{2:X8}:{3}.", Guid.Full, Name, sourceStack.Guid.Full, sourceStack.Name);
                             Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Merge Failed!")); // Custom error message
                             Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, mergeFromGuid, WeenieError.ActionCancelled));
+                            EnqueuePickupDone(pickupMotion);
+                            return;
+                        }
+
+                        // School gems past the cap (stacking since 2026-11-24): a loot click that tops up a carried stack checks the
+                        // pickup room too - the player's own earned gem with no room left crumbles here, as on a plain pickup
+                        if (sourceStackRootOwner is Corpse && ACE.Server.Managers.ZoneControl.SchoolGems.CrumbleOnPickup(this, sourceStack, sourceStackRootOwner))
+                        {
                             EnqueuePickupDone(pickupMotion);
                             return;
                         }
@@ -4285,6 +4341,9 @@ namespace ACE.Server.WorldObjects
                     return false;
                 }
 
+                // an earned attack school gem keeps its stamp when split (stacks since 2026-11-24): the weenie knows none of it
+                ACE.Server.Managers.ZoneControl.SchoolGems.CopyStamp(item, newStack);
+
                 newStack.SetStackSize(amount);
 
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
@@ -4574,6 +4633,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<WorldObject> GetCarriedStacksWithRoom(uint weenieClassId)
         {
+            // attack school gems carry an earner and tier stamp per stack (2026-11-24): a reward never tops one up
+            if (ACE.Server.Managers.ZoneControl.SchoolGems.ForGem(weenieClassId) != null)
+                return new List<WorldObject>();
+
             var weenie = DatabaseManager.World.GetCachedWeenie(weenieClassId);
             if (weenie == null || weenie.GetProperty(PropertyInt.Lifespan) != null || weenie.GetProperty(PropertyInt.Unique) != null)
                 return new List<WorldObject>();

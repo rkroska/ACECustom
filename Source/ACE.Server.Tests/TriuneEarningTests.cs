@@ -282,6 +282,40 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Gem_Stacks_Merge_Only_With_The_Same_Stamp()
+        {
+            // stacks of 1,000 (2026-11-24), one earner and tier stamp per stack: a merge keeps the target's stamp
+            Assert.AreEqual(1000, SchoolGems.MaxStack);
+            Assert.IsTrue(SchoolGems.StampsMatch((1u, 15), (1u, 15)));
+            Assert.IsFalse(SchoolGems.StampsMatch((1u, 15), (1u, 16)), "another tier: another ceiling");
+            Assert.IsFalse(SchoolGems.StampsMatch((1u, 15), (2u, 15)), "another earner");
+            Assert.IsFalse(SchoolGems.StampsMatch((1u, 15), null), "an unstamped (retired) gem never joins an earned stack");
+            Assert.IsFalse(SchoolGems.StampsMatch(null, (1u, 15)));
+            Assert.IsTrue(SchoolGems.StampsMatch(null, null), "retired gems stack with each other");
+        }
+
+        [TestMethod]
+        public void Gem_Pickup_Room_Counts_Every_Gem_In_A_Stack()
+        {
+            var cfg = TriuneEarning.Defaults();
+            const uint me = 0x50000001, other = 0x50000002;
+            var carried = new ((uint Earner, int Tier)? Stamp, int Count)[]
+            {
+                ((me, 15), 400),      // a stack of 400 earned T15 gems
+                ((me, 15), 50),       // a second T15 stack
+                ((me, 16), 30),       // T16: above the picked-up T15 gem's tier, not counted
+                ((other, 15), 999),   // someone else's
+                (null, 500),          // unstamped (retired) gems
+            };
+            var byTier = SchoolGems.CarriedByTier(cfg, me, 15, carried);
+            Assert.AreEqual(1, byTier.Count);
+            Assert.AreEqual((15, 0L, 4500L, 450), byTier[0]);
+            // a school at 4,000 carrying 450 earned T15 gems has room for 50 more at T15
+            Assert.AreEqual(50, SchoolGems.PickupRoom(4500, 4000, byTier));
+            Assert.AreEqual(0, SchoolGems.PickupRoom(4500, 4050, byTier), "4,050 + 450 fills T15: the next gem crumbles");
+        }
+
+        [TestMethod]
         public void Gem_Pickup_Room_Counts_Carried_Gems()
         {
             Assert.AreEqual(1, SchoolGems.PickupRoom(4500, 4490, new[] { (15, 4500L, 9) }));
