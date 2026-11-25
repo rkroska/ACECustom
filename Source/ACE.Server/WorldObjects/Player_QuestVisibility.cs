@@ -63,28 +63,43 @@ namespace ACE.Server.WorldObjects
             return left != TimeSpan.MinValue && left != TimeSpan.MaxValue;
         }
 
-        /// <summary>Called from TrackObject just before a CreateObject goes out. FALSE = hold it back.</summary>
-        private bool QuestGateAllowsCreate(WorldObject wo)
+        // Show and hide are each one step under the questGatedShown lock: the decision, the set change and the
+        // CreateObject / DeleteObject enqueue, so a stamp (emote thread) and the heartbeat can't interleave them and leave
+        // the set saying one thing and the client another. Safe to hold: EnqueueSend only takes the session's own bundle
+        // locks and never calls back into player code, and QuestManager takes no locks. CanSeeQuestGated reads the quest
+        // row from the world cache; callers check it once outside the lock first, so a cache miss (a database read) never
+        // happens while the lock is held.
+
+        /// <summary>From TrackObject: sends the CreateObject for a gated object and records it, if this player may still
+        /// see it. FALSE = held back (nothing sent).</summary>
+        private bool SendQuestGatedCreate(WorldObject wo)
         {
-            if (string.IsNullOrEmpty(wo.VisibleWithQuest))
-                return true;
-
-            if (!CanSeeQuestGated(wo))
-                return false;
-
             lock (questGatedShown)
+            {
+                if (!CanSeeQuestGated(wo))
+                    return false;
+
                 questGatedShown.Add(wo.Guid.Full);
-            return true;
+                Session.Network.EnqueueSend(new GameMessageCreateObject(wo, Adminvision, Adminvision));
+                return true;
+            }
         }
 
-        /// <summary>Called from RemoveTrackedObject before a DeleteObject goes out. FALSE = the client never had it.</summary>
-        private bool QuestGateAllowsDelete(WorldObject wo)
+        /// <summary>Sends the DeleteObject for a gated object the client was sent, and forgets it. onlyIfHidden: only when
+        /// this player may no longer see it (a refresh; not for an object leaving range). FALSE = nothing sent.</summary>
+        private bool SendQuestGatedDelete(WorldObject wo, bool onlyIfHidden)
         {
-            if (string.IsNullOrEmpty(wo.VisibleWithQuest))
-                return true;
-
             lock (questGatedShown)
-                return questGatedShown.Remove(wo.Guid.Full);
+            {
+                if (onlyIfHidden && CanSeeQuestGated(wo))
+                    return false;
+
+                if (!questGatedShown.Remove(wo.Guid.Full))
+                    return false;
+
+                Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
+                return true;
+            }
         }
 
         /// <summary>
@@ -109,14 +124,15 @@ namespace ACE.Server.WorldObjects
                 lock (questGatedShown)
                     shown = questGatedShown.Contains(wo.Guid.Full);
 
-                var see = CanSeeQuestGated(wo);
+                var see = CanSeeQuestGated(wo);   // first check, outside the lock; the send re-checks under it
                 if (see && !shown)
                     TrackObject(wo, createObjectPath: "QuestGate");
-                else if (!see && shown)
+                else if (!see && shown && SendQuestGatedDelete(wo, onlyIfHidden: true))
                 {
-                    lock (questGatedShown)
-                        questGatedShown.Remove(wo.Guid.Full);
-                    Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
+                    // as RemoveTrackedObject does: the client drops what the creature holds too
+                    if (wo is Creature creature)
+                        foreach (var wieldedItem in creature.EquippedObjects.Values)
+                            RemoveTrackedEquippedObject(creature, wieldedItem);
                 }
             }
         }

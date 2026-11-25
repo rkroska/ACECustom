@@ -79,7 +79,8 @@ namespace ACE.Server.WorldObjects
                 return;
 
             // Quest-gated objects (Player_QuestVisibility.cs): only players holding the quest are sent this object
-            if (!QuestGateAllowsCreate(worldObject))
+            var questGated = !string.IsNullOrEmpty(worldObject.VisibleWithQuest);
+            if (questGated && !CanSeeQuestGated(worldObject))
                 return;
 
             if (!string.IsNullOrEmpty(createObjectPath))
@@ -90,7 +91,14 @@ namespace ACE.Server.WorldObjects
                     clampWouldApply: clampWouldBlock, extra: delay ? "delayed=true" : null);
             }
 
-            Session.Network.EnqueueSend(new GameMessageCreateObject(worldObject, Adminvision, Adminvision));
+            if (questGated)
+            {
+                // the decision, the shown-set entry and the CreateObject as one step (Player_QuestVisibility.cs)
+                if (!SendQuestGatedCreate(worldObject))
+                    return;
+            }
+            else
+                Session.Network.EnqueueSend(new GameMessageCreateObject(worldObject, Adminvision, Adminvision));
 
             //Console.WriteLine($"Player {Name} - TrackObject({worldObject.Name})");
 
@@ -295,10 +303,13 @@ namespace ACE.Server.WorldObjects
                     return;
 
                 // ... nor a quest-gated object it was never sent (Player_QuestVisibility.cs)
-                if (!QuestGateAllowsDelete(wo))
-                    return;
-
-                Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
+                if (!string.IsNullOrEmpty(wo.VisibleWithQuest))
+                {
+                    if (!SendQuestGatedDelete(wo, onlyIfHidden: false))
+                        return;
+                }
+                else
+                    Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
             }
 
             if (wo is Creature creature)
