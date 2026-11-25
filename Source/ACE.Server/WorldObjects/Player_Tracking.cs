@@ -78,6 +78,10 @@ namespace ACE.Server.WorldObjects
                     VariationManager.GetEffectiveVariationForVisibility(worldObject)))
                 return;
 
+            // Quest-gated objects (Player_QuestVisibility.cs): only players holding the quest are sent this object
+            if (!QuestGateAllowsCreate(worldObject))
+                return;
+
             if (!string.IsNullOrEmpty(createObjectPath))
             {
                 var dist2D = VisibilityCreateObjectDiag.Distance2D(this, worldObject);
@@ -288,6 +292,10 @@ namespace ACE.Server.WorldObjects
             {
                 // Don't tell the client to delete something it has never seen
                 if (wo.Visibility && !Adminvision)
+                    return;
+
+                // ... nor a quest-gated object it was never sent (Player_QuestVisibility.cs)
+                if (!QuestGateAllowsDelete(wo))
                     return;
 
                 Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));

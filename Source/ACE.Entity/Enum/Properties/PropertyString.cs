@@ -222,5 +222,11 @@ namespace ACE.Entity.Enum.Properties
         PersonalLifestoneAttuneSpot = 59100,
         /// <summary>Personal Lifestone (2026-11-14), server-only: the spot a personal stone set this character's Lifestone Tie to.</summary>
         PersonalLifestoneTieSpot = 59101,
+
+        /// <summary>Quest-gated objects (2026-11-25), on a WORLD OBJECT: a quest name. The object is sent only to players who
+        /// hold that stamp with its timer still running (a quest with min_Delta 0: who hold the stamp at all); nobody else's
+        /// client gets it, so it neither draws nor blocks. Admin vision sees it always. Player_Tracking owns the rule; a quest
+        /// stamp or erase, and the player heartbeat (timers running out), show or hide it. 59300, free in EVERY Property enum.</summary>
+        VisibleWithQuest = 59300,
     }
 }

@@ -228,6 +228,9 @@ namespace ACE.Server.WorldObjects
 
             GagsTick();
 
+            // quest-gated objects (Player_QuestVisibility.cs): hide the ones whose quest timer ran out
+            QuestGatedObjectsTick();
+
             PhysicsObj.ObjMaint.DestroyObjects();
 
             // Check if we're due for our periodic SavePlayer

@@ -2417,6 +2417,13 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// If TRUE, this is an admin-only visible object, only seen with /adminvision
         /// </summary>
+        /// <summary>Quest-gated objects: the quest a player needs (timer running) to be sent this object. Null = everyone.</summary>
+        public string VisibleWithQuest
+        {
+            get => GetProperty(PropertyString.VisibleWithQuest);
+            set { if (value == null) RemoveProperty(PropertyString.VisibleWithQuest); else SetProperty(PropertyString.VisibleWithQuest, value); }
+        }
+
         public bool Visibility
         {
             get => GetProperty(PropertyBool.Visibility) ?? false;
