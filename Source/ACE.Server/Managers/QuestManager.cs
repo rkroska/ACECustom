@@ -200,6 +200,7 @@ namespace ACE.Server.Managers
         {
             player.ContractManager.NotifyOfQuestUpdate(questName);
             player.NotifyQuestAffinityChanged(questName);
+            player.RefreshQuestGatedObjects(questName);   // quest-gated objects appear / disappear with the stamp
         }
 
         /// <summary>

@@ -226,5 +226,13 @@ namespace ACE.Entity.Enum.Properties
         /// counts and which old counters it removed (AugMove owns the format). Its presence = moved; gates that still name a
         /// retired counter read its old value. Server-only. 50667 (PropertyString ids are their own table: PropertyInt64 50667 = AugRollTier is a different property).</summary>
         TriuneMoveRecord = 50667,
+
+        /// <summary>Quest-gated objects (2026-11-25), on a WORLD OBJECT: a quest name. The object is sent only to players who
+        /// hold that stamp with its timer still running (a quest with min_Delta 0: who hold the stamp at all); nobody else's
+        /// client gets it, so it doesn't draw for them and their client doesn't collide with it. The server-side object is
+        /// unchanged: it still blocks server-driven movement (creatures, pets) unless the weenie is ethereal, and its
+        /// broadcasts still go out. Admin vision sees it always. Player_Tracking owns the rule; a quest
+        /// stamp or erase, and the player heartbeat (timers running out), show or hide it. 59300, free in EVERY Property enum.</summary>
+        VisibleWithQuest = 59300,
     }
 }

@@ -78,6 +78,11 @@ namespace ACE.Server.WorldObjects
                     VariationManager.GetEffectiveVariationForVisibility(worldObject)))
                 return;
 
+            // Quest-gated objects (Player_QuestVisibility.cs): only players holding the quest are sent this object
+            var questGated = !string.IsNullOrEmpty(worldObject.VisibleWithQuest);
+            if (questGated && !CanSeeQuestGated(worldObject))
+                return;
+
             if (!string.IsNullOrEmpty(createObjectPath))
             {
                 var dist2D = VisibilityCreateObjectDiag.Distance2D(this, worldObject);
@@ -86,16 +91,24 @@ namespace ACE.Server.WorldObjects
                     clampWouldApply: clampWouldBlock, extra: delay ? "delayed=true" : null);
             }
 
-            Session.Network.EnqueueSend(new GameMessageCreateObject(worldObject, Adminvision, Adminvision));
+            if (questGated)
+            {
+                // the decision, the shown-set entry and the CreateObject as one step (Player_QuestVisibility.cs)
+                if (!SendQuestGatedCreate(worldObject))
+                    return;
+            }
+            else
+                Session.Network.EnqueueSend(new GameMessageCreateObject(worldObject, Adminvision, Adminvision));
 
             //Console.WriteLine($"Player {Name} - TrackObject({worldObject.Name})");
 
-            // add creature equipped objects / wielded items
+            // add creature equipped objects / wielded items (a quest-gated creature's went out with it, under its lock)
             if (worldObject is Creature creature)
             {
-                foreach (var wieldedItem in creature.EquippedObjects.Values)
-                    if (IsInChildLocation(wieldedItem))
-                        TrackEquippedObject(creature, wieldedItem);
+                if (!questGated)
+                    foreach (var wieldedItem in creature.EquippedObjects.Values)
+                        if (IsInChildLocation(wieldedItem))
+                            TrackEquippedObject(creature, wieldedItem);
 
                 if (creature.IsMoving)
                     creature.BroadcastMoveTo(this);
@@ -290,7 +303,14 @@ namespace ACE.Server.WorldObjects
                 if (wo.Visibility && !Adminvision)
                     return;
 
-                Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
+                // ... nor a quest-gated object it was never sent (Player_QuestVisibility.cs)
+                if (!string.IsNullOrEmpty(wo.VisibleWithQuest))
+                {
+                    SendQuestGatedDelete(wo, onlyIfHidden: false);   // the creature's wielded items go with it, under its lock
+                    return;
+                }
+                else
+                    Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
             }
 
             if (wo is Creature creature)
