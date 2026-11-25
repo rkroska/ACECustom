@@ -151,6 +151,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool HasPermission(Player player)
         {
+            // the area record names only the way THIS open got in (CodeRabbit PR 626): the area branch below adds it back,
+            // any other way in (a normal fellowship, half-rot, a permit) leaves it gone, so that close keeps the retail rule
+            areaShareOpened?.Remove(player.Guid.Full);
+
             // players can loot their own corpses
             if (VictimId == null || player.Guid.Full == VictimId)
                 return true;
@@ -212,9 +216,10 @@ namespace ACE.Server.WorldObjects
 
 
         /// <summary>
-        /// The Auto Fellow fellows who opened this corpse through the killer's own Share loot option (Fellowship.SharesLootOf).
-        /// Their close does not open the corpse to everyone (IsLooted): each reopen asks the killer's option again, so unticking
-        /// Share loot keeps fellows out of kills they already looked into (owner 2026-11-24).
+        /// The Auto Fellow fellows whose CURRENT open of this corpse came through the killer's own Share loot option
+        /// (Fellowship.SharesLootOf). Their close does not open the corpse to everyone (IsLooted): each reopen asks the killer's
+        /// option again, so unticking Share loot keeps fellows out of kills they already looked into (owner 2026-11-24).
+        /// Set by HasPermission (cleared first on every open), consumed by Close.
         /// </summary>
         private HashSet<uint> areaShareOpened = null;
 
@@ -222,7 +227,8 @@ namespace ACE.Server.WorldObjects
         {
             base.Close(player);
 
-            if (player != null && areaShareOpened != null && areaShareOpened.Contains(player.Guid.Full)
+            // consumed here: each open is judged on its own
+            if (player != null && areaShareOpened != null && areaShareOpened.Remove(player.Guid.Full)
                 && player.Guid.Full != KillerId && player.Guid.Full != VictimId)
                 return;
 
