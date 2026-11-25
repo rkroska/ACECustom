@@ -2414,9 +2414,6 @@ namespace ACE.Server.WorldObjects
         public byte? SpellSelectionCode => (byte?)(TsysMutationData >> 24);
 
 
-        /// <summary>
-        /// If TRUE, this is an admin-only visible object, only seen with /adminvision
-        /// </summary>
         /// <summary>Quest-gated objects: the quest a player needs (timer running) to be sent this object. Null = everyone.</summary>
         public string VisibleWithQuest
         {
@@ -2424,6 +2421,9 @@ namespace ACE.Server.WorldObjects
             set { if (value == null) RemoveProperty(PropertyString.VisibleWithQuest); else SetProperty(PropertyString.VisibleWithQuest, value); }
         }
 
+        /// <summary>
+        /// If TRUE, this is an admin-only visible object, only seen with /adminvision
+        /// </summary>
         public bool Visibility
         {
             get => GetProperty(PropertyBool.Visibility) ?? false;

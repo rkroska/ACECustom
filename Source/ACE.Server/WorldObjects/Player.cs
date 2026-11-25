@@ -1355,6 +1355,10 @@ namespace ACE.Server.WorldObjects
                 // sending DO network messages for /adminvision off here doesn't work in client unfortunately?
             }
 
+            // quest-gated objects (Player_QuestVisibility.cs): admin vision shows them all; off, back to the quest rule
+            if (oldState != Adminvision)
+                RefreshQuestGatedObjects();
+
             string state = Adminvision ? "enabled" : "disabled";
             Session.Network.EnqueueSend(new GameMessageSystemChat($"Admin Vision is {state}.", ChatMessageType.Broadcast));
 

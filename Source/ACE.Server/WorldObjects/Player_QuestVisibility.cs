@@ -11,7 +11,8 @@ namespace ACE.Server.WorldObjects
     /// <summary>
     /// Quest-gated objects (2026-11-25): a world object with PropertyString.VisibleWithQuest is sent only to the players
     /// who hold that quest stamp with its timer still running (for a quest with min_Delta 0: who hold the stamp at all).
-    /// Everyone else's client never gets a CreateObject for it, so it neither draws nor blocks for them. First use: the
+    /// Everyone else's client never gets a CreateObject for it, so it doesn't draw for them and their client doesn't
+    /// collide with it (server-driven movement still does, unless the weenie is ethereal). First use: the
     /// Courier's Gauntlet runner's bells, which appear for 15 minutes after talking to Postmaster Hara instead of
     /// cluttering Shoushi for everyone.
     ///
@@ -120,14 +121,35 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        /// <summary>Heartbeat: hides gated objects whose quest timer ran out. Costs nothing while none are shown.</summary>
+        /// <summary>
+        /// Heartbeat: hides gated objects whose quest timer ran out. Costs nothing while none are shown.
+        /// First drops guids this player no longer knows about at all (an object destroyed, or dropped from ObjMaint
+        /// without a RemoveTrackedObject), so stale entries neither pile up nor keep this check running. Objects the
+        /// client lost in a teleport are sent again by ReconcileVisibilityAfterArrival, through TrackObject and this gate.
+        /// </summary>
         private void QuestGatedObjectsTick()
         {
-            int count;
+            uint[] shown;
             lock (questGatedShown)
-                count = questGatedShown.Count;
+            {
+                if (questGatedShown.Count == 0)
+                    return;
+                shown = questGatedShown.ToArray();
+            }
 
-            if (count > 0)
+            var objMaint = PhysicsObj?.ObjMaint;
+            if (objMaint == null)
+                return;
+
+            var gone = shown.Where(g => !objMaint.KnownObjectsContainsKey(g)).ToList();
+            if (gone.Count > 0)
+            {
+                lock (questGatedShown)
+                    foreach (var g in gone)
+                        questGatedShown.Remove(g);
+            }
+
+            if (gone.Count < shown.Length)
                 RefreshQuestGatedObjects();
         }
     }
