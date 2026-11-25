@@ -189,11 +189,16 @@ namespace ACE.Server.WorldObjects
                 return true;
 
             // players in the same fellowship as the killer w/ loot sharing enabled except if corpse generates a rare
-            if (player.Fellowship != null && player.Fellowship.ShareLoot)
+            // (an Auto Fellow area fellowship: the killer's own Share loot option - Fellowship.SharesLootOf)
+            if (player.Fellowship != null)
             {
                 var onlinePlayer = PlayerManager.GetOnlinePlayer(KillerId ?? 0);
-                if (onlinePlayer != null && onlinePlayer.Fellowship != null && player.Fellowship == onlinePlayer.Fellowship && !CorpseGeneratedRare && PkLevel != PKLevel.PK)
+                if (onlinePlayer != null && onlinePlayer.Fellowship != null && player.Fellowship == onlinePlayer.Fellowship && player.Fellowship.SharesLootOf(onlinePlayer) && !CorpseGeneratedRare && PkLevel != PKLevel.PK)
+                {
+                    if (player.Fellowship.ZoneKey != null)
+                        (areaShareOpened ??= new HashSet<uint>()).Add(player.Guid.Full);
                     return true;
+                }
             }
             return false;
         }
@@ -206,9 +211,20 @@ namespace ACE.Server.WorldObjects
         public static int HalfLife = 180;
 
 
+        /// <summary>
+        /// The Auto Fellow fellows who opened this corpse through the killer's own Share loot option (Fellowship.SharesLootOf).
+        /// Their close does not open the corpse to everyone (IsLooted): each reopen asks the killer's option again, so unticking
+        /// Share loot keeps fellows out of kills they already looked into (owner 2026-11-24).
+        /// </summary>
+        private HashSet<uint> areaShareOpened = null;
+
         public override void Close(Player player)
         {
             base.Close(player);
+
+            if (player != null && areaShareOpened != null && areaShareOpened.Contains(player.Guid.Full)
+                && player.Guid.Full != KillerId && player.Guid.Full != VictimId)
+                return;
 
             IsLooted = true;
         }

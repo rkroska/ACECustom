@@ -428,6 +428,10 @@ namespace ACE.Server.Managers
 
             player.ZoneFellowOutsideSince = 0;
             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You joined the {name} fellowship with everyone here. Type /autofellow off to leave it.", ChatMessageType.Broadcast));
+            // loot here follows each player's own Share loot box (owner 2026-11-24), so say where theirs stands
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat(player.GetCharacterOption(CharacterOption.ShareFellowshipLoot)
+                ? "Your Share loot option is on: fellows here may loot your kills. Untick Share loot in the fellowship panel to keep them to yourself."
+                : "Your Share loot option is off: your kills stay yours. Tick Share loot in the fellowship panel to let fellows here loot them.", ChatMessageType.Broadcast));
         }
 
         /// <summary>Takes the player out of their zone fellowship, if they are in one.</summary>
