@@ -34,10 +34,11 @@ namespace ACE.Server.Tests
             Assert.IsFalse(cfg.Enabled, "ships OFF");
             Assert.AreEqual((int)DayOfWeek.Friday, cfg.ResetDay);
             Assert.AreEqual(12, cfg.ResetHour);
-            Assert.AreEqual(11, cfg.Tiers.Count);
-            Assert.AreEqual(15, cfg.Tiers.First().Tier);
+            Assert.IsFalse(cfg.DripEnabled, "the T11-T14 drip ships OFF");
+            Assert.AreEqual(15, cfg.Tiers.Count, "T11-T14 drip rows + T15-T25 Triune rows");
+            Assert.AreEqual(11, cfg.Tiers.First().Tier);
             Assert.AreEqual(25, cfg.Tiers.Last().Tier);
-            foreach (var r in cfg.Tiers)
+            foreach (var r in cfg.Tiers.Where(r => r.Tier >= TriuneEarning.MinTier))
             {
                 Assert.AreEqual(200, r.FloorKph); Assert.AreEqual(400, r.CeilingKph);
                 Assert.AreEqual(6, r.SlowWeeks); Assert.AreEqual(4, r.FastWeeks); Assert.AreEqual(500, r.Points);
@@ -102,7 +103,7 @@ namespace ACE.Server.Tests
             var r = cfg.Tiers.Single(t => t.Tier == 15);
             Assert.IsTrue(r.CeilingKph > r.FloorKph, "ceiling above the floor");
             Assert.IsTrue(r.FastWeeks <= r.SlowWeeks, "fast never slower than slow");
-            Assert.AreEqual(11, cfg.Tiers.Count, "T15..T25 only, each once");
+            Assert.AreEqual(15, cfg.Tiers.Count, "T11..T25 only, each once");
         }
 
         // -- the weekly reset --
@@ -196,10 +197,11 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Gem_Qualifies_Only_Bought_To_The_Base_And_Under_The_Ceiling()
         {
-            Assert.IsFalse(SchoolGems.Qualifies(3999, 4400, 4000, 4500), "under the bought base");
-            Assert.IsTrue(SchoolGems.Qualifies(4000, 4000, 4000, 4500));
-            Assert.IsTrue(SchoolGems.Qualifies(4000, 4499, 4000, 4500));
-            Assert.IsFalse(SchoolGems.Qualifies(4000, 4500, 4000, 4500), "full for the tier");
+            // one stat (2026-11-22): the aug count itself against the tier's floor and ceiling
+            Assert.IsFalse(SchoolGems.Qualifies(3999, 4000, 4500), "under the floor");
+            Assert.IsTrue(SchoolGems.Qualifies(4000, 4000, 4500));
+            Assert.IsTrue(SchoolGems.Qualifies(4499, 4000, 4500));
+            Assert.IsFalse(SchoolGems.Qualifies(4500, 4000, 4500), "full for the tier");
         }
 
         [TestMethod]
@@ -223,6 +225,27 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Gem_Pickup_Carried_Gems_Below_Their_Floor_Take_No_Room()
+        {
+            // CodeRabbit #620: at 4,450 a T15 gem (ceiling 5,000 here) is usable; 50 carried T14 gems whose floor was raised to
+            // 4,600 cannot be used (the use refuses below the floor), so they must not make the T15 gem crumble
+            Assert.AreEqual(550, SchoolGems.PickupRoom(5000, 4450, new[] { (14, 4600L, 5100L, 50) }));
+            Assert.AreEqual(500, SchoolGems.PickupRoom(5000, 4450, new[] { (14, 4400L, 5100L, 50) }), "a usable pile still takes its room");
+            // a lower pile can lift the count to a higher pile's floor: lowest tier first
+            Assert.AreEqual(0, SchoolGems.PickupRoom(5000, 4450, new[] { (15, 4500L, 5000L, 500), (14, 4000L, 4500L, 50) }));
+        }
+
+        [TestMethod]
+        public void Gem_Pickup_Revisits_A_Pile_Another_Pile_Unlocks()
+        {
+            // CodeRabbit #620 round 2: GemBaseCap 3,000 puts T15 (floor 3,000, ceiling 3,500) BELOW the drip T14 (floor 3,500,
+            // ceiling 4,000). At 3,499: one T15 gem -> 3,500, then the 500 T14 gems -> 4,000 = a T16 gem (ceiling 4,000) crumbles
+            Assert.AreEqual(0, SchoolGems.PickupRoom(4000, 3499, new[] { (14, 3500L, 4000L, 500), (15, 3000L, 3500L, 1) }));
+            Assert.AreEqual(501, SchoolGems.PickupRoom(4000, 3498, new[] { (14, 3500L, 4000L, 500), (15, 3000L, 3500L, 1) }), "one short of the T14 floor: T14 stays locked");
+            Assert.AreEqual(0, SchoolGems.PickupRoom(4000, 3498, new[] { (14, 3500L, 4000L, 500), (15, 3000L, 3500L, 2) }));
+        }
+
+        [TestMethod]
         public void Gem_Schools_Map_To_The_Four_Plus_One_Gems()
         {
             CollectionAssert.AreEqual(new uint[] { 777700052, 777700057, 777700062, 777700067 }, SchoolGems.Schools.Select(s => s.GemWcid).ToArray());
@@ -239,6 +262,17 @@ namespace ACE.Server.Tests
             cfg = TriuneEarning.Normalize(cfg);
             Assert.AreEqual(1, cfg.Tiers.Count(r => r.Tier == 16));
             Assert.AreEqual(300, cfg.Tiers.Single(r => r.Tier == 16).Points);
+        }
+
+        [TestMethod]
+        public void Normalize_Keeps_The_Floor_Below_The_Ceiling_At_The_Top_Kph()
+        {
+            var cfg = new TriuneEarning.Config();
+            cfg.Tiers.Add(new TriuneTierRow { Tier = 15, FloorKph = TriuneEarning.MaxKph, CeilingKph = TriuneEarning.MaxKph });
+            cfg = TriuneEarning.Normalize(cfg);
+            var r = cfg.Tiers.Single(x => x.Tier == 15);
+            Assert.IsTrue(r.CeilingKph > r.FloorKph, $"floor {r.FloorKph} ceiling {r.CeilingKph}");
+            Assert.AreEqual(TriuneEarning.MaxKph, r.CeilingKph);
         }
 
         [TestMethod]

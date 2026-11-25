@@ -3,6 +3,7 @@ using System.Numerics;
 
 using ACE.Entity.Enum;
 using ACE.Server.Entity.Actions;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics.Animation;
@@ -143,6 +144,26 @@ namespace ACE.Server.WorldObjects
             actionChain.EnqueueChain();
         }
 
+        // the "can't shoot while moving" line goes out at most once every 3 s (missile_block_while_moving)
+        private DateTime nextMovingShotMsg = DateTime.MinValue;
+
+        /// <summary>
+        /// True when missile_block_while_moving is on and a walk / run / strafe key is down: the shot must not leave. Sends
+        /// "You can't shoot while moving." (at most once every 3 s).
+        /// </summary>
+        private bool RefuseMovingShot()
+        {
+            if (!ServerConfig.missile_block_while_moving.Value || !IsHoldingMovementKey())
+                return false;
+
+            if (DateTime.UtcNow >= nextMovingShotMsg)
+            {
+                nextMovingShotMsg = DateTime.UtcNow.AddSeconds(3);
+                SendTransientError("You can't shoot while moving.");
+            }
+            return true;
+        }
+
         /// <summary>
         /// Launches a missile attack from player to target
         /// </summary>
@@ -183,6 +204,14 @@ namespace ACE.Server.WorldObjects
                 // this prevents the accuracy bar from refilling when 'repeat attacks' is enabled
                 OnAttackDone();
 
+                return;
+            }
+
+            // owner 2026-11-23 ("block run and gun for bow", TEST first): with missile_block_while_moving on, no shot leaves while
+            // a walk / run / strafe key is down - the first shot and every repeat shot both pass here
+            if (RefuseMovingShot())
+            {
+                OnAttackDone();
                 return;
             }
 
@@ -232,9 +261,19 @@ namespace ACE.Server.WorldObjects
 
             var launchTime = EnqueueMotionPersist(actionChain, aimLevel);
 
+            // set when movement began during the aim: no shot left, nothing was spent, and the attack ends below
+            var refusedAtLaunch = false;
+
             // launch projectile
             actionChain.AddAction(this, ActionType.PlayerMissile_LaunchProjectile, () =>
             {
+                // missile_block_while_moving: checked again here, as a walk / run / strafe key can go down during the aim
+                if (RefuseMovingShot())
+                {
+                    refusedAtLaunch = true;
+                    return;
+                }
+
                 // handle self-procs
                 TryProcEquippedItems(this, this, true, weapon);
                 TryDeedsBreathOfRenewal(target);   // QB Deeds (12k QB), against monsters only
@@ -259,6 +298,14 @@ namespace ACE.Server.WorldObjects
             {
                 actionChain.AddAction(this, ActionType.PlayerMissile_OutOfAmmo, () =>
                 {
+                    if (refusedAtLaunch)
+                    {
+                        // the last arrow never left
+                        Attacking = false;
+                        OnAttackDone();
+                        return;
+                    }
+
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You are out of ammunition!"));
                     SetCombatMode(CombatMode.NonCombat);
                     Attacking = false;
@@ -293,7 +340,7 @@ namespace ACE.Server.WorldObjects
             {
                 Attacking = false;
 
-                if (creature.IsAlive && GetCharacterOption(CharacterOption.AutoRepeatAttacks) && !IsBusy && !AttackCancelled)
+                if (!refusedAtLaunch && creature.IsAlive && GetCharacterOption(CharacterOption.AutoRepeatAttacks) && !IsBusy && !AttackCancelled)
                 {
                     // client starts refilling accuracy bar
                     Session.Network.EnqueueSend(new GameEventAttackDone(Session));

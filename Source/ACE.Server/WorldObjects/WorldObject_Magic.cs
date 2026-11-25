@@ -128,7 +128,10 @@ namespace ACE.Server.WorldObjects
         /// If this spell has a chance to be resisted, rolls for a chance
         /// Returns TRUE if spell is resistable and was resisted for this attempt
         /// </summary>
-        public bool TryResistSpell(WorldObject target, Spell spell, WorldObject itemCaster = null, bool projectileHit = false)
+        /// <param name="gateSchool">the attack school the T11+ hit gate asks; null = from the spell and <paramref name="itemCaster"/>
+        /// (TierHitGate.SchoolOf). A caller whose resist item is not the item that fired the spell (a ring proc) passes it.</param>
+        public bool TryResistSpell(WorldObject target, Spell spell, WorldObject itemCaster = null, bool projectileHit = false,
+            ACE.Server.Managers.ZoneControl.TierHitGate.AttackSchool? gateSchool = null)
         {
             // fix hermetic void?
             if (!spell.IsResistable && spell.Category != SpellCategory.ManaConversionModLowering || spell.IsSelfTargeted)
@@ -193,7 +196,7 @@ namespace ACE.Server.WorldObjects
             // outright by a tier-11+ monster, whatever the skill check said. Same all-or-nothing
             // rule as melee/missile in DamageEvent.
             if (!resisted && this is Creature gateCaster
-                && !ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(gateCaster, targetCreature))
+                && !ACE.Server.Managers.ZoneControl.TierHitGate.CanHitOrTell(gateCaster, targetCreature, gateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, itemCaster)))
                 resisted = true;
 
             var player = this as Player;
@@ -2449,7 +2452,7 @@ namespace ACE.Server.WorldObjects
             return dir * speed;
         }
 
-        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false, SpellChain chain = null, bool splitCastExtra = false)
+        public List<SpellProjectile> LaunchSpellProjectiles(Spell spell, WorldObject target, ProjectileSpellType spellType, WorldObject weapon, bool isWeaponSpell, bool fromProc, List<Vector3> origins, Vector3 velocity, uint lifeProjectileDamage = 0, WorldObject originOverride = null, WorldObject directionOverride = null, bool isForkProjectile = false, float forkDamageMult = 1.0f, bool handCastFork = false, SpellChain chain = null, bool splitCastExtra = false, ACE.Server.Managers.ZoneControl.TierHitGate.AttackSchool? gateSchool = null)
         {
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -2533,6 +2536,9 @@ namespace ACE.Server.WorldObjects
 
                 sp.ProjectileLauncher = weapon;
                 sp.IsWeaponSpell = isWeaponSpell;
+                // the hit gate's school, NOW (impact reads it): the same rule TryResistSpell applies to its resist item. A fork or
+                // a chain jump passes its parent's school, so it is gated like the bolt that made it (not on the state at launch)
+                sp.GateSchool = gateSchool ?? ACE.Server.Managers.ZoneControl.TierHitGate.SchoolOf(spell, isWeaponSpell ? weapon : this);
 
                 sp.SetProjectilePhysicsState(sp.ProjectileTarget, useGravity);
                 sp.SpawnPos = new Position(sp.Location);

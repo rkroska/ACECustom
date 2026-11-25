@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 
 using ACE.Entity.Enum;
-using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Managers.WeaponScaling;
 using ACE.Server.Network.GameMessages.Messages;
@@ -50,7 +49,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// <paramref name="reason"/> is non-null ONLY on a block, and is shown to the player on EVERY
         /// blocked swing (owner 2026-08-31 - a silent miss reads as bad luck, which defeats the point).
         /// </summary>
-        public static bool CanHit(Creature attacker, Creature target, out string reason)
+        public static bool CanHit(Creature attacker, Creature target, out string reason, AttackSchool school = AttackSchool.None)
         {
             reason = null;
 
@@ -89,11 +88,12 @@ namespace ACE.Server.Managers.ZoneControl
             if (row == null)
                 return true;
 
-            // Effective counts, so growth charms count toward the gate exactly as they do everywhere
-            // else (Creature_Properties: Effective* = raw luminance + Triune Weave).
-            var creature = (long)player.EffectiveCreatureAugCount;
-            var item = (long)player.EffectiveItemAugCount;
-            var triune = player.GetProperty(PropertyInt64.TriuneWeaveCount) ?? 0;
+            // ONE stat per school (owner 2026-11-22): the LumAug counts hold everything - bought, earned, and the retired
+            // Triune Weave / school charms moved there at login.
+            var creature = player.EffectiveCreatureAugCount;
+            var item = player.EffectiveItemAugCount;
+            var life = player.EffectiveLifeAugCount;
+            var schoolCount = SchoolCount(player, school);
 
             // EVERY unmet requirement, one per line under a plain lead line (owner 2026-09-01).
             //
@@ -102,14 +102,15 @@ namespace ACE.Server.Managers.ZoneControl
             // time - one grind turned into two, reading as the goalposts moving. The message is the
             // only feedback the gate ever gives, so it has to be complete.
             //
-            // Requirements the player already MEETS are left out, and so is any counter this tier does
-            // not ask for at all (MinWieldTriune is 0 below T16 - printing "0 of 0" is noise). The list
-            // is exactly what is still to do.
+            // Requirements the player already MEETS are left out, and so is any counter this tier does not ask for at all
+            // (a spell of no attack school - a Life or Creature debuff - asks no school; a tier with its school check off asks
+            // none). The list is exactly what is still to do.
             var needCreature = Short(creature, row.MinWieldCreature);
             var needItem = Short(item, row.MinWieldAugs);
-            var needTriune = Short(triune, row.MinWieldTriune);
+            var needLife = Short(life, row.MinWieldLife);
+            var needSchool = school != AttackSchool.None && !row.SchoolCheckOff && Short(schoolCount, row.MinWieldSkillCharm);
 
-            if (!needCreature && !needItem && !needTriune)
+            if (!needCreature && !needItem && !needLife && !needSchool)
                 return true;
 
             // Built ONLY on a block - the pass path above allocates nothing. Lines are newline-joined
@@ -118,25 +119,85 @@ namespace ACE.Server.Managers.ZoneControl
             var sb = new System.Text.StringBuilder("You are not powerful enough to fight this creature.");
             if (needCreature) sb.Append('\n').Append($"Creature augmentations: {creature:N0} of {row.MinWieldCreature:N0}");
             if (needItem) sb.Append('\n').Append($"Item augmentations: {item:N0} of {row.MinWieldAugs:N0}");
-            if (needTriune) sb.Append('\n').Append($"Triune Weave: {triune:N0} of {row.MinWieldTriune:N0}");
+            if (needLife) sb.Append('\n').Append($"Life augmentations: {life:N0} of {row.MinWieldLife:N0}");
+            if (needSchool) sb.Append('\n').Append($"{school} augmentations: {schoolCount:N0} of {row.MinWieldSkillCharm:N0}");
             reason = sb.ToString();
             return false;
         }
+
+        /// <summary>The school of an attack. None = no school is asked. The gate is uniform at T11-T25 (owner 2026-11-22):
+        /// Creature, Item, Life and the attack's school at every tier, the school on the same ladder as Item and Life.</summary>
+        public enum AttackSchool { None, Melee, Missile, War, Void }
+
+        /// <summary>A weapon swing or shot: melee -> Melee, an arrow / bolt / dart / thrown weapon -> Missile.</summary>
+        public static AttackSchool SchoolOf(CombatType combatType) => combatType switch
+        {
+            CombatType.Melee => AttackSchool.Melee,
+            CombatType.Missile => AttackSchool.Missile,
+            _ => AttackSchool.None,
+        };
+
+        /// <summary>
+        /// A spell: a proc follows the attack that fired it (the proccing item: a melee weapon -> Melee, a bow / crossbow /
+        /// atlatl / thrown weapon -> Missile); any other spell follows its own school (War -> War, Void, DoT ticks included,
+        /// -> Void). Life and Creature spells ask no school.
+        /// </summary>
+        public static AttackSchool SchoolOf(Spell spell, WorldObject item)
+        {
+            if (item is MeleeWeapon)
+                return AttackSchool.Melee;
+            if (item != null && item.IsMissileWeapon)
+                return AttackSchool.Missile;
+            // a worn Cast on Strike jewel is neither: it fired on its wearer's attack, so it follows that attack - a War / Void spell
+            // hit procing it right now (Player.ProcTriggerSchool), else the attack mode (melee / missile); otherwise the spell's own
+            // school. A projectile proc works this out at launch (SpellProjectile.GateSchool), not when it lands.
+            if (item != null && (item.ItemType & ItemType.Jewelry) != 0 && item.Wielder is Player wearer)
+            {
+                if (wearer.ProcTriggerSchool is AttackSchool.War or AttackSchool.Void)
+                    return wearer.ProcTriggerSchool.Value;
+                if (wearer.CombatMode == CombatMode.Melee)
+                    return AttackSchool.Melee;
+                if (wearer.CombatMode == CombatMode.Missile)
+                    return AttackSchool.Missile;
+            }
+            return spell?.School switch
+            {
+                MagicSchool.WarMagic => AttackSchool.War,
+                MagicSchool.VoidMagic => AttackSchool.Void,
+                _ => AttackSchool.None,
+            };
+        }
+
+        /// <summary>A player's augmentation count for an attack school (0 for None).</summary>
+        public static long SchoolCount(Player player, AttackSchool school) => school switch
+        {
+            AttackSchool.Melee => player.EffectiveMeleeAugCount,
+            AttackSchool.Missile => player.EffectiveMissileAugCount,
+            AttackSchool.War => player.EffectiveWarAugCount,
+            AttackSchool.Void => player.EffectiveVoidAugCount,
+            _ => 0,
+        };
+
+        /// <summary>The player's best attack school count - "which tier is this player" reads the school they fight with best.</summary>
+        public static long BestSchoolCount(Player player) => Math.Max(Math.Max(player.EffectiveMeleeAugCount, player.EffectiveMissileAugCount),
+            Math.Max(player.EffectiveWarAugCount, player.EffectiveVoidAugCount));
 
         /// <summary>One counter against one requirement. A requirement of 0 means this tier does not ask for that counter.</summary>
         private static bool Short(long have, int need) => need > 0 && have < need;
 
         /// <summary>
-        /// Do these counters meet this tier row's gate? The same three comparisons CanHit makes, so "which tier is this
-        /// player" and "can this player hit that monster" can never drift apart. The counts are the EFFECTIVE ones
-        /// (luminance augs + Triune Weave) for Creature and Item, and the raw Triune Weave count.
+        /// Do these counts meet this tier row's gate? The same comparisons CanHit makes, so "which tier is this player" and
+        /// "can this player hit that monster" can never drift apart: Creature, Item, Life and the attack school at every tier -
+        /// here the player's BEST school, so a player is the tier their best attack can fight. A tier with its school check off
+        /// (SchoolCheckOff) asks no school here either, so the own tier and the reward tier follow what can be hit.
         /// </summary>
-        internal static bool MeetsTier(long creature, long item, long triune, WeaponScalingTier row)
+        internal static bool MeetsTier(long creature, long item, long life, long bestSchool, WeaponScalingTier row)
         {
             return row != null
                 && !Short(creature, row.MinWieldCreature)
                 && !Short(item, row.MinWieldAugs)
-                && !Short(triune, row.MinWieldTriune);
+                && !Short(life, row.MinWieldLife)
+                && (row.SchoolCheckOff || !Short(bestSchool, row.MinWieldSkillCharm));
         }
 
         /// <summary>
@@ -145,7 +206,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// Rows under T11 (the stored table carries a T10 row) are ignored, and so are rows past the top of the ladder
         /// (the tier-add command accepts any number): no player is ever a tier that has no content.
         /// </summary>
-        internal static int HighestTier(long creature, long item, long triune, IEnumerable<WeaponScalingTier> rows)
+        internal static int HighestTier(long creature, long item, long life, long bestSchool, IEnumerable<WeaponScalingTier> rows)
         {
             if (rows == null)
                 return 0;
@@ -154,7 +215,7 @@ namespace ACE.Server.Managers.ZoneControl
             var expected = MinGatedVariation;
             foreach (var row in rows.Where(r => r != null && r.Tier >= MinGatedVariation && r.Tier <= ZoneRare.MaxTier).OrderBy(r => r.Tier))
             {
-                if (row.Tier != expected || !MeetsTier(creature, item, triune, row))
+                if (row.Tier != expected || !MeetsTier(creature, item, life, bestSchool, row))
                     break;
 
                 best = row.Tier;
@@ -164,9 +225,8 @@ namespace ACE.Server.Managers.ZoneControl
         }
 
         /// <summary>
-        /// The highest tier this player can fight: the top variation whose monsters their swings and spells can land on.
-        /// 0 = not yet T11. Life augs are NOT part of it - they gate wielding T11-T15 gear and the portal gems, never the
-        /// hit gate - so this is "what can you fight", not "what can you wear".
+        /// The highest tier this player can fight: the top variation whose monsters their best attack can land on. 0 = not
+        /// yet T11. Creature, Item, Life and the best attack school at every tier (owner 2026-11-22: uniform T11-T25).
         /// </summary>
         public static int PlayerTier(Player player)
         {
@@ -176,7 +236,8 @@ namespace ACE.Server.Managers.ZoneControl
             return HighestTier(
                 player.EffectiveCreatureAugCount,
                 player.EffectiveItemAugCount,
-                player.GetProperty(PropertyInt64.TriuneWeaveCount) ?? 0,
+                player.EffectiveLifeAugCount,
+                BestSchoolCount(player),
                 WeaponScalingManager.Current.Tiers);
         }
 
@@ -218,7 +279,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// have is"): the lower of the tier they can hit (PlayerTier) and the highest tier gem they own. Before this a player
         /// who could hit a tier but whose gem refused them (short on Life augs or Enlightenment) was counted at that tier, and
         /// every kill in the tier they could actually reach was cut by the tier dip. Feeds TierRewardScale.OwnTier (coins, kill
-        /// tasks, bounties, own-tier Triune and school gems) and the rare odds.
+        /// tasks, bounties, own-tier hunting rewards and school gems) and the rare odds.
         ///
         /// T11 is the floor (owner 2026-11-17): T11 is reached without its gem, so anyone who can hit T11 counts as at least
         /// T11 and the gem cap only bites from T12.
@@ -241,9 +302,9 @@ namespace ACE.Server.Managers.ZoneControl
         /// CanHit plus the player-facing message. Every blocked swing says why - deliberately not
         /// rate-limited (owner 2026-08-31: "This message can be displayed every swing / hit").
         /// </summary>
-        public static bool CanHitOrTell(Creature attacker, Creature target)
+        public static bool CanHitOrTell(Creature attacker, Creature target, AttackSchool school = AttackSchool.None)
         {
-            if (CanHit(attacker, target, out var reason))
+            if (CanHit(attacker, target, out var reason, school))
                 return true;
 
             // One chat message PER LINE (owner 2026-09-01: lead line, then a line per unmet

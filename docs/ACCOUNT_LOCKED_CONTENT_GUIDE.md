@@ -243,3 +243,34 @@ objects already in the world keep the emotes they spawned with.
    B can go ahead. Set it back to 1 afterwards.
 5. A character on a different account is unaffected.
 6. A uses it and logs out; log B in right away: still QuestSuccess.
+
+## IP-locked content: InqIPQuest (EmoteType 156)
+
+`InqIPQuest` limits a quest to **Amount** characters (default 2) per IP address within the quest's `min_Delta`.
+Use it beside `InqAccountQuest`, not instead of it: account gate first, then the IP gate, gives "once per account,
+at most N per IP".
+For a whole daily (locks, streak ladder, Marks of Favor rewards) see [DAILY_QUEST_TOOLKIT.md](DAILY_QUEST_TOOLKIT.md).
+
+- **Who counts:** every character on the player's own account, on every account with a character online from
+  the same address, and on every account whose last login came from that address (`account.last_Login_I_P`).
+  A character counts when its stamp for the quest is younger than `min_Delta` (and its count is above 0).
+- **QuestSuccess** = the limit is reached (or a database read failed: it fails closed). **QuestFailure** = go
+  ahead. Claims work as for `InqAccountQuest`, keyed by the address, so two characters on one address can't both
+  pass before the first stamp lands.
+- Addresses in `AllowUnlimitedSessionsFromIPAddresses` are never limited.
+- Give the step its own `@comment` (for example `MyDaily@ip`) so its QuestSuccess / QuestFailure sets don't clash
+  with the `InqAccountQuest` sets on the same quest.
+- Text: `%iqt` = time until the address is under the limit again, `%iqc` = characters in the window. Both assume a
+  limit of 2.
+- Known limits: people sharing a connection share the limit; a VPN gets around it, as it does the session cap; an
+  offline account only counts against the address it last logged in from.
+
+Example (once per account, twice per IP, 20 h):
+
+| Category | Quest | Actions |
+|---|---|---|
+| Use | | `InqAccountQuest MyDaily` |
+| QuestSuccess | MyDaily | Tell "Come back in %aqt." |
+| QuestFailure | MyDaily | `InqIPQuest MyDaily@ip`, Amount 2 |
+| QuestSuccess | MyDaily@ip | Tell "Your household is done for today. Come back in %iqt." |
+| QuestFailure | MyDaily@ip | ...the quest... |

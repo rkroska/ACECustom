@@ -222,6 +222,10 @@ namespace ACE.Entity.Enum.Properties
         PersonalLifestoneAttuneSpot = 59100,
         /// <summary>Personal Lifestone (2026-11-14), server-only: the spot a personal stone set this character's Lifestone Tie to.</summary>
         PersonalLifestoneTieSpot = 59101,
+        /// <summary>Triune retire (owner 2026-11-22), on a CHARACTER: what the one-time login move added onto the augmentation
+        /// counts and which old counters it removed (AugMove owns the format). Its presence = moved; gates that still name a
+        /// retired counter read its old value. Server-only. 50667 (PropertyString ids are their own table: PropertyInt64 50667 = AugRollTier is a different property).</summary>
+        TriuneMoveRecord = 50667,
 
         /// <summary>Quest-gated objects (2026-11-25), on a WORLD OBJECT: a quest name. The object is sent only to players who
         /// hold that stamp with its timer still running (a quest with min_Delta 0: who hold the stamp at all); nobody else's

@@ -225,16 +225,31 @@ namespace ACE.Server.Command.Handlers
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.LumAugMeleeCount, 0));
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.LumAugMissileCount, 0));
 
-            // 7b. Reset growth charm counters to 0 (owner 08-15: /aug kept showing charm
-            // lines after a wipe). Same PropertyInt64 set that /testchar set charms writes.
+            // 7b. Reset the retired counters (Triune, school charms, the old drip) and the hunting roll state too: a wiped
+            // character starts with no move record, no rolls and nothing left to move.
             var charmProps = new[] { PropertyInt64.TriuneWeaveCount, PropertyInt64.BattlemagesWrathCharmCount,
                                      PropertyInt64.NetherVeilCharmCount, PropertyInt64.CrashingSteelCharmCount,
-                                     PropertyInt64.TrueShotCharmCount };
+                                     PropertyInt64.TrueShotCharmCount,
+                                     // the T11-T14 drip counters (they count like used gems, so a wipe clears them too)
+                                     PropertyInt64.AugDripCreatureCount, PropertyInt64.AugDripItemCount, PropertyInt64.AugDripLifeCount,
+                                     PropertyInt64.AugDripWarCount, PropertyInt64.AugDripVoidCount, PropertyInt64.AugDripMeleeCount,
+                                     PropertyInt64.AugDripMissileCount,
+                                     PropertyInt64.AugRollTier, PropertyInt64.AugRollsCreature, PropertyInt64.AugRollsItem,
+                                     PropertyInt64.AugRollsLife,
+                                     // the hunting week and its client copy
+                                     PropertyInt64.TriuneWeekStart, PropertyInt64.AugHuntWeekKills, PropertyInt64.AugHuntWeekResetAt,
+                                     PropertyInt64.AugHuntBand1Kills, PropertyInt64.AugHuntBand2Kills,
+                                     PropertyInt64.AugHuntKillsPerReward1, PropertyInt64.AugHuntKillsPerReward2,
+                                     PropertyInt64.AugHuntRollsPerSchool };
             foreach (var charmProp in charmProps)
             {
-                player.SetProperty(charmProp, 0);
+                player.RemoveProperty(charmProp);
                 player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, charmProp, 0));
             }
+            player.RemoveProperty(PropertyString.TriuneMoveRecord);
+            player.RemoveProperty(PropertyFloat.AugDripFraction);
+            player.RemoveProperty(PropertyFloat.TriuneFraction);
+            player.RemoveProperty(PropertyFloat.TriuneWeekKills);
 
             // 8. Reset Retail Augmentations to 0
             foreach (var kvp in AugmentationDevice.MaxAugs)
@@ -659,9 +674,11 @@ namespace ACE.Server.Command.Handlers
                 }
                 case "charms":
                 {
-                    // Growth charm counters (PropertyInt64 50000-50004). These are what the
-                    // Effective*AugCount accessors add on top of the raw lum augs - the charm
-                    // ITEMS (extra growthcharms) grant nothing without these.
+                    // The RETIRED counters (PropertyInt64 50000-50004: Triune, then the four attack schools). A held counter
+                    // counts in power and gates AT ONCE (Effective counts add it: Triune 10 = +10 Creature / Item / Life),
+                    // and the login move adds it onto the augs at the next login of a character with no move record. A
+                    // character that already has a real move record keeps it held (never moved again) - this setter is how
+                    // TEST makes an old-style holder to prove the move.
                     if (!ParseCsv(arg, 5, out var v))
                     {
                         Msg("set charms: need 5 csv values (weave,wrath,nether,steel,trueshot)");
@@ -675,7 +692,7 @@ namespace ACE.Server.Command.Handlers
                         player.SetProperty(props[i], v[i]);
                         player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, props[i], v[i]));
                     }
-                    Msg("set charms: " + arg);
+                    Msg("set charms: " + arg + " (retired counters - they count in power now, and move onto the augs at the next login only if this character has no move record)");
                     return;
                 }
                 case "raugs":
@@ -820,23 +837,11 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// Test gear is meant to be WORN: SET the minter's wield counters to exactly the tier's gates -
-        /// item augs, Triune Weave, and the four weapon-family charms - BOTH DIRECTIONS, so a premade
-        /// can be re-forged up or down on demand with no extra steps (owner 2026-08-23 "it should go
-        /// lower", reaffirmed 2026-08-31: "t11 to t15 to t20 to t13 to t11 on demand").
-        ///
-        /// 🔴 ITEM AUGS PIN TO THE TIER'S WEAPON DAMAGE CAP, NOT ITS WIELD FLOOR - clamped to the
-        /// 4,000 purchase cap. This is the fix for a two-way conflict, so do not "simplify" it back
-        /// to MinWieldAugs:
-        ///   - MinWieldAugs is the FLOOR and sits exactly 500 BELOW the tier Cap at every tier.
-        ///     Pinning to it left every premade one step under its damage ceiling, because weapon
-        ///     damage uses min(itemAugs, Cap) - that was the 2026-08-20 ruling this method silently
-        ///     defeated for eleven days.
-        ///   - Pinning to the raw Cap would overshoot the purchase cap above T14 (T25 Cap = 9,500 vs
-        ///     a 4,000 buy limit), minting a test character no real player could ever be.
-        /// min(Cap, 4000) satisfies both: T11 lands on 2,500 = its Cap; T15+ freezes at 4,000, and
-        /// TRIUNE carries the tiers above (owner 2026-08-31). Raising the ceiling past T14 is a
-        /// Triune question, never an item-aug one.
+        /// Test gear is meant to be WORN: set the minter's counters to the tier's gates (owner 2026-08-23, 2026-08-31: "t11 to
+        /// t15 to t20 to t13 to t11 on demand"). Item augs PIN to the tier's weapon damage Cap in both directions (weapon
+        /// damage uses min(itemAugs, Cap); MinWieldAugs sits 500 below it - do not "simplify" back to the floor). Since the
+        /// Triune retire (2026-11-22) there is no 4,000 clamp: kills carry Item past the buy cap, so the Cap is a number a real
+        /// player reaches. Creature, Life and the attack schools are raised to the gates, never lowered.
         /// </summary>
         private static void EnsureWieldCounters(Player player, int tier, Action<string> Msg)
         {
@@ -852,9 +857,8 @@ namespace ACE.Server.Command.Handlers
                 player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, prop, need));
                 raised.Add($"{label} {cur:N0} -> {need:N0}");
             }
-            // the tier's damage ceiling, never above what a player could actually buy
-            const long ItemAugPurchaseCap = 4000;          // EmoteManager.AugmentationCaps["Item"]
-            var itemTarget = Math.Min((long)row.Cap, ItemAugPurchaseCap);
+            // the tier's damage ceiling: since 2026-11-22 kills carry Item past the 4,000 buy cap, so a real player reaches it
+            var itemTarget = (long)row.Cap;
             var itemCur = player.LuminanceAugmentItemCount ?? 0;
             if (itemTarget > 0 && itemCur != itemTarget)
             {
@@ -862,11 +866,19 @@ namespace ACE.Server.Command.Handlers
                 player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.LumAugItemCount, itemTarget));
                 raised.Add($"Item Augs {itemCur:N0} -> {itemTarget:N0}");
             }
-            Raise(PropertyInt64.TriuneWeaveCount, row.MinWieldTriune, "Triune Weave");
-            Raise(PropertyInt64.BattlemagesWrathCharmCount, row.MinWieldSkillCharm, "Battlemage's Wrath");
-            Raise(PropertyInt64.NetherVeilCharmCount, row.MinWieldSkillCharm, "Nether Veil");
-            Raise(PropertyInt64.CrashingSteelCharmCount, row.MinWieldSkillCharm, "Crashing Steel");
-            Raise(PropertyInt64.TrueShotCharmCount, row.MinWieldSkillCharm, "True Shot");
+            // one stat (2026-11-22): Creature / Life and the four attack schools at the tier's gates - raised only, never
+            // lowered (they are real power now, not gate-only counters)
+            void RaiseOnly(PropertyInt64 prop, long need, string label)
+            {
+                if (need > 0 && (player.GetProperty(prop) ?? 0) < need)
+                    Raise(prop, need, label);
+            }
+            RaiseOnly(PropertyInt64.LumAugCreatureCount, row.MinWieldCreature, "Creature Augs");
+            RaiseOnly(PropertyInt64.LumAugLifeCount, row.MinWieldLife, "Life Augs");
+            RaiseOnly(PropertyInt64.LumAugWarCount, row.MinWieldSkillCharm, "War Augs");
+            RaiseOnly(PropertyInt64.LumAugVoidCount, row.MinWieldSkillCharm, "Void Augs");
+            RaiseOnly(PropertyInt64.LumAugMeleeCount, row.MinWieldSkillCharm, "Melee Augs");
+            RaiseOnly(PropertyInt64.LumAugMissileCount, row.MinWieldSkillCharm, "Missile Augs");
             if (raised.Count > 0)
                 Msg($"asforge: wield counters set to T{tier} gates - {string.Join(", ", raised)}.");
         }
@@ -1667,7 +1679,7 @@ namespace ACE.Server.Command.Handlers
         /// per line, FinalizeZoneLongDesc (asforge proper never runs it - the stamps would otherwise
         /// sit under inherited flavor text), then the forge provenance. Minted into a dedicated bag:
         /// 18 items in one frame through the main-pack path is the silent-loss window.</summary>
-        internal static void HandleAsForgePremade(Session session, Player player, string[] parameters)
+        internal static void HandleAsForgePremade(Session session, Player player, string[] parameters, bool keepCounters = false)
         {
             void Msg(string s) => ChatPacket.SendServerMessage(session, s, ChatMessageType.Broadcast);
 
@@ -1851,7 +1863,9 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            EnsureWieldCounters(player, tier, Msg);
+            // /testchar preset sets every counter itself (entry = the gates, max = the curve tops): the forge must not pin them
+            if (!keepCounters)
+                EnsureWieldCounters(player, tier, Msg);
             Msg($"Premade {tierLabel} {modeTag} suit: {minted} pieces created"
                 + (lines > 0 ? $", {lines} modifier lines" : "")
                 + (failed > 0 ? $", {failed} failed" : "")
