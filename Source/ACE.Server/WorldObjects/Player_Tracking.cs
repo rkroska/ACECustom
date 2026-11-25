@@ -102,12 +102,13 @@ namespace ACE.Server.WorldObjects
 
             //Console.WriteLine($"Player {Name} - TrackObject({worldObject.Name})");
 
-            // add creature equipped objects / wielded items
+            // add creature equipped objects / wielded items (a quest-gated creature's went out with it, under its lock)
             if (worldObject is Creature creature)
             {
-                foreach (var wieldedItem in creature.EquippedObjects.Values)
-                    if (IsInChildLocation(wieldedItem))
-                        TrackEquippedObject(creature, wieldedItem);
+                if (!questGated)
+                    foreach (var wieldedItem in creature.EquippedObjects.Values)
+                        if (IsInChildLocation(wieldedItem))
+                            TrackEquippedObject(creature, wieldedItem);
 
                 if (creature.IsMoving)
                     creature.BroadcastMoveTo(this);
@@ -305,8 +306,8 @@ namespace ACE.Server.WorldObjects
                 // ... nor a quest-gated object it was never sent (Player_QuestVisibility.cs)
                 if (!string.IsNullOrEmpty(wo.VisibleWithQuest))
                 {
-                    if (!SendQuestGatedDelete(wo, onlyIfHidden: false))
-                        return;
+                    SendQuestGatedDelete(wo, onlyIfHidden: false);   // the creature's wielded items go with it, under its lock
+                    return;
                 }
                 else
                     Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));

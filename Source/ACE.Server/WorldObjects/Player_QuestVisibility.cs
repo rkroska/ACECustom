@@ -66,7 +66,7 @@ namespace ACE.Server.WorldObjects
         // Show and hide are each one step under the questGatedShown lock: the decision, the set change and the
         // CreateObject / DeleteObject enqueue, so a stamp (emote thread) and the heartbeat can't interleave them and leave
         // the set saying one thing and the client another. Safe to hold: EnqueueSend only takes the session's own bundle
-        // locks and never calls back into player code, and QuestManager takes no locks. CanSeeQuestGated reads the quest
+        // locks and never calls back into player code (TrackEquippedObject / RemoveTrackedEquippedObject only enqueue), and QuestManager takes no locks. CanSeeQuestGated reads the quest
         // row from the world cache; callers check it once outside the lock first, so a cache miss (a database read) never
         // happens while the lock is held.
 
@@ -81,6 +81,12 @@ namespace ACE.Server.WorldObjects
 
                 questGatedShown.Add(wo.Guid.Full);
                 Session.Network.EnqueueSend(new GameMessageCreateObject(wo, Adminvision, Adminvision));
+
+                // its wielded items in the same step, so a hide can't slip between the creature and them
+                if (wo is Creature creature)
+                    foreach (var wieldedItem in creature.EquippedObjects.Values)
+                        if (IsInChildLocation(wieldedItem))
+                            TrackEquippedObject(creature, wieldedItem);
                 return true;
             }
         }
@@ -98,6 +104,11 @@ namespace ACE.Server.WorldObjects
                     return false;
 
                 Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
+
+                // as RemoveTrackedObject does, in the same step: the client drops what the creature holds too
+                if (wo is Creature creature)
+                    foreach (var wieldedItem in creature.EquippedObjects.Values)
+                        RemoveTrackedEquippedObject(creature, wieldedItem);
                 return true;
             }
         }
@@ -127,13 +138,8 @@ namespace ACE.Server.WorldObjects
                 var see = CanSeeQuestGated(wo);   // first check, outside the lock; the send re-checks under it
                 if (see && !shown)
                     TrackObject(wo, createObjectPath: "QuestGate");
-                else if (!see && shown && SendQuestGatedDelete(wo, onlyIfHidden: true))
-                {
-                    // as RemoveTrackedObject does: the client drops what the creature holds too
-                    if (wo is Creature creature)
-                        foreach (var wieldedItem in creature.EquippedObjects.Values)
-                            RemoveTrackedEquippedObject(creature, wieldedItem);
-                }
+                else if (!see && shown)
+                    SendQuestGatedDelete(wo, onlyIfHidden: true);
             }
         }
 
