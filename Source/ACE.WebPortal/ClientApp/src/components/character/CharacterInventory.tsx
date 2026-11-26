@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Package, Shield, Activity } from 'lucide-react'
 import { api } from '../../services/api'
 import { InventoryItem } from '../../types'
@@ -12,8 +13,15 @@ interface CharacterInventoryProps {
 export default function CharacterInventory({ guid }: CharacterInventoryProps) {
   const [items, setItems] = useState<InventoryItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchParams] = useSearchParams()
+  const urlQuery = searchParams.get('q') ?? ''
+  const [searchTerm, setSearchTerm] = useState(urlQuery)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ 'main': true, 'equipped': true })
+
+  // Follow later ?q= changes (e.g. another search result for the same character) while mounted.
+  useEffect(() => {
+    setSearchTerm(urlQuery)
+  }, [urlQuery])
 
   useEffect(() => {
     const controller = new AbortController()

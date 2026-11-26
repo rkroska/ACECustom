@@ -74,6 +74,21 @@ export interface InventoryItem {
   uiEffects?: number;
 }
 
+export interface AccountItemMatch {
+  characterGuid: number;
+  characterName: string;
+  characterOnline: boolean;
+  location: string;
+  item: InventoryItem;
+}
+
+export interface AccountItemSearchResult {
+  matches: AccountItemMatch[];
+  totalMatches: number;
+  charactersSearched: number;
+  truncated: boolean;
+}
+
 // --- Property & Server Management ---
 
 export interface PropertyMetadata {
