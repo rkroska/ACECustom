@@ -225,11 +225,15 @@ namespace ACE.Server.WorldObjects
 
         public override void Close(Player player)
         {
+            // who had it open: the heartbeat closes with no player when the viewer left the landblock (CodeRabbit PR 626),
+            // so read the viewer before base.Close clears it
+            var opener = player?.Guid.Full ?? Viewer;
+
             base.Close(player);
 
             // consumed here: each open is judged on its own
-            if (player != null && areaShareOpened != null && areaShareOpened.Remove(player.Guid.Full)
-                && player.Guid.Full != KillerId && player.Guid.Full != VictimId)
+            if (opener != 0 && areaShareOpened != null && areaShareOpened.Remove(opener)
+                && opener != KillerId && opener != VictimId)
                 return;
 
             IsLooted = true;
