@@ -34,6 +34,7 @@ namespace ACE.Server.Managers
         public const string PyrealLedger = "pyreal-ledger";
         public const string Economy = "economy";
         public const string ZoneControl = "zone-control";
+        public const string KillRates = "kill-rates";
     }
 
     public sealed class PortalPageDefinition
@@ -124,6 +125,8 @@ namespace ACE.Server.Managers
             new(PortalPages.AuditLog, "Audit Log", "/audit", "Monitoring", DefaultRestrictedPageMinLevel),
             new(PortalPages.PyrealLedger, "Pyreal Ledger", "/audit/pyreals", "Monitoring", DefaultRestrictedPageMinLevel),
             new(PortalPages.Economy, "Economy", "/audit/economy", "Monitoring", DefaultRestrictedPageMinLevel),
+            // owner 2026-11-26: admins only by default (Portal Security can change it)
+            new(PortalPages.KillRates, "Kill Rates", "/audit/kill-rates", "Monitoring", (int)AccessLevel.Admin),
             new(PortalPages.Map, "World Map", "/map", "Monitoring", DefaultRestrictedPageMinLevel),
             new(PortalPages.CombatCalculator, "Combat Calculator", "/combat-calculator", "Content Tools", DefaultRestrictedPageMinLevel),
             new(PortalPages.Properties, "Property Explorer", "/properties", "Content Tools", DefaultRestrictedPageMinLevel),

@@ -42,6 +42,7 @@ import PortalSecurity from './components/PortalSecurity'
 import AuditLog from './components/AuditLog'
 import PyrealLedger from './components/PyrealLedger'
 import Economy from './components/Economy'
+import KillRates from './components/KillRates'
 import CorpseFinder from './components/CorpseFinder'
 import PetNameApprovals from './components/admin/PetNameApprovals'
 
@@ -248,6 +249,12 @@ function App() {
         <Route path="/audit/economy/:currency?" element={
           <ProtectedRoute pageKey="economy">
             <Economy />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/audit/kill-rates" element={
+          <ProtectedRoute pageKey="kill-rates">
+            <KillRates />
           </ProtectedRoute>
         } />
 

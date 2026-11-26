@@ -158,9 +158,13 @@ namespace ACE.Server.Managers
                         log.Warn($"Player {player.Name} (0x{player.Guid}) appears to be stuck in world and unable to log off normally. Requesting Forced Logoff...");
                         player.ForcedLogOffRequested = true;
                         player.ForceLogoff();
-                    }    
+                    }
                 }
             }
+
+            // staff kill rates: with everyone logged off no more kills can land, so write the [KILLRATE] lines the minute timer
+            // has not reached yet (a restart on the hour) and the running hour, marked partial
+            ZoneControl.KillRateTracker.FlushAtShutdown();
 
             WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_DisconnectAllSessions, () =>
             {
