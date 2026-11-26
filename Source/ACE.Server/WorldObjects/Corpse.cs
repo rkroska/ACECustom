@@ -225,6 +225,10 @@ namespace ACE.Server.WorldObjects
 
         public override void Close(Player player)
         {
+            // already closed (CodeRabbit PR 626): a stale close, e.g. a logout after the heartbeat closed it, changes nothing
+            if (!IsOpen)
+                return;
+
             // who had it open: the heartbeat closes with no player when the viewer left the landblock (CodeRabbit PR 626),
             // so read the viewer before base.Close clears it
             var opener = player?.Guid.Full ?? Viewer;
