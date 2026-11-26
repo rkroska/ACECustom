@@ -14,8 +14,14 @@ export default function CharacterInventory({ guid }: CharacterInventoryProps) {
   const [items, setItems] = useState<InventoryItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchParams] = useSearchParams()
-  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('q') ?? '')
+  const urlQuery = searchParams.get('q') ?? ''
+  const [searchTerm, setSearchTerm] = useState(urlQuery)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ 'main': true, 'equipped': true })
+
+  // Follow later ?q= changes (e.g. another search result for the same character) while mounted.
+  useEffect(() => {
+    setSearchTerm(urlQuery)
+  }, [urlQuery])
 
   useEffect(() => {
     const controller = new AbortController()

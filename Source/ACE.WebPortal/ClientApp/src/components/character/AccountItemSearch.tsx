@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react'
+import { useState, useRef, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Activity, Package } from 'lucide-react'
 import { api } from '../../services/api'
@@ -16,6 +16,8 @@ export default function AccountItemSearch() {
   const [searchedFor, setSearchedFor] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Bumped on every search and on Clear, so a late response from an older request is ignored.
+  const requestId = useRef(0)
 
   const runSearch = async (e: FormEvent) => {
     e.preventDefault()
@@ -24,20 +26,25 @@ export default function AccountItemSearch() {
       setError('Enter at least 2 characters.')
       return
     }
+    const id = ++requestId.current
     try {
       setError(null)
       setIsLoading(true)
       const data = await api.get<AccountItemSearchResult>(`/api/character/inventory-search?q=${encodeURIComponent(q)}`)
+      if (id !== requestId.current) return
       setResult(data)
       setSearchedFor(q)
     } catch (err) {
+      if (id !== requestId.current) return
       setError(err instanceof Error ? err.message : 'Search failed')
     } finally {
-      setIsLoading(false)
+      if (id === requestId.current) setIsLoading(false)
     }
   }
 
   const clear = () => {
+    requestId.current++
+    setIsLoading(false)
     setQuery('')
     setResult(null)
     setSearchedFor('')
