@@ -6,6 +6,7 @@ import { Character } from '../types'
 import CharacterListItem from './common/CharacterListItem'
 import PageHeader from './common/PageHeader'
 import Pagination from './common/Pagination'
+import AccountItemSearch from './character/AccountItemSearch'
 import { formatLandblockHex } from '../utils/location'
 
 const ITEMS_PER_PAGE = 25
@@ -78,6 +79,11 @@ export default function CharacterList() {
 
       {/* Main List Container (Scrollable) */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pt-4">
+        {characters.length > 0 && (
+          <div className="max-w-2xl mx-auto w-full mb-6">
+            <AccountItemSearch />
+          </div>
+        )}
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-1.5">
           {paginatedCharacters.map(char => (
             <CharacterListItem 

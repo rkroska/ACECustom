@@ -399,6 +399,116 @@ namespace ACE.Server.Controllers
                 return Ok(GetOfflineInventory(guid));
         }
         
+        private class AccountItemMatchDto
+        {
+            public uint CharacterGuid { get; set; }
+            public string CharacterName { get; set; }
+            public bool CharacterOnline { get; set; }
+            public string Location { get; set; }
+            public InventoryItemDto Item { get; set; }
+        }
+
+        private class AccountItemSearchDto
+        {
+            public List<AccountItemMatchDto> Matches { get; set; } = new();
+            public int TotalMatches { get; set; }
+            public int CharactersSearched { get; set; }
+            public bool Truncated { get; set; }
+        }
+
+        private const int AccountItemSearchMaxResults = 200;
+        private static readonly TimeSpan AccountItemSearchCooldown = TimeSpan.FromSeconds(2);
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, DateTime> accountItemSearchLastRun = new();
+
+        /// <summary>
+        /// Atomically admits one search per account per cooldown window.
+        /// </summary>
+        private static bool TryAdmitAccountItemSearch(uint accountId)
+        {
+            while (true)
+            {
+                var now = DateTime.UtcNow;
+                if (accountItemSearchLastRun.TryAdd(accountId, now))
+                    return true;
+                if (!accountItemSearchLastRun.TryGetValue(accountId, out var last))
+                    continue;
+                if (now - last < AccountItemSearchCooldown)
+                    return false;
+                if (accountItemSearchLastRun.TryUpdate(accountId, now, last))
+                    return true;
+            }
+        }
+
+        /// <summary>
+        /// Searches every character on the logged-in account for items whose name contains the query,
+        /// or whose WCID equals it when the query is a number. Covers packs and equipped items;
+        /// house storage is not included.
+        /// </summary>
+        [HttpGet("inventory-search")]
+        public IActionResult SearchAccountInventory([FromQuery] string q)
+        {
+            var accountId = CurrentAccountId;
+            if (accountId == null) return Unauthorized();
+
+            q = q?.Trim();
+            if (string.IsNullOrEmpty(q) || q.Length < 2)
+                return BadRequest("Enter at least 2 characters.");
+
+            // Each offline character is a database load, so space searches out per account.
+            if (!TryAdmitAccountItemSearch(accountId.Value))
+                return StatusCode(429, "Please wait a moment before searching again.");
+
+            var isWcid = uint.TryParse(q, out var wcidQuery);
+            bool Matches(InventoryItemDto item) =>
+                (isWcid && item.Wcid == wcidQuery) ||
+                (item.Name != null && item.Name.Contains(q, StringComparison.OrdinalIgnoreCase));
+
+            var result = new AccountItemSearchDto();
+            var characters = DatabaseManager.Shard.BaseDatabase.GetCharacters(accountId.Value, false);
+
+            foreach (var c in characters.OrderBy(c => c.Name))
+            {
+                var online = PlayerManager.GetOnlinePlayer(c.Id);
+                var items = online != null ? GetOnlineInventory(online) : GetOfflineInventory(c.Id);
+                result.CharactersSearched++;
+
+                var byGuid = new Dictionary<uint, InventoryItemDto>();
+                foreach (var i in items)
+                    byGuid[i.Guid] = i;
+
+                var charName = c.IsPlussed && !c.Name.StartsWith("+") ? $"+{c.Name}" : c.Name;
+
+                foreach (var item in items.Where(Matches))
+                {
+                    result.TotalMatches++;
+                    if (result.Matches.Count >= AccountItemSearchMaxResults)
+                        continue;
+
+                    string location;
+                    if (item.IsEquipped)
+                        location = "Equipped";
+                    else if (item.ContainerGuid == c.Id || item.ContainerGuid == 0)
+                        location = "Main Pack";
+                    else if (byGuid.TryGetValue(item.ContainerGuid, out var pack))
+                        location = pack.Name;
+                    else
+                        location = "Pack";
+
+                    result.Matches.Add(new AccountItemMatchDto
+                    {
+                        CharacterGuid = c.Id,
+                        CharacterName = charName,
+                        CharacterOnline = online != null,
+                        Location = location,
+                        Item = item,
+                    });
+                }
+            }
+
+            result.Truncated = result.TotalMatches > result.Matches.Count;
+            return Ok(result);
+        }
+
         [HttpGet("stamps/{guid}")]
         public IActionResult GetStamps(uint guid)
         {
