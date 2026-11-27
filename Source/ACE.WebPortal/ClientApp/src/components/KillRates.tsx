@@ -243,7 +243,10 @@ export default function KillRates() {
   const styleFilter = parseStyle(params.get('style'))
   const requestedSort = parseSortKey(params.get('sort'))
 
-  const [data, setData] = useState<KillRateReport | null>(null)
+  // the report remembers its window: after a switch (48h -> 6h) the old window's table is not shown under the new
+  // selector, even when the new request fails; a Refresh of the same window keeps it on screen while it reloads
+  const [loaded, setLoaded] = useState<{ window: string; report: KillRateReport } | null>(null)
+  const data = loaded !== null && loaded.window === hours ? loaded.report : null
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
@@ -267,7 +270,7 @@ export default function KillRates() {
       })
       .then(res => {
         if (!controller.signal.aborted) {
-          setData(res)
+          setLoaded(res === null ? null : { window: hours, report: res })
           setLoading(false)
         }
       })

@@ -75,8 +75,28 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>The UTC day the history was last pruned (0 = not yet this run).</summary>
         private static long lastPruneDay;
 
-        /// <summary>The timer's tick: seals the hours that ended since the last tick (see <see cref="FlushAt"/>).</summary>
-        internal static void Flush() => FlushAt(KillRateStore.HourOf(DateTimeOffset.UtcNow.ToUnixTimeSeconds()), shutdown: false);
+        /// <summary>Held across a whole flush (claim the hours, log them, save them), so the timer and the shutdown flush never
+        /// run at once: hours the timer claimed are saved before the shutdown flush starts.</summary>
+        private static readonly object flushLock = new();
+
+        /// <summary>The shutdown flush has run: later timer ticks do nothing (the running hour is already saved as partial).
+        /// Guarded by <see cref="flushLock"/>.</summary>
+        private static bool stopped;
+
+        /// <summary>
+        /// How long after an hour ends the timer waits before sealing it. A kill reads the clock before it reaches its hour's
+        /// bucket; sealing a few seconds late means a kill stamped in the last instant of an hour is in the bucket before the
+        /// hour is saved. The shutdown flush needs no wait: every player has logged off by then.
+        /// </summary>
+        internal const int SealGraceSeconds = 10;
+
+        /// <summary>The hour the timer treats as running at <paramref name="now"/> (unix seconds): every hour before it has
+        /// ended at least <see cref="SealGraceSeconds"/> ago and can be sealed.</summary>
+        internal static long SealHour(long now) => KillRateStore.HourOf(now - SealGraceSeconds);
+
+        /// <summary>The timer's tick: seals the hours that ended at least <see cref="SealGraceSeconds"/> ago (see
+        /// <see cref="FlushAt"/>).</summary>
+        internal static void Flush() => FlushAt(SealHour(DateTimeOffset.UtcNow.ToUnixTimeSeconds()), shutdown: false);
 
         /// <summary>
         /// At server shutdown, once every player has logged off: seals the hours that ended since the last timer tick (a restart
@@ -95,6 +115,37 @@ namespace ACE.Server.Managers.ZoneControl
         /// <param name="shutdown">The server is stopping: also save the running hour, and don't promise a retry.</param>
         private static void FlushAt(long hour, bool shutdown)
         {
+            bool pruneHistory;
+            lock (flushLock)
+            {
+                if (stopped)
+                    return;
+                if (shutdown)
+                    stopped = true;
+                pruneHistory = FlushLocked(hour, shutdown);
+            }
+
+            // the daily DELETE runs outside the lock: it touches no tracker state, and a shutdown must not wait on it
+            if (pruneHistory)
+            {
+                try
+                {
+                    KillRateHistory.Prune(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[KillRateTracker] history prune: {ex}");
+                }
+            }
+        }
+
+        /// <summary>The body of <see cref="FlushAt"/>, run under <see cref="flushLock"/>.</summary>
+        /// <param name="hour">The current UTC hour number.</param>
+        /// <param name="shutdown">The server is stopping.</param>
+        /// <returns>Whether the history is due its daily prune (first tick of a UTC day, never at shutdown).</returns>
+        private static bool FlushLocked(long hour, bool shutdown)
+        {
+            var pruneHistory = false;
             try
             {
                 var finished = Store.Advance(hour);
@@ -121,13 +172,14 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!shutdown && day != lastPruneDay)
                 {
                     lastPruneDay = day;
-                    KillRateHistory.Prune(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                    pruneHistory = true;
                 }
             }
             catch (Exception ex)
             {
                 log.Error($"[KillRateTracker] {(shutdown ? "FlushAtShutdown" : "Flush")}: {ex}");
             }
+            return pruneHistory;
         }
 
         /// <summary>
@@ -203,9 +255,12 @@ namespace ACE.Server.Managers.ZoneControl
             var nowHour = KillRateStore.HourOf(now);
             var firstHour = (nowHour / 24 - days + 1) * 24;
 
-            var records = KillRateHistory.Load(firstHour, nowHour);
+            // memory first: MergeRuns keeps the first of equal copies of a run's hour, and the memory copy is the newer one
+            // (its own tier may have been looked up after the hour was saved with the fallback)
+            var records = new List<KillRateStore.HourRecord>();
             for (var h = Math.Max(firstHour, nowHour - KillRateStore.HoursKept + 1); h <= nowHour; h++)
                 records.AddRange(Store.Snapshot(h, RunId, partial: h == nowHour));
+            records.AddRange(KillRateHistory.Load(firstHour, nowHour));
             return KillRateStore.DayReport(records, now, days);
         }
     }
@@ -592,7 +647,9 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>
         /// One record per character and hour: records of the same hour from several server runs (a restart mid-hour) add their
         /// counts, keep the earliest first and latest last kill, and take the own tier and name of the newest run that knew them.
-        /// Duplicates of the same run (a row read back from the database and still in memory) count once.
+        /// Duplicates of the same run (a row read back from the database and still in memory) count once, as the copy with the
+        /// most kills: a run's counts only grow, so that is the newest (the memory copy, if a kill landed after the save); on a
+        /// tie, one that knows the own tier, then the first given (callers pass the memory copy first).
         /// </summary>
         /// <param name="records">Saved and in-memory records, in any order.</param>
         /// <returns>The merged records, by character then hour.</returns>
@@ -601,7 +658,7 @@ namespace ACE.Server.Managers.ZoneControl
             var result = new List<HourRecord>();
             var distinct = records
                 .GroupBy(r => (r.Guid, r.Hour, r.RunId))
-                .Select(g => g.First());
+                .Select(g => g.OrderByDescending(r => r.Total).ThenByDescending(r => r.OwnTier > 0).First());
             foreach (var g in distinct.GroupBy(r => (r.Guid, r.Hour)).OrderBy(g => g.Key.Guid).ThenBy(g => g.Key.Hour))
             {
                 var runs = g.OrderBy(r => r.RunId).ToList();

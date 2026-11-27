@@ -497,6 +497,47 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Merge_Prefers_The_Fuller_Copy_Of_The_Same_Run()
+        {
+            // the timer saved the hour with 100 kills; one more kill reached the bucket after (stamped in the hour's last
+            // instant): the saved row is read first, the memory copy second, and the memory copy wins
+            var saved = Rec(Og, "Og", Hour, run: 1, own: 100);
+            var memory = Rec(Og, "Og", Hour, run: 1, own: 101);
+            Assert.AreEqual(101, KillRateStore.MergeRuns(new[] { saved, memory }).Single().Own);
+            Assert.AreEqual(101, KillRateStore.MergeRuns(new[] { memory, saved }).Single().Own, "order does not matter");
+
+            // equal counts: the copy that knows the own tier, in either order
+            var noTier = Rec(Og, "Og", Hour, run: 1, own: 100, ownTier: 0);
+            Assert.AreEqual(15, KillRateStore.MergeRuns(new[] { noTier, saved }).Single().OwnTier);
+            Assert.AreEqual(15, KillRateStore.MergeRuns(new[] { saved, noTier }).Single().OwnTier);
+
+            // equal counts, both with an own tier (saved with the fallback 14, looked up as 15 later): the first given wins,
+            // and DayReport passes the memory copy first
+            var fallback = Rec(Og, "Og", Hour, run: 1, own: 100, ownTier: 14);
+            Assert.AreEqual(15, KillRateStore.MergeRuns(new[] { saved, fallback }).Single().OwnTier);
+            Assert.AreEqual(14, KillRateStore.MergeRuns(new[] { fallback, saved }).Single().OwnTier);
+        }
+
+        [TestMethod]
+        public void The_Timer_Seals_An_Hour_Only_After_The_Grace()
+        {
+            // the hour Hour ends at At(1, 0): the timer still treats it as running for SealGraceSeconds, then seals it
+            Assert.AreEqual(Hour, KillRateTracker.SealHour(At(0, 59, 59)));
+            Assert.AreEqual(Hour, KillRateTracker.SealHour(At(1, 0) + KillRateTracker.SealGraceSeconds - 1), "inside the grace");
+            Assert.AreEqual(Hour + 1, KillRateTracker.SealHour(At(1, 0) + KillRateTracker.SealGraceSeconds), "grace over");
+
+            // a kill stamped in the hour's last second that reaches the bucket inside the grace is in the sealed snapshot
+            var store = new KillRateStore();
+            store.Advance(Hour);
+            store.Record(Og, "Og", 15, At(0, 59, 59));
+            Assert.AreEqual(0, store.Advance(KillRateTracker.SealHour(At(1, 0) + 5)).Count, "not sealed yet");
+            store.Record(Og, "Og", 15, At(0, 59, 59));   // the late arrival
+            var sealedHours = store.Advance(KillRateTracker.SealHour(At(1, 0, 10)));
+            CollectionAssert.AreEqual(new[] { Hour }, sealedHours.ToArray());
+            Assert.AreEqual(2, store.Snapshot(Hour, runId: 1, partial: false).Single().Total);
+        }
+
+        [TestMethod]
         public void A_Restart_Mid_Hour_Still_Gives_A_Full_Clean_Hour()
         {
             // the two halves of a restarted hour are partial on their own, full together: the day report counts it as clean

@@ -171,7 +171,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             msg(match.AvgOwnPerHour.HasValue
-                ? $"Average {match.AvgOwnPerHour.Value:N0} own-tier kills per full hour over {match.CleanHours} hour{(match.CleanHours == 1 ? "" : "s")}; {Pct(match.OwnShare)} of {match.TotalKills:N0} kills were own tier."
+                ? match.Steady
+                    ? $"Average {match.AvgOwnPerHour.Value:N0} own-tier kills per full hour over {match.CleanHours} hours; {Pct(match.OwnShare)} of {match.TotalKills:N0} kills were own tier."
+                    : $"Average ~{match.AvgOwnPerHour.Value:N0} own-tier kills per full hour over only {match.CleanHours} hour{(match.CleanHours == 1 ? "" : "s")} (fewer than {KillRateStore.MinSteadyHours}); {Pct(match.OwnShare)} of {match.TotalKills:N0} kills were own tier."
                 : $"No full hour with 95 pct+ own-tier kills yet; {Pct(match.OwnShare)} of {match.TotalKills:N0} kills were own tier.");
             if (match.ByStyle is { Count: > 0 })
                 msg($"Kill styles: {StyleText(match.ByStyle, match.TotalKills)}.");
