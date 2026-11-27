@@ -26,6 +26,10 @@ export interface KillRateHour {
   clean: boolean
   /** Off-tier kills worth showing next to the own-tier count ("188 (389)"). */
   showsTotal: boolean
+  /** Day rows only (7d / 30d): clean hours that UTC day; null on hour rows. */
+  cleanHours: number | null
+  /** Day rows only: average own-tier kills over that day's clean hours; null on hour rows or with none. */
+  avgOwnPerHour: number | null
 }
 
 export interface KillRateCharacter {
@@ -54,6 +58,12 @@ export interface KillRateCharacter {
 export interface KillRateReport {
   generatedAt: number
   hours: number
+  /** The daily window asked for (7, 30); 0 = hourly. */
+  days: number
+  /** The width of one column: 3600 (clock hours, from memory) or 86400 (UTC days, from the saved history). */
+  bucketSeconds: number
+  /** Days of saved history kept (the server setting kill_rate_history_days); 0 = everything. */
+  historyDays: number
   hoursKept: number
   partHourSlackMinutes: number
   cleanOwnShare: number

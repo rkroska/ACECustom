@@ -32,8 +32,9 @@ namespace ACE.Server.Managers.ZoneControl
 
     /// <summary>
     /// T11+ kills per character per clock hour, for staff (/killrate and the portal's Kill Rates page). Counted in memory on
-    /// the kill path (TierRewards.OnCreatureKilled): no database read or write per kill, no new table. A restart clears it;
-    /// each finished hour is also written to the server log as one [KILLRATE] line per character, so history survives there.
+    /// the kill path (TierRewards.OnCreatureKilled): no database read or write per kill. A restart clears the memory; each
+    /// finished hour is written once, off the kill path, to the server log (one [KILLRATE] line per character) and to the shard
+    /// table kill_rate_hour (<see cref="KillRateHistory"/>), which the portal's 7d / 30d windows read.
     ///
     /// What counts is the Prestige Coin kill: a T11-T25 Zone Control creature that pays kill XP or luminance, credited to the
     /// top damager (a pet's kill to its owner), online, not a mule or an Olthoi player. Fellowship and Zone Share sharers are
@@ -52,9 +53,10 @@ namespace ACE.Server.Managers.ZoneControl
         internal static readonly KillRateStore Store = new();
 
         /// <summary>
-        /// Once a minute on a pool thread: writes the [KILLRATE] lines of hours that just ended and drops idle characters. On a
-        /// timer, not the first kill of the next hour, so an hour is logged even when nobody kills after it (a quiet night, or a
-        /// restart soon after), and no landblock thread pays for the scan. Held here so it is never collected.
+        /// Once a minute on a pool thread: writes the [KILLRATE] lines of hours that just ended, saves them to kill_rate_hour,
+        /// drops idle characters and prunes old history. On a timer, not the first kill of the next hour, so an hour is sealed
+        /// even when nobody kills after it (a quiet night, or a restart soon after), and no landblock thread pays for the work.
+        /// Held here so it is never collected.
         /// </summary>
         private static readonly Timer FlushTimer;
 
@@ -66,43 +68,65 @@ namespace ACE.Server.Managers.ZoneControl
             FlushTimer = new Timer(_ => Flush(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
         }
 
-        /// <summary>Logs every hour that ended since the last flush (one line per character), then prunes idle characters.</summary>
-        internal static void Flush()
-        {
-            try
-            {
-                var hour = KillRateStore.HourOf(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-                var finished = Store.Advance(hour);
-                if (finished.Count == 0)
-                    return;
+        /// <summary>This server run's id in kill_rate_hour: the process start, unix seconds. A restart mid-hour gives the hour one
+        /// row per run, added up when read.</summary>
+        public static readonly long RunId = new DateTimeOffset(System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).ToUnixTimeSeconds();
 
-                foreach (var h in finished)
-                    foreach (var line in Store.LogLines(h))
-                        log.Info(line);
-                Store.Prune(hour);
-            }
-            catch (Exception ex)
-            {
-                log.Error($"[KillRateTracker] Flush: {ex}");
-            }
-        }
+        /// <summary>The UTC day the history was last pruned (0 = not yet this run).</summary>
+        private static long lastPruneDay;
+
+        /// <summary>The timer's tick: seals the hours that ended since the last tick (see <see cref="FlushAt"/>).</summary>
+        internal static void Flush() => FlushAt(KillRateStore.HourOf(DateTimeOffset.UtcNow.ToUnixTimeSeconds()), shutdown: false);
 
         /// <summary>
-        /// At server shutdown, once every player has logged off: logs the hours that ended since the last timer tick (a restart
-        /// right on the hour), then the running hour, marked "partial: server shutdown", so no counted hour leaves no trace.
+        /// At server shutdown, once every player has logged off: seals the hours that ended since the last timer tick (a restart
+        /// right on the hour) and the running hour, marked "partial: server shutdown", in one batch for one clock reading, so no
+        /// counted hour leaves no trace.
         /// </summary>
-        public static void FlushAtShutdown()
+        public static void FlushAtShutdown() => FlushAt(KillRateStore.HourOf(DateTimeOffset.UtcNow.ToUnixTimeSeconds()), shutdown: true);
+
+        /// <summary>
+        /// Every hour that ended before <paramref name="hour"/>: one log line per character, then saved to kill_rate_hour (a
+        /// small batch, off the game threads; a failed write is retried next minute). At shutdown, the running hour too, partial,
+        /// in the same batch: one clock reading, so an hour that ends during the shutdown is sealed either way. Then prunes idle
+        /// characters and, once per UTC day, the history past kill_rate_history_days.
+        /// </summary>
+        /// <param name="hour">The current UTC hour number.</param>
+        /// <param name="shutdown">The server is stopping: also save the running hour, and don't promise a retry.</param>
+        private static void FlushAt(long hour, bool shutdown)
         {
             try
             {
-                Flush();
-                var hour = KillRateStore.HourOf(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-                foreach (var line in Store.LogLines(hour))
-                    log.Info(line + " | partial: server shutdown");
+                var finished = Store.Advance(hour);
+
+                var records = new List<KillRateStore.HourRecord>();
+                foreach (var h in finished)
+                {
+                    foreach (var line in Store.LogLines(h))
+                        log.Info(line);
+                    records.AddRange(Store.Snapshot(h, RunId, partial: false));
+                }
+                if (shutdown)
+                {
+                    foreach (var line in Store.LogLines(hour))
+                        log.Info(line + " | partial: server shutdown");
+                    records.AddRange(Store.Snapshot(hour, RunId, partial: true));
+                }
+                KillRateHistory.Save(records, final: shutdown);   // also retries any batch an earlier tick could not write
+
+                if (finished.Count > 0)
+                    Store.Prune(hour);
+
+                var day = hour / 24;
+                if (!shutdown && day != lastPruneDay)
+                {
+                    lastPruneDay = day;
+                    KillRateHistory.Prune(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                }
             }
             catch (Exception ex)
             {
-                log.Error($"[KillRateTracker] FlushAtShutdown: {ex}");
+                log.Error($"[KillRateTracker] {(shutdown ? "FlushAtShutdown" : "Flush")}: {ex}");
             }
         }
 
@@ -168,6 +192,22 @@ namespace ACE.Server.Managers.ZoneControl
         /// <summary>Every character with T11+ kills in the last <paramref name="hours"/> clock hours up to <paramref name="now"/>
         /// (unix seconds; the running hour included). Callers that also label the hours pass the same <paramref name="now"/>.</summary>
         public static List<KillRateStore.CharacterReport> Report(long now, int hours) => Store.Report(now, hours);
+
+        /// <summary>
+        /// The last <paramref name="days"/> UTC days (today included) from kill_rate_hour, plus this run's hours still in memory
+        /// (the running hour, and any hour not saved yet), one row per character per day. Reads the database: call it off the
+        /// game threads (the portal does).
+        /// </summary>
+        public static List<KillRateStore.CharacterReport> DayReport(long now, int days)
+        {
+            var nowHour = KillRateStore.HourOf(now);
+            var firstHour = (nowHour / 24 - days + 1) * 24;
+
+            var records = KillRateHistory.Load(firstHour, nowHour);
+            for (var h = Math.Max(firstHour, nowHour - KillRateStore.HoursKept + 1); h <= nowHour; h++)
+                records.AddRange(Store.Snapshot(h, RunId, partial: h == nowHour));
+            return KillRateStore.DayReport(records, now, days);
+        }
     }
 
     /// <summary>
@@ -229,6 +269,24 @@ namespace ACE.Server.Managers.ZoneControl
                 var s = (int)style;
                 Interlocked.Increment(ref styles[s >= 0 && s < StyleCount ? s : (int)KillStyle.Other]);
                 Interlocked.Increment(ref kills[killTier - MinTier]);
+            }
+
+            /// <summary>Kills per tier this hour as an array, index tier - MinTier (a copy).</summary>
+            public int[] KillsSnapshot()
+            {
+                var a = new int[TierCount];
+                for (var i = 0; i < TierCount; i++)
+                    a[i] = Volatile.Read(ref kills[i]);
+                return a;
+            }
+
+            /// <summary>Kills per style this hour as an array, index (int)KillStyle (a copy).</summary>
+            public int[] StylesSnapshot()
+            {
+                var a = new int[StyleCount];
+                for (var i = 0; i < StyleCount; i++)
+                    a[i] = Volatile.Read(ref styles[i]);
+                return a;
             }
 
             /// <summary>Kills made in <paramref name="style"/> this hour (all tiers).</summary>
@@ -464,7 +522,205 @@ namespace ACE.Server.Managers.ZoneControl
             public bool Clean { get; init; }
             /// <summary>Show all kills next to the own-tier count ("188 (389)"): see <see cref="ShowsTotal(int, int, bool, bool)"/>.</summary>
             public bool ShowsTotal { get; init; }
+            /// <summary>Day rows only (the 7d / 30d windows): clean hours that UTC day; null on hour rows.</summary>
+            public int? CleanHours { get; init; }
+            /// <summary>Day rows only: average own-tier kills over that day's clean hours; null on hour rows or with none.</summary>
+            public double? AvgOwnPerHour { get; init; }
         }
+
+        /// <summary>
+        /// One character's counts for one hour as saved in kill_rate_hour: frozen, from one server run. A restart in the middle
+        /// of an hour leaves one record per run for it; <see cref="MergeRuns"/> adds them up.
+        /// </summary>
+        public sealed class HourRecord
+        {
+            public uint Guid { get; init; }
+            public string Name { get; init; }
+            /// <summary>The UTC hour number.</summary>
+            public long Hour { get; init; }
+            /// <summary>Which server run counted it (the process start, unix seconds).</summary>
+            public long RunId { get; init; }
+            /// <summary>Own tier that hour; 0 = unknown.</summary>
+            public int OwnTier { get; init; }
+            /// <summary>Kills per tier, index tier - MinTier (length TierCount).</summary>
+            public int[] Kills { get; init; }
+            /// <summary>Kills per style, index (int)KillStyle (length StyleCount).</summary>
+            public int[] Styles { get; init; }
+            public long First { get; init; }
+            public long Last { get; init; }
+            /// <summary>Written before the hour ended (at a shutdown); the run's count for that hour stops there.</summary>
+            public bool Partial { get; init; }
+            public int Total => Kills.Sum();
+            /// <summary>Own-tier kills (0 with an unknown own tier).</summary>
+            public int Own => OwnTier >= MinTier && OwnTier <= MaxTier ? Kills[OwnTier - MinTier] : 0;
+        }
+
+        /// <summary>
+        /// Every character's counts for <paramref name="hour"/>, frozen for saving (characters with no kill that hour left out).
+        /// The own tier falls back to the character's latest known while the hour's lookup has not landed.
+        /// </summary>
+        /// <param name="hour">The UTC hour number.</param>
+        /// <param name="runId">This server run's id.</param>
+        /// <param name="partial">The hour has not ended (a shutdown).</param>
+        /// <returns>One record per character who killed in that hour.</returns>
+        public List<HourRecord> Snapshot(long hour, long runId, bool partial)
+        {
+            var slot = (int)(hour % HoursKept);
+            var list = new List<HourRecord>();
+            foreach (var kv in entries)
+            {
+                var b = Volatile.Read(ref kv.Value.Ring[slot]);
+                if (b == null || b.Hour != hour || b.Total == 0)
+                    continue;
+                list.Add(new HourRecord
+                {
+                    Guid = kv.Key,
+                    Name = kv.Value.Name,
+                    Hour = hour,
+                    RunId = runId,
+                    OwnTier = b.OwnTier > 0 ? b.OwnTier : Volatile.Read(ref kv.Value.LastOwnTier),
+                    Kills = b.KillsSnapshot(),
+                    Styles = b.StylesSnapshot(),
+                    First = b.First,
+                    Last = b.Last,
+                    Partial = partial,
+                });
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// One record per character and hour: records of the same hour from several server runs (a restart mid-hour) add their
+        /// counts, keep the earliest first and latest last kill, and take the own tier and name of the newest run that knew them.
+        /// Duplicates of the same run (a row read back from the database and still in memory) count once.
+        /// </summary>
+        /// <param name="records">Saved and in-memory records, in any order.</param>
+        /// <returns>The merged records, by character then hour.</returns>
+        public static List<HourRecord> MergeRuns(IEnumerable<HourRecord> records)
+        {
+            var result = new List<HourRecord>();
+            var distinct = records
+                .GroupBy(r => (r.Guid, r.Hour, r.RunId))
+                .Select(g => g.First());
+            foreach (var g in distinct.GroupBy(r => (r.Guid, r.Hour)).OrderBy(g => g.Key.Guid).ThenBy(g => g.Key.Hour))
+            {
+                var runs = g.OrderBy(r => r.RunId).ToList();
+                if (runs.Count == 1)
+                {
+                    result.Add(runs[0]);
+                    continue;
+                }
+                var kills = new int[TierCount];
+                var styles = new int[StyleCount];
+                foreach (var r in runs)
+                {
+                    for (var i = 0; i < TierCount; i++) kills[i] += r.Kills[i];
+                    for (var i = 0; i < StyleCount; i++) styles[i] += r.Styles[i];
+                }
+                var newest = runs[^1];
+                result.Add(new HourRecord
+                {
+                    Guid = g.Key.Guid,
+                    Name = newest.Name,
+                    Hour = g.Key.Hour,
+                    RunId = newest.RunId,
+                    OwnTier = runs.LastOrDefault(r => r.OwnTier > 0)?.OwnTier ?? 0,
+                    Kills = kills,
+                    Styles = styles,
+                    First = runs.Min(r => r.First),
+                    Last = runs.Max(r => r.Last),
+                    Partial = runs.All(r => r.Partial),
+                });
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// The long-window report (7 or 30 UTC days up to and including today): the summary per character uses the same
+        /// clean-hour rules over every hour of the window, and its rows are one per UTC day (kills, and the average own-tier
+        /// kills over that day's clean hours).
+        /// </summary>
+        /// <param name="records">Saved and in-memory hour records (duplicates and split runs are merged here).</param>
+        /// <param name="now">Unix seconds now.</param>
+        /// <param name="days">Window length in UTC days, today included.</param>
+        /// <returns>One report per character with kills in the window, sorted like <see cref="Report"/>.</returns>
+        public static List<CharacterReport> DayReport(IEnumerable<HourRecord> records, long now, int days)
+        {
+            var nowHour = HourOf(now);
+            var today = nowHour / 24;
+            var firstHour = (today - days + 1) * 24;
+
+            var merged = MergeRuns(records.Where(r => r.Hour >= firstHour && r.Hour <= nowHour && r.Total > 0));
+            var result = new List<CharacterReport>();
+            foreach (var g in merged.GroupBy(r => r.Guid))
+            {
+                var recs = g.OrderBy(r => r.Hour).ToList();
+                var hourRows = recs.Select(r => Row(r.Hour, r.OwnTier, r.Kills, r.Styles, r.First, r.Last, nowHour)).ToList();
+                var ownTier = hourRows.LastOrDefault(h => h.OwnTier > 0)?.OwnTier ?? 0;
+                var summary = Summarize(g.Key, recs[^1].Name, ownTier, hourRows);
+
+                var dayRows = recs.Zip(hourRows).GroupBy(p => p.First.Hour / 24).Select(d =>
+                {
+                    var kills = new int[TierCount];
+                    var styles = new int[StyleCount];
+                    foreach (var (rec, _) in d)
+                    {
+                        for (var i = 0; i < TierCount; i++) kills[i] += rec.Kills[i];
+                        for (var i = 0; i < StyleCount; i++) styles[i] += rec.Styles[i];
+                    }
+                    var rows = d.Select(p => p.Second).ToList();
+                    var clean = rows.Where(r => r.Clean).ToList();
+                    var own = rows.Sum(r => r.Own);
+                    var total = rows.Sum(r => r.Total);
+                    var byTier = new SortedDictionary<int, int>();
+                    for (var tier = MinTier; tier <= MaxTier; tier++)
+                        if (kills[tier - MinTier] > 0)
+                            byTier[tier] = kills[tier - MinTier];
+                    return new HourRow
+                    {
+                        Hour = d.Key * 24,
+                        OwnTier = rows.LastOrDefault(r => r.OwnTier > 0)?.OwnTier ?? 0,
+                        Own = own,
+                        Total = total,
+                        ByTier = byTier,
+                        ByStyle = StyleMap(styles),
+                        First = rows.Min(r => r.First),
+                        Last = rows.Max(r => r.Last),
+                        Current = d.Key == today,
+                        Part = clean.Count == 0,
+                        Clean = clean.Count > 0,
+                        // a day has no clean bar of its own: show the total by the hand-built table's rule only
+                        ShowsTotal = ShowsTotal(own, total, part: true, clean: false),
+                        CleanHours = clean.Count,
+                        AvgOwnPerHour = clean.Count > 0 ? clean.Average(r => r.Own) : null,
+                    };
+                }).ToList();
+
+                result.Add(new CharacterReport
+                {
+                    Guid = summary.Guid,
+                    Name = summary.Name,
+                    OwnTier = summary.OwnTier,
+                    Hours = dayRows,
+                    AvgOwnPerHour = summary.AvgOwnPerHour,
+                    CleanHours = summary.CleanHours,
+                    OwnKills = summary.OwnKills,
+                    TotalKills = summary.TotalKills,
+                    ByStyle = summary.ByStyle,
+                    MainStyle = summary.MainStyle,
+                });
+            }
+            return Sorted(result);
+        }
+
+        /// <summary>Own tier high to low, steady averages before short ones, then average, then name (the command and the page).</summary>
+        private static List<CharacterReport> Sorted(IEnumerable<CharacterReport> reports)
+            => reports
+                .OrderByDescending(r => r.OwnTier)
+                .ThenByDescending(r => r.Steady)
+                .ThenByDescending(r => r.AvgOwnPerHour ?? -1)
+                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
         /// <summary>One character over the window asked for.</summary>
         public sealed class CharacterReport
@@ -522,12 +778,7 @@ namespace ACE.Server.Managers.ZoneControl
                 result.Add(Summarize(kv.Key, entry.Name, newestKnown, rows));
             }
 
-            return result
-                .OrderByDescending(r => r.OwnTier)
-                .ThenByDescending(r => r.Steady)
-                .ThenByDescending(r => r.AvgOwnPerHour ?? -1)
-                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            return Sorted(result);
         }
 
         /// <summary>
@@ -539,45 +790,61 @@ namespace ACE.Server.Managers.ZoneControl
         /// <param name="nowHour">The running hour number, to mark the current hour.</param>
         /// <returns>The hour's numbers and flags.</returns>
         private static HourRow Row(Bucket b, int fallbackOwnTier, long nowHour)
+            => Row(b.Hour, b.OwnTier > 0 ? b.OwnTier : fallbackOwnTier, b.KillsSnapshot(), b.StylesSnapshot(), b.First, b.Last, nowHour);
+
+        /// <summary>
+        /// One hour as a report row, from plain counts (a live bucket or a saved kill_rate_hour row): the same part / clean /
+        /// shows-total rules either way.
+        /// </summary>
+        /// <param name="hour">The UTC hour number.</param>
+        /// <param name="ownTier">The own tier that hour; 0 = unknown (own-tier kills read 0, never clean).</param>
+        /// <param name="kills">Kills per tier, index tier - MinTier.</param>
+        /// <param name="styles">Kills per style, index (int)KillStyle.</param>
+        /// <param name="first">Unix seconds of the first kill.</param>
+        /// <param name="last">Unix seconds of the last kill.</param>
+        /// <param name="nowHour">The running hour number, to mark the current hour.</param>
+        /// <returns>The hour's numbers and flags.</returns>
+        private static HourRow Row(long hour, int ownTier, int[] kills, int[] styles, long first, long last, long nowHour)
         {
-            var ownTier = b.OwnTier > 0 ? b.OwnTier : fallbackOwnTier;
-            var total = b.Total;
-            var own = ownTier > 0 ? b.KillsAt(ownTier) : 0;
-            var current = b.Hour == nowHour;
-            var part = IsPartHour(b.Hour, b.First, b.Last, current);
+            var total = kills.Sum();
+            var own = ownTier >= MinTier && ownTier <= MaxTier ? kills[ownTier - MinTier] : 0;
+            var current = hour == nowHour;
+            var part = IsPartHour(hour, first, last, current);
             var clean = IsCleanHour(own, total, part, ownTier > 0);
 
             var byTier = new SortedDictionary<int, int>();
             for (var tier = MinTier; tier <= MaxTier; tier++)
             {
-                var k = b.KillsAt(tier);
+                var k = kills[tier - MinTier];
                 if (k > 0)
                     byTier[tier] = k;
             }
 
-            var byStyle = new Dictionary<string, int>();
-            for (var s = 0; s < StyleCount; s++)
-            {
-                var k = b.KillsIn((KillStyle)s);
-                if (k > 0)
-                    byStyle[StyleName((KillStyle)s)] = k;
-            }
-
             return new HourRow
             {
-                Hour = b.Hour,
+                Hour = hour,
                 OwnTier = ownTier,
                 Own = own,
                 Total = total,
                 ByTier = byTier,
-                ByStyle = byStyle,
-                First = b.First,
-                Last = b.Last,
+                ByStyle = StyleMap(styles),
+                First = first,
+                Last = last,
                 Current = current,
                 Part = part,
                 Clean = clean,
                 ShowsTotal = ShowsTotal(own, total, part, clean),
             };
+        }
+
+        /// <summary>Kills per style as "Missile": 700, only styles with kills, in KillStyle order.</summary>
+        private static Dictionary<string, int> StyleMap(int[] styles)
+        {
+            var byStyle = new Dictionary<string, int>();
+            for (var s = 0; s < StyleCount; s++)
+                if (styles[s] > 0)
+                    byStyle[StyleName((KillStyle)s)] = styles[s];
+            return byStyle;
         }
 
         /// <summary>The summary over <paramref name="rows"/>: average own-tier kills over the clean hours, and the totals.</summary>

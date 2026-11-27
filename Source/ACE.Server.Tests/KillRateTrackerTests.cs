@@ -437,5 +437,150 @@ namespace ACE.Server.Tests
                     Assert.IsTrue(h.First != long.MaxValue && h.Last != long.MinValue);
             });
         }
+
+        // ---- history (kill_rate_hour): snapshot, merge of server runs, day report -----------------------------------------
+
+        /// <summary>A saved hour record: <paramref name="own"/> kills at T15 (own tier 15) plus <paramref name="off"/> at T14,
+        /// styles all Missile, played from :00 to :59 unless <paramref name="part"/>.</summary>
+        private static KillRateStore.HourRecord Rec(uint guid, string name, long hour, long run, int own, int off = 0, bool part = false, int ownTier = 15)
+        {
+            var kills = new int[KillRateStore.TierCount];
+            kills[15 - KillRateStore.MinTier] = own;
+            kills[14 - KillRateStore.MinTier] = off;
+            var styles = new int[KillRateStore.StyleCount];
+            styles[(int)KillStyle.Missile] = own + off;
+            var start = hour * 3600;
+            return new KillRateStore.HourRecord
+            {
+                Guid = guid, Name = name, Hour = hour, RunId = run, OwnTier = ownTier, Kills = kills, Styles = styles,
+                First = start + (part ? 1200 : 10), Last = start + 3590,
+            };
+        }
+
+        [TestMethod]
+        public void Snapshot_Freezes_One_Hour_With_Own_Tier_And_Styles()
+        {
+            var store = new KillRateStore();
+            store.SetOwnTier(Og, store.Record(Og, "Og", 15, At(0, 0), KillStyle.War), 15);
+            for (var i = 0; i < 9; i++) store.Record(Og, "Og", 15, At(0, 30), KillStyle.Missile);
+            store.Record(Og, "Og", 14, At(0, 59), KillStyle.Missile);
+            store.Record(Nerd, "Nerd", 15, At(1, 0));   // another hour: not in this snapshot
+
+            var s = store.Snapshot(Hour, runId: 77, partial: false).Single();
+            Assert.AreEqual(Og, s.Guid);
+            Assert.AreEqual(77, s.RunId);
+            Assert.AreEqual(15, s.OwnTier);
+            Assert.AreEqual(10, s.Own);
+            Assert.AreEqual(11, s.Total);
+            Assert.AreEqual(10, s.Styles[(int)KillStyle.Missile], "9 at T15 + the one at T14");
+            Assert.AreEqual(1, s.Styles[(int)KillStyle.War]);
+            Assert.AreEqual(At(0, 0), s.First);
+            Assert.AreEqual(At(0, 59), s.Last);
+            Assert.IsFalse(s.Partial);
+        }
+
+        [TestMethod]
+        public void Merge_Adds_Split_Runs_And_Counts_A_Run_Once()
+        {
+            // a restart at 06:20: run 1 counted 06:00-06:19 (partial), run 2 the rest; run 2's row is also still in memory
+            var r1 = Rec(Og, "Og", Hour, run: 1, own: 100);
+            r1 = new KillRateStore.HourRecord { Guid = r1.Guid, Name = "Og", Hour = r1.Hour, RunId = 1, OwnTier = 15, Kills = r1.Kills, Styles = r1.Styles, First = At(0, 0, 5), Last = At(0, 19), Partial = true };
+            var r2 = Rec(Og, "Og Renamed", Hour, run: 2, own: 300, part: true);
+            var merged = KillRateStore.MergeRuns(new[] { r1, r2, r2 }).Single();
+
+            Assert.AreEqual(400, merged.Own, "100 + 300; run 2 counted once");
+            Assert.AreEqual(At(0, 0, 5), merged.First, "earliest first kill");
+            Assert.AreEqual(r2.Last, merged.Last, "latest last kill");
+            Assert.AreEqual("Og Renamed", merged.Name, "the newest run's name");
+            Assert.IsFalse(merged.Partial, "not every run was partial");
+            Assert.AreEqual(400, merged.Styles[(int)KillStyle.Missile]);
+        }
+
+        [TestMethod]
+        public void A_Restart_Mid_Hour_Still_Gives_A_Full_Clean_Hour()
+        {
+            // the two halves of a restarted hour are partial on their own, full together: the day report counts it as clean
+            var a = Rec(Og, "Og", Hour, run: 1, own: 200);
+            var first = new KillRateStore.HourRecord { Guid = Og, Name = "Og", Hour = Hour, RunId = 1, OwnTier = 15, Kills = a.Kills, Styles = a.Styles, First = At(0, 1), Last = At(0, 20), Partial = true };
+            var b = Rec(Og, "Og", Hour, run: 2, own: 300);
+            var second = new KillRateStore.HourRecord { Guid = Og, Name = "Og", Hour = Hour, RunId = 2, OwnTier = 15, Kills = b.Kills, Styles = b.Styles, First = At(0, 25), Last = At(0, 58) };
+
+            var r = KillRateStore.DayReport(new[] { first, second }, At(2, 0), days: 1).Single();
+            Assert.AreEqual(1, r.CleanHours);
+            Assert.AreEqual(500.0, r.AvgOwnPerHour.Value, 1e-9);
+        }
+
+        [TestMethod]
+        public void Day_Report_Has_One_Row_Per_UTC_Day_And_A_Window_Summary()
+        {
+            // H6 is 2026-11-26 06:00 UTC. Day 25: two clean hours (400, 600). Day 26: one clean hour (500), one part hour (90),
+            // one off-tier hour (100 own + 100 T14). Nerd: one clean hour on day 26.
+            var day25 = Hour - 24;
+            var recs = new List<KillRateStore.HourRecord>
+            {
+                Rec(Og, "Og", day25, 1, 400), Rec(Og, "Og", day25 + 1, 1, 600),
+                Rec(Og, "Og", Hour, 1, 500), Rec(Og, "Og", Hour + 1, 1, 90, part: true), Rec(Og, "Og", Hour + 2, 1, 100, off: 100),
+                Rec(Nerd, "Nerd", Hour, 1, 300),
+                Rec(Og, "Og", Hour - 24 * 8, 1, 999),   // 8 days ago: outside a 7-day window
+            };
+
+            var rows = KillRateStore.DayReport(recs, At(3, 0), days: 7);
+            Assert.AreEqual(2, rows.Count);
+            var og = rows.Single(r => r.Name == "Og");
+
+            Assert.AreEqual(3, og.CleanHours, "400, 600, 500 over the window");
+            Assert.AreEqual(500.0, og.AvgOwnPerHour.Value, 1e-9);
+            Assert.AreEqual(2, og.Hours.Count, "one row per UTC day with kills");
+
+            var d25 = og.Hours[0];
+            Assert.AreEqual(day25 / 24 * 24 * 3600, d25.HourStart, "a day row starts at 00:00 UTC");
+            Assert.AreEqual(2, d25.CleanHours);
+            Assert.AreEqual(500.0, d25.AvgOwnPerHour.Value, 1e-9);
+            Assert.IsFalse(d25.Current);
+
+            var d26 = og.Hours[1];
+            Assert.AreEqual(1, d26.CleanHours);
+            Assert.AreEqual(500.0, d26.AvgOwnPerHour.Value, 1e-9, "only the clean hour is averaged");
+            Assert.AreEqual(500 + 90 + 100, d26.Own);
+            Assert.AreEqual(500 + 90 + 200, d26.Total);
+            Assert.IsTrue(d26.Current, "today");
+            Assert.IsTrue(d26.ShowsTotal, "100 off-tier kills of 790 is above 5 and 5 pct");
+            Assert.AreEqual(790, d26.ByStyle["Missile"]);
+        }
+
+        [TestMethod]
+        public void Tier_Json_Round_Trips_And_Ignores_Junk()
+        {
+            var kills = new int[KillRateStore.TierCount];
+            kills[15 - KillRateStore.MinTier] = 730;
+            kills[14 - KillRateStore.MinTier] = 2;
+            var json = KillRateHistory.TiersJson(kills);
+            Assert.AreEqual("{\"14\":2,\"15\":730}", json);
+            CollectionAssert.AreEqual(kills, KillRateHistory.ParseTiers(json));
+
+            var junk = KillRateHistory.ParseTiers("{\"10\":5,\"26\":5,\"x\":5,\"13\":-1,\"12\":7}");
+            Assert.AreEqual(7, junk[12 - KillRateStore.MinTier]);
+            Assert.AreEqual(7, junk.Sum(), "T10, T26, a bad key and a negative count are dropped");
+            Assert.AreEqual(0, KillRateHistory.ParseTiers("").Sum());
+        }
+
+        [TestMethod]
+        public void Update_File_Matches_The_Table_The_Server_Creates()
+        {
+            // the server creates kill_rate_hour itself; the optional update file must stay the same statement. Found by walking
+            // up from the test output folder (bin\x64\Release\net10.0, bin\Debug\net10.0, ...), so it never silently skips.
+            string path = null;
+            for (var dir = new System.IO.DirectoryInfo(Environment.CurrentDirectory); dir != null && path == null; dir = dir.Parent)
+            {
+                var candidate = System.IO.Path.Combine(dir.FullName, "Database", "Updates", "Shard", "2026-11-26-00-Kill-Rate-Hour.sql");
+                if (System.IO.File.Exists(candidate))
+                    path = candidate;
+            }
+            Assert.IsNotNull(path, $"update file not found above {Environment.CurrentDirectory}");
+            static string Norm(string s) => System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ").Trim();
+            var file = System.IO.File.ReadAllText(path);
+            var create = file[file.IndexOf("CREATE TABLE", StringComparison.Ordinal)..];
+            Assert.AreEqual(Norm(KillRateHistory.CreateTableSql), Norm(create));
+        }
     }
 }

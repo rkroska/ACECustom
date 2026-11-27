@@ -19,7 +19,8 @@ import type { KillRateCharacter, KillRateHour, KillRateReport, KillStyle } from 
 import { ErrorState, LoadingState, Segmented } from './pyreal-ledger/LedgerShared'
 
 const KILL_RATES_API = '/api/audit/kill-rates'
-const HOUR_OPTIONS = ['6', '12', '24', '48'] as const
+/** Hourly windows (from memory) and daily ones (7d / 30d, from the saved history). */
+const HOUR_OPTIONS = ['6', '12', '24', '48', '7d', '30d'] as const
 type HourOption = (typeof HOUR_OPTIONS)[number]
 const DEFAULT_HOURS: HourOption = '24'
 
@@ -91,6 +92,9 @@ const steadyAvg = (c: KillRateCharacter) => c.avgOwnPerHour !== null && c.steady
 /** Rank group for average sorts: steady averages, then short ones, then none. */
 const avgGroup = (c: KillRateCharacter) => (c.avgOwnPerHour === null ? 2 : c.steady ? 0 : 1)
 
+/** A day row (7d / 30d) carries its clean-hour count; an hour row has none (null, or missing from the JSON). */
+const isDayRow = (h: KillRateHour) => typeof h.cleanHours === 'number'
+
 /** The value a character sorts by in one column; null = nothing to show there (sorted last either way). */
 function sortValue(c: KillRateCharacter, key: SortKey, byHour: Map<string, KillRateHour>): number | string | null {
   switch (key) {
@@ -106,8 +110,11 @@ function sortValue(c: KillRateCharacter, key: SortKey, byHour: Map<string, KillR
       return c.ownShare
     case 'kills':
       return c.totalKills
-    default:
-      return byHour.get(`${c.guid}:${key.slice(1)}`)?.own ?? null
+    default: {
+      // an hour column sorts by that hour's own-tier kills; a day column by that day's average per clean hour
+      const h = byHour.get(`${c.guid}:${key.slice(1)}`)
+      return h === undefined ? null : isDayRow(h) ? h.avgOwnPerHour : h.own
+    }
   }
 }
 
@@ -150,14 +157,33 @@ function hourHead(hourStart: number): { day: string; time: string } {
   }
 }
 
+/** A day column (7d / 30d): its UTC date ("Thu 26") and month ("Nov 2026"). Days are UTC days, as the server stores them. */
+function dayHead(dayStart: number): { day: string; time: string } {
+  const d = new Date(dayStart * 1000)
+  return {
+    day: d.toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', year: 'numeric' }),
+    time: d.toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'short', day: 'numeric' }),
+  }
+}
+
+/** "Thu, Nov 26 (UTC)" for a day column's tooltip. */
+const dayLabel = (dayStart: number) =>
+  `${new Date(dayStart * 1000).toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' })} (UTC)`
+
 const clock = (unix: number) => new Date(unix * 1000).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 
-/** Hover text for one cell: own tier, kills per tier, first and last kill, and whether the hour is in the average. */
+/** Hover text for one cell: own tier, kills per tier, first and last kill, and whether the hour is in the average (for a day
+ * cell: that day's clean hours and their average). */
 function cellTitle(c: KillRateCharacter, h: KillRateHour, dip: boolean): string {
   const tiers = Object.entries(h.byTier)
     .sort((a, b) => Number(b[0]) - Number(a[0]))
     .map(([t, k]) => `T${t}: ${n0(k)}`)
     .join(', ')
+  if (isDayRow(h)) {
+    const avg = h.avgOwnPerHour !== null ? `avg ${n0(h.avgOwnPerHour)} own-tier kills per clean hour over ${h.cleanHours} clean hour${h.cleanHours === 1 ? '' : 's'}` : 'no clean hour that day'
+    const dipDay = dip ? `\nunder ${Math.round(DIP_SHARE * 100)}% of this character's average (${n0(c.avgOwnPerHour ?? 0)})` : ''
+    return `${c.name} - ${dayLabel(h.hourStart)}${h.current ? ', today so far' : ''}\n${avg}\n${n0(h.own)} own-tier of ${n0(h.total)} kills; ${tiers}${dipDay}`
+  }
   const state = h.current
     ? 'hour still running'
     : h.part
@@ -236,7 +262,9 @@ export default function KillRates() {
     setLoading(true)
     setError(null)
     api
-      .get<KillRateReport>(`${KILL_RATES_API}?hours=${hours}`, { signal: controller.signal })
+      .get<KillRateReport>(`${KILL_RATES_API}?${hours.endsWith('d') ? `days=${parseInt(hours, 10)}` : `hours=${hours}`}`, {
+        signal: controller.signal,
+      })
       .then(res => {
         if (!controller.signal.aborted) {
           setData(res)
@@ -325,10 +353,13 @@ export default function KillRates() {
   }
 
   const all = useMemo(() => data?.characters ?? [], [data])
-  const nowHour = data ? data.generatedAt - (data.generatedAt % 3600) : 0
+  // the columns are clock hours, or UTC days for 7d / 30d (from the saved history); nowHour = the running column's start
+  const bucketSeconds = data?.bucketSeconds ?? 3600
+  const dayMode = bucketSeconds === 86400
+  const nowHour = data ? data.generatedAt - (data.generatedAt % bucketSeconds) : 0
   // newest hour first
   const hourRows = useMemo(() => [...(data?.hourStarts ?? [])].reverse(), [data])
-  const heads = useMemo(() => hourRows.map(hourHead), [hourRows])
+  const heads = useMemo(() => hourRows.map(s => (dayMode ? dayHead(s) : hourHead(s))), [hourRows, dayMode])
   const byHour = useMemo(() => {
     const map = new Map<string, KillRateHour>()
     for (const c of all) for (const h of c.hours) map.set(`${c.guid}:${h.hourStart}`, h)
@@ -478,6 +509,11 @@ export default function KillRates() {
                 {Math.round((data?.cleanOwnShare ?? 0.95) * 100)}% own-tier kills. The counters live in server memory: a restart
                 clears them, and the server log keeps one [KILLRATE] line per character per hour. Times are your local time.
               </p>
+              <p className="mt-2">
+                <b>7d / 30d</b> read the saved history (each finished hour is stored,{' '}
+                {!data || data.historyDays <= 0 ? 'kept indefinitely' : `kept ${n0(data.historyDays)} days`}): one column per UTC day,
+                showing that day&apos;s average own-tier kills per clean hour. The summary columns cover the whole window.
+              </p>
             </div>
           )}
         </div>
@@ -490,8 +526,13 @@ export default function KillRates() {
       <div className="shrink-0 flex flex-wrap items-center gap-2">
         <Segmented<HourOption>
           value={hours}
-          options={HOUR_OPTIONS.map(h => ({ value: h, label: `${h}h` }))}
-          onChange={v => setParam({ hours: v === DEFAULT_HOURS ? null : v })}
+          options={HOUR_OPTIONS.map(h => ({ value: h, label: h.endsWith('d') ? h : `${h}h` }))}
+          onChange={v => {
+            // hour columns and day columns are different things: a column sort doesn't carry across (a day start can equal
+            // an hour start and would quietly re-sort by something else)
+            const crossing = v.endsWith('d') !== hours.endsWith('d') && requestedSort !== null && /^h\d+$/.test(requestedSort)
+            setParam({ hours: v === DEFAULT_HOURS ? null : v, ...(crossing ? { sort: null, dir: null } : {}) })
+          }}
         />
         <div className="inline-flex flex-wrap rounded-lg border border-neutral-800 bg-neutral-950 p-0.5" role="group" aria-label="Own tier">
           {[null, ...tierChips].map(t => {
@@ -564,16 +605,30 @@ export default function KillRates() {
               </span>
             </h2>
             <div className="flex flex-wrap items-center gap-1.5" aria-label="Legend">
-              <span className={CHIP}>
-                <span className="w-2.5 h-2.5 rounded-sm bg-blue-500/40" aria-hidden /> Now: running hour
-              </span>
-              <span className={CHIP}>
-                <i className="text-neutral-500">123</i> part hour
-              </span>
-              <span className={CHIP}>
-                <span className="text-amber-300">188</span>
-                <span className="text-neutral-400">(389)</span> off-tier kills
-              </span>
+              {dayMode ? (
+                <>
+                  <span className={CHIP}>
+                    <span className="w-2.5 h-2.5 rounded-sm bg-blue-500/40" aria-hidden /> Today (UTC) so far
+                  </span>
+                  <span className={CHIP}>day cell = avg kills per clean hour that day</span>
+                  <span className={CHIP}>
+                    <i className="text-neutral-500">-</i> no clean hour that day
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className={CHIP}>
+                    <span className="w-2.5 h-2.5 rounded-sm bg-blue-500/40" aria-hidden /> Now: running hour
+                  </span>
+                  <span className={CHIP}>
+                    <i className="text-neutral-500">123</i> part hour
+                  </span>
+                  <span className={CHIP}>
+                    <span className="text-amber-300">188</span>
+                    <span className="text-neutral-400">(389)</span> off-tier kills
+                  </span>
+                </>
+              )}
               <span className={CHIP}>
                 <span className="w-2.5 h-2.5 rounded-sm bg-red-500/40" aria-hidden /> dip: under {Math.round(DIP_SHARE * 100)}% of avg
               </span>
@@ -589,7 +644,11 @@ export default function KillRates() {
           {characters.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 p-10 text-sm text-neutral-400">
               {all.length === 0 ? (
-                <>No T11+ kills in the last {hours} hours. The counters start empty after a server restart.</>
+                hours.endsWith('d') ? (
+                  <>No T11+ kills in the last {parseInt(hours, 10)} days of saved history.</>
+                ) : (
+                  <>No T11+ kills in the last {hours} hours. The hourly counters start empty after a server restart.</>
+                )
               ) : (
                 <>
                   No character matches the filters.
@@ -658,8 +717,14 @@ export default function KillRates() {
                         >
                           {sortHead(
                             key,
-                            isNow ? <span className="text-blue-300 normal-case">Now</span> : <span className="normal-case">{heads[i].time}</span>,
-                            `${hourLabel(start)}${isNow ? ' (running)' : ''}: kills that hour`,
+                            isNow ? (
+                              <span className="text-blue-300 normal-case">{dayMode ? 'Today' : 'Now'}</span>
+                            ) : (
+                              <span className="normal-case">{heads[i].time}</span>
+                            ),
+                            dayMode
+                              ? `${dayLabel(start)}${isNow ? ', so far' : ''}: average own-tier kills per clean hour that day`
+                              : `${hourLabel(start)}${isNow ? ' (running)' : ''}: kills that hour`,
                           )}
                         </th>
                       )
@@ -773,6 +838,21 @@ export default function KillRates() {
                             const nowCol = start === nowHour ? 'bg-blue-500/[0.06]' : ''
                             const h = byHour.get(`${c.guid}:${start}`)
                             if (!h) return <td key={start} className={`${HOUR} ${edge} ${nowCol}`} />
+                            if (isDayRow(h)) {
+                              // a day cell (7d / 30d): the average own-tier kills per clean hour that day; a dip is a past day
+                              // well under the character's own steady average over the window
+                              const avg = h.avgOwnPerHour
+                              const dipDay = avg !== null && steady && !h.current && avg < DIP_SHARE * (c.avgOwnPerHour ?? 0)
+                              const toneDay =
+                                avg === null ? `${nowCol} text-neutral-500 italic` : dipDay ? 'bg-red-500/20 text-red-200' : h.current ? `${nowCol} text-neutral-300` : 'text-neutral-300'
+                              const srDay = avg === null ? 'no clean hour' : dipDay ? 'dip' : h.current ? 'today so far' : ''
+                              return (
+                                <td key={start} className={`${HOUR} ${edge} ${toneDay}`} title={cellTitle(c, h, dipDay)}>
+                                  {avg !== null ? n0(avg) : '-'}
+                                  {srDay && <span className="sr-only">, {srDay}</span>}
+                                </td>
+                              )
+                            }
                             // a dip: a clean (full, on-tier) hour well under this character's own steady average
                             const dip = h.clean && steady && h.own < DIP_SHARE * (c.avgOwnPerHour ?? 0)
                             const tone = h.current

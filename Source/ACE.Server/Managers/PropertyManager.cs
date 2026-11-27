@@ -1214,6 +1214,9 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> zc_pcoin_kill_base { get; private set; } = new(0.05, "PRESTIGE COINS PER KILL: coins a T11 Zone Control kill banks for the top damager (or a pet's owner) before the tier dip - 0.05 = one coin per 20 kills. Fractions carry over on the character. 0 = off.");
         public static ConfigProperty<double> zc_pcoin_kill_tier_step { get; private set; } = new(1.20, "PRESTIGE COINS PER KILL: each zone tier above T11 is worth this much more per kill than the tier below it (1.20 = +20 pct per tier: T12 0.060, T13 0.072 at a 0.05 base).");
 
+        // STAFF KILL RATES (2026-11-26): how long the hourly history in kill_rate_hour is kept. See KillRateHistory.
+        public static ConfigProperty<long> kill_rate_history_days { get; private set; } = new(365, "STAFF KILL RATES: days of hourly kill rate history kept in the shard table kill_rate_hour (older rows are deleted once a day). 0 = keep everything.");
+
         // PRESTIGE COIN KILL CAP (falloff 2026-11-01; steps per coin hour 2026-11-17): a character's T11+ Zone Control coin kills
         // are counted per coin hour (60 minutes from their first coin kill; the next kill after it ends starts a new one). Of the
         // kills in an hour, the first zc_kill_cap_start pay in full; then every zc_kill_cap_interval kills the share is cut by
