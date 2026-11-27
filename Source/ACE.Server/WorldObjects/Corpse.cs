@@ -151,6 +151,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool HasPermission(Player player)
         {
+            // the area record names only the way THIS open got in (CodeRabbit PR 626): the area branch below adds it back,
+            // any other way in (a normal fellowship, half-rot, a permit) leaves it gone, so that close keeps the retail rule
+            areaShareOpened?.Remove(player.Guid.Full);
+
             // players can loot their own corpses
             if (VictimId == null || player.Guid.Full == VictimId)
                 return true;
@@ -189,11 +193,16 @@ namespace ACE.Server.WorldObjects
                 return true;
 
             // players in the same fellowship as the killer w/ loot sharing enabled except if corpse generates a rare
-            if (player.Fellowship != null && player.Fellowship.ShareLoot)
+            // (an Auto Fellow area fellowship: the killer's own Share loot option - Fellowship.SharesLootOf)
+            if (player.Fellowship != null)
             {
                 var onlinePlayer = PlayerManager.GetOnlinePlayer(KillerId ?? 0);
-                if (onlinePlayer != null && onlinePlayer.Fellowship != null && player.Fellowship == onlinePlayer.Fellowship && !CorpseGeneratedRare && PkLevel != PKLevel.PK)
+                if (onlinePlayer != null && onlinePlayer.Fellowship != null && player.Fellowship == onlinePlayer.Fellowship && player.Fellowship.SharesLootOf(onlinePlayer) && !CorpseGeneratedRare && PkLevel != PKLevel.PK)
+                {
+                    if (player.Fellowship.ZoneKey != null)
+                        (areaShareOpened ??= new HashSet<uint>()).Add(player.Guid.Full);
                     return true;
+                }
             }
             return false;
         }
@@ -206,9 +215,35 @@ namespace ACE.Server.WorldObjects
         public static int HalfLife = 180;
 
 
+        /// <summary>
+        /// The Auto Fellow fellows whose CURRENT open of this corpse came through the killer's own Share loot option
+        /// (Fellowship.SharesLootOf). Their close does not open the corpse to everyone (IsLooted): each reopen asks the killer's
+        /// option again, so unticking Share loot keeps fellows out of kills they already looked into (owner 2026-11-24).
+        /// Set by HasPermission (cleared first on every open), consumed by Close.
+        /// </summary>
+        private HashSet<uint> areaShareOpened = null;
+
         public override void Close(Player player)
         {
+            // already closed (CodeRabbit PR 626): a stale close, e.g. a logout after the heartbeat closed it, changes nothing
+            if (!IsOpen)
+                return;
+
+            // only the viewer closes it (CodeRabbit PR 626): a stale logout close must not close someone else's open of it.
+            // The logout path is the one caller that does not check the viewer itself; no player (heartbeat, emote) still closes.
+            if (player != null && player.Guid.Full != Viewer)
+                return;
+
+            // who had it open: the heartbeat closes with no player when the viewer left the landblock (CodeRabbit PR 626),
+            // so read the viewer before base.Close clears it
+            var opener = player?.Guid.Full ?? Viewer;
+
             base.Close(player);
+
+            // consumed here: each open is judged on its own
+            if (opener != 0 && areaShareOpened != null && areaShareOpened.Remove(opener)
+                && opener != KillerId && opener != VictimId)
+                return;
 
             IsLooted = true;
         }

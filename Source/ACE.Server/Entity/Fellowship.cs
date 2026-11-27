@@ -36,6 +36,13 @@ namespace ACE.Server.Entity
         public bool ShareXP;   // determined by the leader's 'ShareFellowshipExpAndLuminance' client option when fellowship is created
         public bool ShareLoot; // determined by the leader's 'ShareFellowshipLoot' client option when fellowship is created
 
+        /// <summary>
+        /// May the other fellows loot this killer's kills? A normal fellowship: ShareLoot (the leader's option when it was made, retail).
+        /// An Auto Fellow area fellowship has no leader choice (ShareLoot stays false): each killer's own Share loot option decides,
+        /// read at the moment the corpse is opened, so ticking or unticking it applies at once (owner 2026-11-24).
+        /// </summary>
+        public bool SharesLootOf(Player killer) => ZoneKey != null ? killer.GetCharacterOption(CharacterOption.ShareFellowshipLoot) : ShareLoot;
+
         public bool Open;      // indicates if non-leaders can invite new fellowship members
         public bool IsLocked;  // only set through emotes. if a fellowship is locked, new fellowship members cannot be added
 
