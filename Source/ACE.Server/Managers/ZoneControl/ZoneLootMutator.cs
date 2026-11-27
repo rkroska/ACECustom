@@ -233,7 +233,7 @@ namespace ACE.Server.Managers.ZoneControl
         {
             var (lo, hi) = ZoneStatResolver.WeaponDropBand(p, ws, tier);
             var grade = ZoneStatResolver.RollGrade(tier, forceMax, ZoneStatResolver.GradeFloorOf(p));
-            var display = Math.Clamp(ZoneStatResolver.ValueForD(lo, hi, grade), ws.Band.Lo, ws.Band.Hi);
+            var display = ZoneStatResolver.CardValue(ws, lo, hi, grade);   // the card's hard clamp (RollGrade never goes over max)
             // EngineValue is the ONE display -> engine conversion in the server (Crushing Blow's
             // "- 1.0"). Do not subtract anything here and do not pre-convert before calling: the
             // resolver calls the same method on every equip, and a second subtraction anywhere would

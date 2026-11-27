@@ -18,6 +18,8 @@ namespace ACE.Server.Managers.ZoneControl
         Loot,
         /// <summary>Read when a kill is credited.</summary>
         Kill,
+        /// <summary>Read when a player uses a Salvage Bag (2026-11-26).</summary>
+        Use,
     }
 
     /// <summary>Help for one stat, or for a family of stats matched by <see cref="Pattern"/>. Every string is plain ASCII: the
@@ -167,6 +169,7 @@ namespace ACE.Server.Managers.ZoneControl
             ZoneStatTiming.Live => "At once. The game reads it on every hit or cast, so monsters already standing use the new value on their next one.",
             ZoneStatTiming.Loot => "When a corpse is created. Corpses already on the ground and items already looted keep what they rolled.",
             ZoneStatTiming.Kill => "On the next kill credited after the change.",
+            ZoneStatTiming.Use => "The next time a player uses a bag. Bags already used keep what they did.",
             _ => "",
         };
 

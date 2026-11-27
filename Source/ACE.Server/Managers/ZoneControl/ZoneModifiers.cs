@@ -649,6 +649,9 @@ namespace ACE.Server.Managers.ZoneControl
         {
             if (wo == null || def == null)
                 return 0;
+            // a stamp never goes past the band's max: only a Bag of Madness regrade may (ZoneStatResolver's OVER-MAX notes), and
+            // the record (AddLine) clamps here too, so the props and the record always agree
+            grade = Math.Clamp(grade, 0, ZoneStatResolver.GradeMax);
             if (def.SetsProtection)
             {
                 var rank = ZoneStatResolver.ValueFor(band.Min, band.Max, grade);

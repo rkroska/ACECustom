@@ -40,6 +40,51 @@ namespace ACE.Server.Managers.ZoneControl
 
         private static readonly string[] BagRelated = { ZoneStat.BagOdds };
 
+        private const string BagUseNote =
+            "Read from the tier Default of the item the bag is used on (the item's own tier), when the bag is used: a zone row does not "
+            + "change it. ";
+
+        private static readonly string[] MadnessChances =
+            { ZoneStat.BagMadnessNothingChance, ZoneStat.BagMadnessOverMaxChance, ZoneStat.BagMadnessShiftChance, ZoneStat.BagMadnessRemoveChance };
+
+        private const string MadnessWeightNote =
+            "The four Madness chances (bag_madness_nothing_chance, _overmax_chance, _shift_chance, _remove_chance) are read as weights: "
+            + "each outcome's chance is its value divided by the total of the four. The defaults 0.30 / 0.30 / 0.30 / 0.10 add up to 1, "
+            + "so they read as plain chances. ";
+
+        private const string MadnessListNote =
+            "Madness only touches Max Health, Damage Rating, Crit Damage Rating, Healing Boost, All Attributes and Armor Level, and on "
+            + "weapons Biting Strike, Crushing Blow, Rending and Slayer. A locked property is skipped by every outcome, and the item is "
+            + "Tainted every time (no bag works on it again). ";
+
+        private static ZoneStatHelpEntry MadnessChanceEntry(string key, string outcome, string unset, string raise)
+        {
+            return new ZoneStatHelpEntry
+            {
+                Key = key,
+                Summary = "How likely a Bag of Madness is to " + outcome + ".",
+                Details = "A Bag of Madness has four outcomes: nothing changes; one property is set past its maximum; every property "
+                    + "shifts up or down; one property is removed. This is the weight of: " + outcome + ". " + MadnessWeightNote
+                    + MadnessListNote + BagUseNote,
+                Shape = "A relative weight: this outcome's chance is its weight divided by the four weights' total. The defaults "
+                    + "(0.3, 0.3, 0.3, 0.1) add up to 1, so each reads as its percent; change one and every share moves (with the others at "
+                    + "their defaults, a weight of 0.6 on \"nothing changes\" makes it 0.6 / 1.3 = about 46%; 0.6 on the removal makes it "
+                    + "0.6 / 1.5 = 40%).",
+                WhenUnset = unset,
+                Raise = raise,
+                Lower = "This outcome happens less often. At 0 it never happens.",
+                Range = "Any number from 0. Below 0 is read as 0. A value that is not a real number is read as the default. "
+                    + "If all four are 0, the defaults (30 / 30 / 30 / 10%) are used, so zero weights can't switch the bag off: set "
+                    + "bag_weight_madness to 0 to stop it dropping.",
+                Timing = ZoneStatTiming.Use,
+                Caution = "Changing one weight changes the real chance of all four, because they are shares of their total.",
+                Related = MadnessChances,
+            };
+        }
+
+        private static readonly string[] TemperingRelated =
+            { ZoneStat.BagWeightTempering, ZoneStat.BagTemperingUpChance, ZoneStat.BagTemperingDownChance, ZoneStat.BagTemperingMaxSubgrade };
+
         static partial void AddRewardsBags(List<ZoneStatHelpEntry> e)
         {
             // ---- Kill rewards ----
@@ -216,10 +261,12 @@ namespace ACE.Server.Managers.ZoneControl
                 "one random property is added, picked by each line's own loot chance.", true, "",
                 BagRelated));
             e.Add(BagWeightEntry(ZoneStat.BagWeightSecondThoughts, "Bag of Second Thoughts",
-                "one random property is rerolled. It can go up or down.", true, "",
+                "the item's LOWEST property is rerolled at the tier's normal odds. It can go up or down. A locked property is never picked; when several are equally low, the first one listed is rerolled.", true, "",
                 BagRelated));
             e.Add(BagWeightEntry(ZoneStat.BagWeightTempering, "Bag of Tempering",
-                "the weapon grade is rerolled. It can go up or down.", true, "",
+                "the Weapon Grade moves one sub-grade (F- to F to F+ to D- and so on): 60% up, 30% no change, 10% down by default "
+                + "(see bag_tempering_up_chance, bag_tempering_down_chance). It never goes above the top set by bag_tempering_max_subgrade (A+ by default) and "
+                + "never reaches S; an S weapon, or one already at the top, is refused and the bag is not used.", true, "",
                 BagRelated));
             e.Add(BagWeightEntry(ZoneStat.BagWeightFortune, "Bag of Fortune",
                 "one random property is rerolled, and if the new roll is no better the old one stays.", false, "",
@@ -235,7 +282,10 @@ namespace ACE.Server.Managers.ZoneControl
                 " The bag can only be rolled when the killed monster has a known creature type; on a kill where it does not, this weight counts as 0 for that roll.",
                 BagRelated));
             e.Add(BagWeightEntry(ZoneStat.BagWeightMadness, "Bag of Madness",
-                "half the time every property rolls high and one more is added (if the tier has room), and half the time every property is removed (a locked one stays). Either way no bag works on the item again.", false, "",
+                "30% nothing changes, 30% one random property is set past its maximum (by 10% to 25% of its range), 30% every property "
+                + "moves up to 15% of its range up or down from where it is (and may pass its maximum), 10% one random property is "
+                + "removed. It only touches the Madness list and never a locked property, and the item is Tainted every time: no bag "
+                + "works on it again. The chances and ranges are the bag_madness_* stats.", false, "",
                 BagRelated));
             e.Add(BagWeightEntry(ZoneStat.BagWeightTransmutation, "Bag of Transmutation",
                 "a weapon's damage type changes to a random new one of the eight, and any rending, Cast on Strike and damage word in its name change to match.", false, "",
@@ -245,6 +295,139 @@ namespace ACE.Server.Managers.ZoneControl
                 BagRelated));
             e.Add(BagWeightEntry(ZoneStat.BagWeightExchange, "Bag of Exchange",
                 "one random property is removed and another is added.", false, "",
+                BagRelated));
+            // ---- Bag of Madness (2026-11-26 redesign) ----
+
+            e.Add(MadnessChanceEntry(ZoneStat.BagMadnessNothingChance, "change nothing (the item is still Tainted)",
+                "0.30.", "More bags are used up for nothing but the Taint."));
+            e.Add(MadnessChanceEntry(ZoneStat.BagMadnessOverMaxChance,
+                "set one random property past its maximum (see bag_madness_overmax_min and _max)",
+                "0.30.", "More items get one property past its maximum, whatever it was before - even on a junk item."));
+            e.Add(MadnessChanceEntry(ZoneStat.BagMadnessShiftChance,
+                "shift every property up or down from where it is (see bag_madness_shift)",
+                "0.30.", "More items gamble every property at once. A polished item is what can pass its maximum this way."));
+            e.Add(MadnessChanceEntry(ZoneStat.BagMadnessRemoveChance, "remove one random property",
+                "0.10.", "More items lose a property. A Bandit Hilt keeps Biting Strike and Crushing Blow; if nothing else can go, nothing is removed."));
+
+            e.Add(new ZoneStatHelpEntry
+            {
+                Key = ZoneStat.BagMadnessOverMaxMin,
+                Summary = "How far past its maximum a Bag of Madness sets a property, at the least: a share of the property's range.",
+                Details = "In the over-max outcome one random Madness property is SET to its maximum plus a random amount between this and "
+                    + "bag_madness_overmax_max, counted in its range (the band's max minus its min). 0.10 on a 14-69 line is about +5.5 past "
+                    + "69. The item stores this as a grade above 1000 (1100 = max + 10%), so a later change to the band moves it too. "
+                    + "Weapon cards still stop at their hard limits, and the over-max part of Biting Strike stops at 62.5% crit chance. " + BagUseNote,
+                Shape = "A share of the range: 0.1 = 10%.",
+                WhenUnset = "0.10 (10%).",
+                Raise = "Over-max results land further past the maximum.",
+                Lower = "Over-max results can land closer to the maximum. At 0 one can land exactly on it.",
+                Range = "0 to 0.25. Above 0.25 is read as 0.25 (the highest any property can go: max + 25%). If it is above "
+                    + "bag_madness_overmax_max the two are swapped.",
+                Timing = ZoneStatTiming.Use,
+                Caution = "Items already over max keep what they rolled.",
+                Related = new[] { ZoneStat.BagMadnessOverMaxMax, ZoneStat.BagMadnessOverMaxChance },
+            });
+
+            e.Add(new ZoneStatHelpEntry
+            {
+                Key = ZoneStat.BagMadnessOverMaxMax,
+                Summary = "How far past its maximum a Bag of Madness sets a property, at the most: a share of the property's range.",
+                Details = "The top of the over-max outcome's range (see bag_madness_overmax_min). 0.25 is grade 1250, the highest grade "
+                    + "any property can hold. " + BagUseNote,
+                Shape = "A share of the range: 0.25 = 25%.",
+                WhenUnset = "0.25 (25%).",
+                Raise = "Over-max results can land further past the maximum, up to 0.25.",
+                Lower = "Over-max results stay closer to the maximum.",
+                Range = "0 to 0.25. Above 0.25 is read as 0.25. If it is set below bag_madness_overmax_min, the two are swapped, so "
+                    + "to bring the ceiling below the current minimum, lower both.",
+                Timing = ZoneStatTiming.Use,
+                Caution = "The shift outcome is limited by the same 25% ceiling.",
+                Related = new[] { ZoneStat.BagMadnessOverMaxMin, ZoneStat.BagMadnessOverMaxChance },
+            });
+
+            e.Add(new ZoneStatHelpEntry
+            {
+                Key = ZoneStat.BagMadnessShift,
+                Summary = "How far a Bag of Madness shift moves each property, up or down: a share of the property's range.",
+                Details = "In the shift outcome every Madness property moves from where it is now by a random amount between minus and plus "
+                    + "this share of its range, each property on its own roll. A property at 50% of its range lands between 35% and 65% "
+                    + "with 0.15; one at its maximum can land up to 15% past it. Nothing goes below the band's minimum or past max + 25%. "
+                    + BagUseNote,
+                Shape = "A share of the range: 0.15 = 15% either way.",
+                WhenUnset = "0.15 (15%).",
+                Raise = "Shifts swing further both ways: bigger wins past the maximum and bigger losses.",
+                Lower = "Shifts stay closer to where the item was. At 0 the shift outcome changes nothing.",
+                Range = "0 to 1. Above 1 is read as 1.",
+                Timing = ZoneStatTiming.Use,
+                Caution = "The shift starts from the item's current values, so only a property already near its maximum can pass it.",
+                Related = new[] { ZoneStat.BagMadnessShiftChance },
+            });
+
+            // ---- Bag of Tempering (2026-11-26) ----
+
+            e.Add(new ZoneStatHelpEntry
+            {
+                Key = ZoneStat.BagTemperingUpChance,
+                Summary = "The chance a Bag of Tempering raises a weapon's grade one sub-grade.",
+                Details = "A Bag of Tempering moves a weapon's Weapon Grade one sub-grade at a time (F- F F+ D- D D+ C- C C+ B- B B+ A- A A+). "
+                    + "Each use rolls once: this chance goes up one, bag_tempering_down_chance goes down one, and the rest changes nothing. "
+                    + "A step lands on the middle of the new sub-grade, the point the weapon ladder prices it at. " + BagUseNote,
+                Shape = "A chance from 0 to 1: 0.6 means 60% of uses go up.",
+                WhenUnset = "0.60 (60%).",
+                Raise = "More uses go up, so a weapon climbs with fewer bags. With the defaults F to A takes about 21 bags (median).",
+                Lower = "Fewer uses go up. At 0 the bag never raises a grade.",
+                Range = "0 to 1. Below 0 is read as 0, above 1 as 1. A value that is not a real number is read as the default.",
+                Timing = ZoneStatTiming.Use,
+                Caution = "Up and down together never pass 1: bag_tempering_down_chance is cut to 1 minus this chance when they would. "
+                    + "The grade never goes above bag_tempering_max_subgrade, and S is never reached.",
+                Related = TemperingRelated,
+            });
+
+            e.Add(new ZoneStatHelpEntry
+            {
+                Key = ZoneStat.BagTemperingDownChance,
+                Summary = "The chance a Bag of Tempering lowers a weapon's grade one sub-grade.",
+                Details = "The bad outcome of a Bag of Tempering: the Weapon Grade drops one sub-grade, landing on the middle of the lower one. "
+                    + "Never below F- (a weapon at F- that rolls down keeps its grade). " + BagUseNote,
+                Shape = "A chance from 0 to 1: 0.1 means 10% of uses go down.",
+                WhenUnset = "0.10 (10%).",
+                Raise = "More uses go down, so climbing takes more bags.",
+                Lower = "Fewer uses go down. At 0 a Bag of Tempering never lowers a grade.",
+                Range = "0 to 1 minus bag_tempering_up_chance. A larger value is cut to that. A value that is not a real number is read as the default.",
+                Timing = ZoneStatTiming.Use,
+                Caution = "The chance a use rolls no change is what is left: 1 minus the up chance minus this one (30% with the defaults). "
+                    + "At F- a down roll changes nothing too, so there 40% of uses leave the grade as it is.",
+                Related = TemperingRelated,
+            });
+
+            e.Add(new ZoneStatHelpEntry
+            {
+                Key = ZoneStat.BagTemperingMaxSubgrade,
+                Summary = "The highest Weapon Grade a Bag of Tempering can raise a weapon to.",
+                Details = "A sub-grade, counted up from the bottom: 0 = F-, 1 = F, 2 = F+, 3 = D-, 4 = D, 5 = D+, 6 = C-, 7 = C, 8 = C+, 9 = B-, "
+                    + "10 = B, 11 = B+, 12 = A-, 13 = A, 14 = A+. A weapon at or above it is refused (it could only stay or go down) and "
+                    + "the bag is not used. S is never reached by a bag: it stays a drop-only chase. " + BagUseNote,
+                Shape = "A whole number from 0 to 14, a sub-grade on the list above. It is rounded.",
+                WhenUnset = "14 (A+).",
+                Raise = "Bags can push weapons higher, up to A+ at 14.",
+                Lower = "Bags stop at a lower grade, and weapons already above it are refused.",
+                Range = "0 to 14. Below 0 is read as 0 (F-), above 14 as 14 (A+). A value that is not a real number is read as the default.",
+                Timing = ZoneStatTiming.Use,
+                Caution = "Lowering it never lowers a weapon: a weapon already above it keeps its grade, it just takes no more Bags of Tempering.",
+                Related = TemperingRelated,
+            });
+
+            e.Add(BagWeightEntry(ZoneStat.BagWeightGenesis, "Bag of Genesis",
+                "one random property is added, picked by each line's own loot chance. It only works on an item with no properties (the item's \"Properties: N of cap\" line reads 0).", false, "",
+                BagRelated));
+            e.Add(BagWeightEntry(ZoneStat.BagWeightAugmentation, "Bag of Augmentation",
+                "one random property is added, picked by each line's own loot chance. It only works on an item with exactly one property.", false, "",
+                BagRelated));
+            e.Add(BagWeightEntry(ZoneStat.BagWeightAlteration, "Bag of Alteration",
+                "the properties a bag can change are removed and ONE new random property is added. It only works on an item with one or two properties. A locked property, a Slayer and built-in ones such as Reinforced or Split Arrows stay.", false, "",
+                BagRelated));
+            e.Add(BagWeightEntry(ZoneStat.BagWeightReforging, "Bag of Reforging",
+                "every property a bag can change is replaced with a new random one and the item keeps how many it has (an item above its tier's limit comes down to it). A locked property, a Slayer and built-in ones such as Reinforced or Split Arrows stay.", false, "",
                 BagRelated));
         }
     }
