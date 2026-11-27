@@ -226,9 +226,14 @@ namespace ACE.Server.WorldObjects
             var traceBefore = PetTrace.Enabled ? vital.Current : 0u;
 
             healer.UpdateVitalDelta(healer.Stamina, (int)-staminaCost);
-            target.UpdateVitalDelta(vital, healAmount);
+            var restored = target.UpdateVitalDelta(vital, healAmount);
             if (vital.Vital == PropertyAttribute2nd.MaxHealth)
+            {
                 target.DamageHistory.OnHeal(healAmount);
+
+                // tiered dungeons: healing another player in a tier copy room counts as taking part in it
+                ACE.Server.Managers.TieredDungeons.TieredDungeonRuns.OnPlayerHealed(healer, target, restored);
+            }
 
             if (PetTrace.Enabled)
                 PetTrace.CombatHealKit(this, healer, target, vital, true, difficulty, healAmount, critical, staminaCost, traceBefore);

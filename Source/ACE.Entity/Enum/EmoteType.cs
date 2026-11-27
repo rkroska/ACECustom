@@ -159,6 +159,7 @@ namespace ACE.Entity.Enum
         SingleLocalBroadcast          = 154, //Custom - LocalBroadcast that emits once per awake cycle
         InqAccountQuest               = 155, //Custom - InqQuest across every character on the account (QuestSuccess = done / timer running); text %aqt, %aqc. docs/ACCOUNT_LOCKED_CONTENT_GUIDE.md
         InqIPQuest                    = 156, //Custom - QuestSuccess once Amount (default 2) characters on the player's IP address completed the quest within its MinDelta; text %iqt, %iqc. Use beside InqAccountQuest
+        AwardTieredDungeonPay         = 160, //Custom - Tiered dungeons: pay Prestige Coins for the rooms credited in a tier copy
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001

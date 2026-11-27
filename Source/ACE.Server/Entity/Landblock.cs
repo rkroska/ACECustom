@@ -485,9 +485,22 @@ namespace ACE.Server.Entity
             // with THIS landblock's variation. Pass-through for non-rift loads.
             var instanceVariationId = ACE.Server.Managers.Rifts.RiftManager.ResolveInstanceSourceVariation(variationId);
 
+            // Tiered dungeons (owner 2026-10-09): a registered dungeon landblock at an enabled tier has no rows of its
+            // own. It is built here, in memory, from the RETAIL rows of the same landblock - lobby rows off the keep list
+            // dropped, tier-only NPCs swapped in, every row under a fresh dynamic guid (the retail landblock may be live
+            // at the same time). Nothing is written to the world database and shard statics stay out. Null for every
+            // other landblock, and for all of them while tiered_dungeons_enabled is off.
+            var tieredDungeon = ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.FindTierCopy(Id.Landblock, variationId);
+
             List<ACE.Database.Models.World.LandblockInstance> objects;
             List<ACE.Database.Models.Shard.Biota> shardObjects;
-            if (!Nullable.Equals(instanceVariationId, variationId))
+            if (tieredDungeon != null)
+            {
+                objects = ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.BuildTierRows(tieredDungeon, Id.Landblock,
+                    DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, null), () => GuidManager.NewDynamicGuid().Full);
+                shardObjects = new List<ACE.Database.Models.Shard.Biota>();
+            }
+            else if (!Nullable.Equals(instanceVariationId, variationId))
             {
                 objects = ACE.Server.Managers.Rifts.RiftManager.CloneInstancesForRift(
                     DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, instanceVariationId));
@@ -508,6 +521,13 @@ namespace ACE.Server.Entity
             }
 
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, variationId);
+
+            // A tier copy is rebuilt from the retail rows on every load, so nothing in it may reach the shard database.
+            // Its objects carry dynamic guids, and a dynamic object that is not generated (a door, an NPC, a vendor)
+            // is otherwise saved when the landblock unloads.
+            if (tieredDungeon != null)
+                foreach (var fo in factoryObjects)
+                    fo.SuppressShardPersistence = true;
 
 
             actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>

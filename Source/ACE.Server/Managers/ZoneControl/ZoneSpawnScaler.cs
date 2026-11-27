@@ -102,7 +102,9 @@ namespace ACE.Server.Managers.ZoneControl
             if (profile.Has(ZoneStat.MaxHealth))
             {
                 var maxBefore = creature.Health.MaxValue;
-                var target = (long)Math.Round(profile.Get(ZoneStat.MaxHealth));
+                // tiered dungeons (owner 2026-11-11): later rooms of a tier copy get more health (x1 everywhere else)
+                var target = (long)Math.Round(profile.Get(ZoneStat.MaxHealth)
+                    * ACE.Server.Managers.TieredDungeons.TieredDungeonRegistry.RoomHealthMult(creature));
                 // subtract the non-starting contributions (endurance formula, ranks) so MaxValue lands on target
                 var nonStarting = (long)maxBefore - creature.Health.StartingValue;
                 creature.Health.StartingValue = (uint)Math.Clamp(target - nonStarting, 1L, uint.MaxValue);
