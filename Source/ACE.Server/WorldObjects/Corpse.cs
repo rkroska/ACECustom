@@ -229,6 +229,11 @@ namespace ACE.Server.WorldObjects
             if (!IsOpen)
                 return;
 
+            // only the viewer closes it (CodeRabbit PR 626): a stale logout close must not close someone else's open of it.
+            // The logout path is the one caller that does not check the viewer itself; no player (heartbeat, emote) still closes.
+            if (player != null && player.Guid.Full != Viewer)
+                return;
+
             // who had it open: the heartbeat closes with no player when the viewer left the landblock (CodeRabbit PR 626),
             // so read the viewer before base.Close clears it
             var opener = player?.Guid.Full ?? Viewer;
