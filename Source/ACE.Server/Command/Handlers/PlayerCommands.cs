@@ -480,27 +480,40 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("aug", AccessLevel.Player, CommandHandlerFlag.None, "Handles Augmentation Reporting", "")]
+        /// <summary>
+        /// /aug (and /augs, and the old /triune): every augmentation count - one number per school (owner 2026-11-22: luminance
+        /// bought, kills and gems all sit on it) - then this week's hunting rewards (TriuneEarning.StatusLines).
+        /// </summary>
+        [CommandHandler("aug", AccessLevel.Player, CommandHandlerFlag.None, "Shows your augmentations and this week's hunting rewards", "")]
         public static void HandleAugmentReport(Session session, params string[] parameters)
         {
-            session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Advanced Augmentation Levels:", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Creature:{session.Player.LuminanceAugmentCreatureCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Item:{session.Player.LuminanceAugmentItemCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Life:{session.Player.LuminanceAugmentLifeCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"War:{session.Player.LuminanceAugmentWarCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Void:{session.Player.LuminanceAugmentVoidCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Duration: {session.Player.LuminanceAugmentSpellDurationCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Specialization: {session.Player.LuminanceAugmentSpecializeCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Summon: {session.Player.LuminanceAugmentSummonCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Melee: {session.Player.LuminanceAugmentMeleeCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Missile: {session.Player.LuminanceAugmentMissileCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Triune Weave: {session.Player.TriuneWeaveCount:N0} (adds +{session.Player.TriuneWeaveCount:N0} to Creature, Item, and Life)", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Battlemage's Wrath Charm: {session.Player.GetProperty(PropertyInt64.BattlemagesWrathCharmCount) ?? 0:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Nether Veil Charm: {session.Player.GetProperty(PropertyInt64.NetherVeilCharmCount) ?? 0:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Crashing Steel Charm: {session.Player.GetProperty(PropertyInt64.CrashingSteelCharmCount) ?? 0:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"True Shot Charm: {session.Player.GetProperty(PropertyInt64.TrueShotCharmCount) ?? 0:N0}", ChatMessageType.Broadcast));
+            var player = session?.Player;
+            if (player == null)
+                return;
+
+            void Say(string line) => session.Network.EnqueueSend(new GameMessageSystemChat(line, ChatMessageType.Broadcast));
+
+            Say("---------------------------");
+            Say("Advanced Augmentation Levels:");
+            // the counts every gate reads: a character not moved yet (the move off) still shows its Triune / charm power
+            Say($"Creature: {player.EffectiveCreatureAugCount:N0}");
+            Say($"Item: {player.EffectiveItemAugCount:N0}");
+            Say($"Life: {player.EffectiveLifeAugCount:N0}");
+            Say($"War: {player.EffectiveWarAugCount:N0}");
+            Say($"Void: {player.EffectiveVoidAugCount:N0}");
+            Say($"Melee: {player.EffectiveMeleeAugCount:N0}");
+            Say($"Missile: {player.EffectiveMissileAugCount:N0}");
+            Say($"Duration: {player.LuminanceAugmentSpellDurationCount ?? 0:N0}");
+            Say($"Specialization: {player.LuminanceAugmentSpecializeCount ?? 0:N0}");
+            Say($"Summon: {player.LuminanceAugmentSummonCount ?? 0:N0}");
+
+            // one message per line: the client is not relied on to break a line inside one message
+            foreach (var line in ACE.Server.Managers.ZoneControl.TriuneEarning.StatusLines(player))
+                Say(line);
         }
+
+        [CommandHandler("augs", AccessLevel.Player, CommandHandlerFlag.None, "Shows your augmentations and this week's hunting rewards", "")]
+        public static void HandleAugmentReportAlias(Session session, params string[] parameters) => HandleAugmentReport(session, parameters);
 
         //custom commands
         /// <summary>
@@ -527,7 +540,14 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You are not permitted to use bank commands at this time.", ChatMessageType.Broadcast));
                 return;
             }
-            
+
+            // bank lock (/banklock): staff froze this bank - every /bank and /b command is refused, the balances too
+            if (session.Player.IsBankLocked)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Your bank is locked.", ChatMessageType.Broadcast));
+                return;
+            }
+
             // Show balance if no parameters (just /b)
             if (parameters.Length == 0)
             {
@@ -1061,6 +1081,13 @@ namespace ACE.Server.Command.Handlers
             if (session.Player == null)
                 return;
 
+            // bank lock (/banklock): /clap pays into the bank, which takes nothing in while locked - keep the materials
+            if (session.Player.IsBankLocked)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Your bank is locked.", ChatMessageType.Broadcast));
+                return;
+            }
+
             if (session.Player.QuestManager.GetCurrentSolves("AutoCraftingEnabled") < 1)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You must have received the AutoCraftingEnabled quest stamp in order to use this command.", ChatMessageType.Broadcast));
@@ -1316,10 +1343,24 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while teleporting or busy. Complete your movement and try again. Neener neener.", ChatMessageType.System));
                 return;
             }
-            //if(!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(session.Player.Guid, session.Player.Guid, "Enlightenment"), "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes."))
-            //    return;
-            var message = "Are you certain that you'd like to Enlighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes.";
-            void onResponse(bool response, bool _) { if (response) { Enlightenment.HandleEnlightenment(session.Player); } }
+            // Enlightenment spends only its luminance cost and keeps unspent experience, so neither is promised away here.
+            // The rest follows Enlightenment.HandleEnlightenment: dequip, leave the fellowship (and the society while
+            // enl_removes_society is on), return to the lifestone, dispel, reset skills. The level returns to 1 unless a Level
+            // Retention Stone was used (Enlightenment.PlannedOutcome); the ritual gets the outcome promised here and stops,
+            // before spending anything, if it no longer holds.
+            var outcome = Enlightenment.PlannedOutcome(session.Player);
+            var keepUpTo = ServerConfig.enl_keeps_level_up_to.Value;
+            var upTo = keepUpTo > 0 ? $", up to level {keepUpTo}" : "";
+            var level = !outcome.KeepsLevel
+                ? session.Player.Enlightenment >= ServerConfig.enl_level_retention_from.Value
+                    ? $"Your level will return to 1 (use a Level Retention Stone first to keep your level{upTo})."
+                    : "Your level will return to 1."
+                : outcome.LevelDropsTo.HasValue
+                    ? $"Your Level Retention Stone keeps your level{upTo}: your level will drop to {outcome.LevelDropsTo.Value}."
+                    : "Your Level Retention Stone keeps your level.";
+            var leaves = ServerConfig.enl_removes_society.Value ? "your fellowship and your society" : "your fellowship";
+            var message = $"Are you certain that you'd like to Enlighten? {level} Your skills will return to their base state and your skill credits will be recalculated. You will keep your attributes and unspent experience. Your equipment will be unequipped and your enchantments dispelled, you will leave {leaves}, and you will return to your lifestone.";
+            void onResponse(bool response, bool _) { if (response) { Enlightenment.HandleEnlightenment(session.Player, outcome); } }
             var confirm = session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, onResponse), message);
 
         }
@@ -1605,284 +1646,133 @@ namespace ACE.Server.Command.Handlers
 
         }
 
+        /// <summary>/top board id (and its aliases) -> the heading shown above the list.</summary>
+        private static readonly Dictionary<string, string> TopBoardHeadings = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["qb"] = "Top 25 Players by Quest Bonus:",
+            ["level"] = "Top 25 Players by Level:",
+            ["enl"] = "Top 25 Players by Enlightenment:",
+            ["title"] = "Top 25 Players by Titles:",
+            ["augs"] = "Top 25 Players by Advanced Augmentations:",
+            ["deaths"] = "Top 25 Players by Deaths:",
+            ["bank"] = "Top 25 Players by Bank Value:",
+            ["lum"] = "Top 25 Players by Banked Luminance:",
+            ["attr"] = "Top 25 Players by Raised Attributes:",
+            ["bond"] = "Top 25 Players by Highest Pet Bond Level:",
+            ["sumbond"] = "Top 25 Players by Sum of Pet Bond Levels:",
+            ["potency"] = "Top 25 Players by Highest Pet Potency Level:",
+            ["mutations"] = "Top 25 Players by Most Mutated Pet:",
+            ["summutations"] = "Top 25 Players by Total Pet Mutations:",
+            ["litters"] = "Top 25 Accounts by Litters Bred:",
+            ["enlcoins"] = "Top 25 Players by Banked Enlightened Coins:",
+            ["wenlcoins"] = "Top 25 Players by Banked Weakly Enlightened Coins:",
+            ["mkeys"] = "Top 25 Players by Banked Mythic Keys:",
+            ["lkeys"] = "Top 25 Players by Banked Legendary Keys:",
+            ["jails"] = "Top 25 Characters by Times Jailed:",
+            ["notguilty"] = "Top 25 Characters by Not Guilty (passed focus checks):",
+            ["jailbreak"] = "Top 25 Players by Jail Escape Trial Completion Times:",
+        };
+
+        /// <summary>Boards that also show "Your placement" (the banked and discipline boards never did).</summary>
+        private static readonly HashSet<string> TopBoardsWithPlacement = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "qb", "level", "enl", "title", "augs", "deaths", "bank", "lum", "attr", "bond", "sumbond", "potency", "mutations", "summutations", "litters", "jailbreak",
+        };
+
+        private static string FormatJailbreakTime(ulong seconds)
+        {
+            var minutes = seconds / 60;
+            var secs = seconds % 60;
+            return minutes > 0 ? $"{minutes}m {secs}s" : $"{secs}s";
+        }
+
         [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "top qb|level|enl|title|augs|deaths|bank|lum|attr|bond(s)|sumbond(s)|enlcoins|wenlcoins|mkeys|lkeys|jails|notguilty|pets|shinies|potency|mutations|summutations|litters|jailbreak")]
         public static async void DisplayTop(Session session, params string[] parameters)
         {
             try
             {
-                List<Leaderboard> list = [];
-                var sqlLeaderboardRequested = false;
-                LeaderboardCache cache = LeaderboardCache.Instance;
                 if (parameters.Length < 1)
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Specify a leaderboard to run, such as /top qb or /top deaths", ChatMessageType.Broadcast));
                     return;
                 }
-                using (var context = new AuthDbContext())
+
+                var key = parameters[0].ToLowerInvariant();
+                if (key == "bonds") key = "bond";
+                else if (key == "sumbonds") key = "sumbond";
+                else if (key == "toppotency") key = "potency";
+
+                // in-game boards follow the leaderboard_active_days setting (the web page lets the viewer choose)
+                var activeDays = ActiveWindow.LeaderboardDefault;
+                var windowNote = activeDays > 0 ? $"(Showing {ActiveWindow.Describe(activeDays)}.)" : null;
+
+                if (key == "gymnos")
                 {
-                    var key = parameters[0].ToLowerInvariant();
-                    if (key == "qb")
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                if (key == "pets" || key == "shinies")
+                {
+                    // Pet Registry leaderboards - by account (shows main character)
+                    var shinies = key == "shinies";
+                    var top = shinies ? PetRegistryManager.GetTopShinies(25, activeDays) : PetRegistryManager.GetTopPets(25, activeDays);
+                    if (top.Count > 0)
                     {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopQBAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Quest Bonus:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "level")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopLevelAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Level:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "enl")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopEnlAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Enlightenment:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "title")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopTitleAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Titles:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "augs")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopAugsAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Advanced Augmentations:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "deaths")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopDeathsAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Deaths:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "bank")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopBankAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Bank Value:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "lum")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopLumAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Luminance:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "attr")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopAttrAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Raised Attributes:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "bonds" || key == "bond")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopBondsAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Highest Pet Bond Level:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "sumbonds" || key == "sumbond")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopSumBondsAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Sum of Pet Bond Levels:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "potency" || key == "toppotency")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopPotencyAsync(context);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Highest Pet Potency Level:", ChatMessageType.Broadcast));
-                        }
-                    }
-                    else if (key == "mutations")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopBankedInt64Async(context, "mutations", LeaderboardInlineSql.TopPetMutations);
-                        if (list.Count > 0)
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Most Mutated Pet:", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "summutations")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopBankedInt64Async(context, "summutations", LeaderboardInlineSql.TopSumPetMutations);
-                        if (list.Count > 0)
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Total Pet Mutations:", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "litters")
-                    {
-                        sqlLeaderboardRequested = true;
-                        list = await cache.GetTopBankedInt64Async(context, "litters", LeaderboardInlineSql.TopLittersBred);
-                        if (list.Count > 0)
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Accounts by Litters Bred:", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "enlcoins")
-                    {
-                        list = await cache.GetTopBankedInt64Async(context, "enlcoins", LeaderboardInlineSql.TopBankedEnlightenedCoins);
-                        if (list.Count > 0)
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Enlightened Coins:", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "wenlcoins")
-                    {
-                        list = await cache.GetTopBankedInt64Async(context, "wenlcoins", LeaderboardInlineSql.TopBankedWeaklyEnlightenedCoins);
-                        if (list.Count > 0)
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Weakly Enlightened Coins:", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "mkeys")
-                    {
-                        list = await cache.GetTopBankedInt64Async(context, "mkeys", LeaderboardInlineSql.TopBankedMythicalKeys);
-                        if (list.Count > 0)
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Mythic Keys:", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "lkeys")
-                    {
-                        list = await cache.GetTopBankedInt64Async(context, "lkeys", LeaderboardInlineSql.TopBankedLegendaryKeys);
-                        if (list.Count > 0)
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Legendary Keys:", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "jails")
-                    {
-                        list = await cache.GetTopBankedInt64Async(context, "jails", LeaderboardInlineSql.TopTimesJailed);
-                        if (list.Count > 0)
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Characters by Times Jailed:", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "notguilty")
-                    {
-                        list = await cache.GetTopBankedInt64Async(context, "notguilty", LeaderboardInlineSql.TopUcmChecksPassed);
-                        if (list.Count > 0)
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Characters by Not Guilty (passed focus checks):", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "pets")
-                    {
-                        // Pet Registry leaderboard - by account (shows main character)
-                        var topPets = PetRegistryManager.GetTopPets();
-                        if (topPets.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Accounts by Pets Registered:", ChatMessageType.Broadcast));
-                            for (int i = 0; i < topPets.Count; i++)
-                            {
-                                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {topPets[i].Count:N0} pets - {topPets[i].CharacterName}", ChatMessageType.Broadcast));
-                            }
-                        }
-                        else
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("No pet registrations yet!", ChatMessageType.Broadcast));
-                        }
-                        return; // Early return since we handled display ourselves
-                    }
-                    else if (key == "shinies")
-                    {
-                        // Shiny Pet Registry leaderboard - by account (shows main character)
-                        var topShinies = PetRegistryManager.GetTopShinies();
-                        if (topShinies.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Accounts by Shinies Captured:", ChatMessageType.Broadcast));
-                            for (int i = 0; i < topShinies.Count; i++)
-                            {
-                                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {topShinies[i].Count:N0} shinies - {topShinies[i].CharacterName}", ChatMessageType.Broadcast));
-                            }
-                        }
-                        else
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("No shinies captured yet!", ChatMessageType.Broadcast));
-                        }
-                        return; // Early return since we handled display ourselves
-                    }
-                    else if (key == "gymnos")
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));
-                    }
-                    else if (key == "jailbreak")
-                    {
-                        list = await cache.GetTopBankedInt64Async(context, "jailbreak", LeaderboardInlineSql.TopJailbreak);
-                        if (list.Count > 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Jail Escape Trial Completion Times:", ChatMessageType.Broadcast));
-                            for (int i = 0; i < list.Count; i++)
-                            {
-                                var minutes = list[i].Score / 60;
-                                var secs = list[i].Score % 60;
-                                var formatted = minutes > 0 ? $"{minutes}m {secs}s" : $"{secs}s";
-                                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {formatted} - {list[i].Character}", ChatMessageType.Broadcast));
-                            }
-                            
-                            var p = await Leaderboard.GetSelfPlacementRowAsync(context, "jailbreak", session.AccountId);
-                            if (p != null)
-                            {
-                                var minutes = p.Score.Value / 60;
-                                var secs = p.Score.Value % 60;
-                                var formatted = minutes > 0 ? $"{minutes}m {secs}s" : $"{secs}s";
-                                session.Network.EnqueueSend(new GameMessageSystemChat($"Your placement: #{p.PlacementRank:N0} - Score: {formatted} ({p.Character})", ChatMessageType.Broadcast));
-                            }
-                        }
-                        else
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("No jail escape completions yet!", ChatMessageType.Broadcast));
-                        }
-                        return;
+                        session.Network.EnqueueSend(new GameMessageSystemChat(shinies ? "Top 25 Accounts by Shinies Captured:" : "Top 25 Accounts by Pets Registered:", ChatMessageType.Broadcast));
+                        for (int i = 0; i < top.Count; i++)
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {top[i].Count:N0} {(shinies ? "shinies" : "pets")} - {top[i].CharacterName}", ChatMessageType.Broadcast));
+                        if (windowNote != null)
+                            session.Network.EnqueueSend(new GameMessageSystemChat(windowNote, ChatMessageType.Broadcast));
                     }
                     else
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency, mutations, summutations, litters, jailbreak", ChatMessageType.Broadcast));
-                        return;
+                        var empty = activeDays > 0
+                            ? $"[TOP] No {(shinies ? "shiny captures" : "pet registrations")} from {ActiveWindow.Describe(activeDays)}."
+                            : shinies ? "No shinies captured yet!" : "No pet registrations yet!";
+                        session.Network.EnqueueSend(new GameMessageSystemChat(empty, ChatMessageType.Broadcast));
                     }
+                    return;
+                }
 
+                if (!TopBoardHeadings.TryGetValue(key, out var heading))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies, potency, mutations, summutations, litters, jailbreak", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                using var context = new AuthDbContext();
+                var list = await LeaderboardCache.Instance.GetTopAsync(context, key, activeDays);
+                var jailbreak = key == "jailbreak";
+
+                if (list.Count > 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(heading, ChatMessageType.Broadcast));
                     for (int i = 0; i < list.Count; i++)
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
+                        var score = jailbreak ? FormatJailbreakTime(list[i].Score ?? 0) : $"{list[i].Score ?? 0:N0}";
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {score} - {list[i].Character}", ChatMessageType.Broadcast));
                     }
+                    if (windowNote != null)
+                        session.Network.EnqueueSend(new GameMessageSystemChat(windowNote, ChatMessageType.Broadcast));
+                }
 
-                    if (sqlLeaderboardRequested)
+                if (TopBoardsWithPlacement.Contains(key))
+                {
+                    var p = await Leaderboard.GetSelfPlacementRowAsync(context, key, session.AccountId, activeDays);
+                    if (p != null)
                     {
-                        var boardKey = key;
-                        if (boardKey == "bonds") boardKey = "bond";
-                        else if (boardKey == "sumbonds") boardKey = "sumbond";
-                        else if (boardKey == "toppotency") boardKey = "potency";
-
-                        var p = await Leaderboard.GetSelfPlacementRowAsync(context, boardKey, session.AccountId);
-                        if (p != null)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Your placement: #{p.PlacementRank:N0} - Score: {p.Score ?? 0:N0} ({p.Character})", ChatMessageType.Broadcast));
-                        }
-                        else if (list.Count == 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] No entries on this leaderboard yet.", ChatMessageType.Broadcast));
-                        }
+                        var score = jailbreak ? FormatJailbreakTime(p.Score ?? 0) : $"{p.Score ?? 0:N0}";
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Your placement (live): #{p.PlacementRank:N0} - Score: {score} ({p.Character})", ChatMessageType.Broadcast));
                     }
+                }
+
+                if (list.Count == 0)
+                {
+                    var empty = activeDays > 0
+                        ? $"[TOP] No entries on this leaderboard from {ActiveWindow.Describe(activeDays)}."
+                        : jailbreak ? "No jail escape completions yet!" : "[TOP] No entries on this leaderboard yet.";
+                    session.Network.EnqueueSend(new GameMessageSystemChat(empty, ChatMessageType.Broadcast));
                 }
             }
             catch (Exception ex)

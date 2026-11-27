@@ -58,5 +58,24 @@ namespace ACE.Server.Tests
             var b = WorldObject.CurrentSaveToken;
             Assert.IsTrue(b >= a);
         }
+
+        [TestMethod]
+        public void SlowSave_IsStillReportedAsRace()
+        {
+            // A save blocked behind a slow or stalled database is a real race and must alert. The
+            // 2026-11-16 outage stalled saves for 45 minutes, so that length must not count as stale.
+            Assert.IsFalse(WorldObject.IsStaleSaveFlag(128));
+            Assert.IsFalse(WorldObject.IsStaleSaveFlag(5 * 60 * 1000));
+            Assert.IsFalse(WorldObject.IsStaleSaveFlag(45 * 60 * 1000));
+            Assert.IsFalse(WorldObject.IsStaleSaveFlag(WorldObject.StaleSaveFlagMs - 1));
+        }
+
+        [TestMethod]
+        public void FlagHeldForHours_IsStaleNotARace()
+        {
+            // The 2026-11-16 alerts: 15,503,961 ms "in flight" is a flag nothing cleared, not a save.
+            Assert.IsTrue(WorldObject.IsStaleSaveFlag(WorldObject.StaleSaveFlagMs));
+            Assert.IsTrue(WorldObject.IsStaleSaveFlag(15_503_961));
+        }
     }
 }

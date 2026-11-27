@@ -19,12 +19,21 @@ namespace ACE.Server.WorldObjects.Managers
 
         private static readonly double confirmationTimeout = 30;
 
+        /// <summary>Seconds a confirmation stays open when EnqueueSend isn't given its own timeout.</summary>
+        public static double DefaultTimeoutSeconds => confirmationTimeout;
+
         private UIntSequence contextSequence = new UIntSequence();
 
         public ConfirmationManager(Player player)
         {
             Player = player;
         }
+
+        /// <summary>
+        /// True when a popup of this type is already open, so <see cref="EnqueueSend"/> would refuse another one. Lets a caller
+        /// that charges before asking say "answer the popup you have open" before it takes anything.
+        /// </summary>
+        public bool IsPending(ConfirmationType confirmationType) => confirmations.ContainsKey(confirmationType);
 
         /// <summary>
         /// Builds a new confirmation request on the server,

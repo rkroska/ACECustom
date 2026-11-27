@@ -539,6 +539,24 @@ namespace ACE.Server.Entity
                 .ToHashSet();
         }
 
+        /// <summary>
+        /// Accounts with a non-deleted character that logged into the game within <paramref name="activeDays"/> days, or
+        /// null for 0 or less (no activity filter). Same rule as the SQL leaderboards (LeaderboardInlineSql.ActiveCondition).
+        /// </summary>
+        private static HashSet<uint> LoadActiveAccountIds(ShardDbContext context, int activeDays)
+        {
+            if (activeDays <= 0)
+                return null;
+
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-activeDays).ToUnixTimeSeconds();
+            return context.Character
+                .AsNoTracking()
+                .Where(c => !c.IsDeleted && c.LastLoginTimestamp >= cutoff)
+                .Select(c => c.AccountId)
+                .Distinct()
+                .ToHashSet();
+        }
+
         private static string MainCharacterNameHighestLogins(ShardDbContext context, uint accountId)
         {
             return LoadMainCharacterNames(context, new[] { accountId }).TryGetValue(accountId, out var name)
@@ -566,7 +584,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// All accounts ordered by pet-species count (same rules as the leaderboard), excluding leaderboard-hidden accounts.
         /// </summary>
-        private static List<(uint AccountId, int Count)> BuildOrderedPetSpeciesCounts(ShardDbContext context, bool shinyOnly, HashSet<uint> excludedAccounts)
+        private static List<(uint AccountId, int Count)> BuildOrderedPetSpeciesCounts(ShardDbContext context, bool shinyOnly, HashSet<uint> excludedAccounts, HashSet<uint> activeAccounts)
         {
             var ordered = new List<(uint AccountId, int Count)>();
 
@@ -583,7 +601,7 @@ namespace ACE.Server.Entity
 
                 foreach (var row in ranked)
                 {
-                    if (excludedAccounts.Contains(row.AccountId))
+                    if (excludedAccounts.Contains(row.AccountId) || (activeAccounts != null && !activeAccounts.Contains(row.AccountId)))
                         continue;
                     ordered.Add((row.AccountId, row.Count));
                 }
@@ -610,7 +628,7 @@ namespace ACE.Server.Entity
 
             foreach (var row in rankedNonShiny)
             {
-                if (excludedAccounts.Contains(row.AccountId))
+                if (excludedAccounts.Contains(row.AccountId) || (activeAccounts != null && !activeAccounts.Contains(row.AccountId)))
                     continue;
                 ordered.Add((row.AccountId, row.Count));
             }
@@ -622,52 +640,50 @@ namespace ACE.Server.Entity
             !string.IsNullOrEmpty(name) && name.StartsWith("+");
 
         /// <summary>
-        /// Global rank on the pet or shiny species leaderboard for an account, if the account appears on that board.
+        /// The pet or shiny species board and, when <paramref name="accountId"/> is given, that account's placement, both
+        /// from one ranked read: the viewer's rank can never contradict the list shown with it.
         /// </summary>
-        public static bool TryGetPetSpeciesPlacement(uint accountId, bool shinyOnly, out int rank, out int count, out string characterName)
+        public static (List<(uint AccountId, string CharacterName, int Count)> Top, (int Rank, int Count, string CharacterName)? Placement)
+            GetPetSpeciesBoard(bool shinyOnly, int limit, int activeDays, uint? accountId)
         {
-            rank = 0;
-            count = 0;
-            characterName = null;
+            using var context = new ShardDbContext();
+            var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, LoadLeaderboardHiddenAccountIds(context), LoadActiveAccountIds(context, activeDays));
+            var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
-            using (var context = new ShardDbContext())
+            var top = new List<(uint AccountId, string CharacterName, int Count)>();
+            (int Rank, int Count, string CharacterName)? placement = null;
+            var visibleRank = 0;
+
+            foreach (var entry in ordered)
             {
-                var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
-                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly, excludedAccounts);
-                var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
+                if (!mainCharacters.TryGetValue(entry.AccountId, out var mainCharacter))
+                    mainCharacter = "Unknown";
+                if (IsStaffLeaderboardCharacter(mainCharacter))
+                    continue;
 
-                var visibleRank = 0;
-                for (var i = 0; i < ordered.Count; i++)
-                {
-                    if (!mainCharacters.TryGetValue(ordered[i].AccountId, out var mainCharacter))
-                        mainCharacter = "Unknown";
-                    if (IsStaffLeaderboardCharacter(mainCharacter))
-                        continue;
+                visibleRank++;
+                if (top.Count < limit)
+                    top.Add((entry.AccountId, mainCharacter, entry.Count));
+                if (accountId.HasValue && entry.AccountId == accountId.Value)
+                    placement = (visibleRank, entry.Count, mainCharacter);
 
-                    visibleRank++;
-                    if (ordered[i].AccountId != accountId)
-                        continue;
-
-                    rank = visibleRank;
-                    count = ordered[i].Count;
-                    characterName = mainCharacter;
-                    return true;
-                }
+                if (top.Count >= limit && (placement.HasValue || !accountId.HasValue))
+                    break;
             }
 
-            return false;
+            return (top, placement);
         }
 
         /// <summary>
         /// Get top accounts by unique pet count (for leaderboard) - counts distinct creature names
         /// Returns main character name (by most logins) instead of account name
         /// </summary>
-        public static List<(uint AccountId, string CharacterName, int Count)> GetTopPets(int limit = 25)
+        public static List<(uint AccountId, string CharacterName, int Count)> GetTopPets(int limit, int activeDays)
         {
             using (var context = new ShardDbContext())
             {
                 var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
-                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: false, excludedAccounts);
+                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: false, excludedAccounts, LoadActiveAccountIds(context, activeDays));
                 var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();
@@ -704,12 +720,12 @@ namespace ACE.Server.Entity
         /// Get top accounts by shiny pet count (for leaderboard) - counts distinct shiny creature names
         /// Returns main character name (by most logins) instead of account name
         /// </summary>
-        public static List<(uint AccountId, string CharacterName, int Count)> GetTopShinies(int limit = 25)
+        public static List<(uint AccountId, string CharacterName, int Count)> GetTopShinies(int limit, int activeDays)
         {
             using (var context = new ShardDbContext())
             {
                 var excludedAccounts = LoadLeaderboardHiddenAccountIds(context);
-                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: true, excludedAccounts);
+                var ordered = BuildOrderedPetSpeciesCounts(context, shinyOnly: true, excludedAccounts, LoadActiveAccountIds(context, activeDays));
                 var mainCharacters = LoadMainCharacterNames(context, ordered.Select(o => o.AccountId));
 
                 var results = new List<(uint AccountId, string CharacterName, int Count)>();

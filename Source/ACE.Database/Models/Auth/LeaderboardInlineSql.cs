@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ACE.Entity.Enum.Properties;
 
 namespace ACE.Database.Models.Auth;
@@ -12,10 +13,41 @@ namespace ACE.Database.Models.Auth;
 /// Mule characters (PropertyBool.IsMule) are hidden from the per-character boards, but only the mule
 /// itself: the flag never removes the rest of the account. The account-scoped quest bonus board
 /// therefore excludes on ExcludeFromLeaderboards only, or a single mule would hide its owner's score.
+/// Activity window: every eligible-account join ends in an <c>/*active:alias*/</c> marker. <see cref="ForWindow(string, int)"/>
+/// turns it into "the account has a character that logged into the game within N days"; left as is, it is a
+/// plain SQL comment and nobody is filtered. The game login (character.last_Login_Timestamp) is used, not
+/// account.last_Login_Time, because signing into the web portal also stamps the account.
 /// </summary>
 public static class LeaderboardInlineSql
 {
     private static string ShardDb => Common.ConfigManager.Config?.MySql?.Shard?.Database ?? "ace_shard";
+
+    private static readonly System.Text.RegularExpressions.Regex ActiveMarker =
+        new(@"/\*active:(\w+)\*/", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// The condition an account must meet to count as active: a non-deleted character that logged into the game
+    /// within <paramref name="activeDays"/> days. Empty for 0 or less (everyone counts). The cutoff is worked out by
+    /// MySQL from the day count, so the SQL text stays the same for a given window.
+    /// </summary>
+    public static string ActiveCondition(string accountAlias, int activeDays) =>
+        activeDays <= 0
+            ? ""
+            : $"AND EXISTS (SELECT 1 FROM `{ShardDb}`.character act WHERE act.account_Id = {accountAlias}.accountId AND act.is_Deleted = 0 AND act.last_Login_Timestamp >= UNIX_TIMESTAMP() - {(long)activeDays * 86400})";
+
+    /// <summary>The board's SQL limited to accounts active within <paramref name="activeDays"/> days (0 = everyone).</summary>
+    public static string ForWindow(string sql, int activeDays) =>
+        ActiveMarker.Replace(sql, m => ActiveCondition(m.Groups[1].Value, activeDays));
+
+    /// <summary>The same for a self-placement query. The inserted condition holds no braces, so the arguments stay as they were.</summary>
+    public static FormattableString ForWindow(FormattableString sql, int activeDays) =>
+        System.Runtime.CompilerServices.FormattableStringFactory.Create(
+            ForWindow(sql.Format, activeDays),
+            sql.GetArguments()
+        );
+
+    /// <summary>How many activity markers a query holds (unit tests: every board must be filterable).</summary>
+    public static int ActiveMarkerCount(string sql) => ActiveMarker.Matches(sql).Count;
 
     private static string ResolveSql(string sql) =>
         sql.Replace("ace_shard.", $"`{ShardDb}`.");
@@ -30,16 +62,16 @@ public static class LeaderboardInlineSql
 
     /// <summary>Player accounts that are not currently banned.</summary>
     private const string EligibleAccountJoin =
-        "INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())";
+        "INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/";
 
     private const string EligibleAccountJoinAliasAcc =
-        "INNER JOIN account acc ON acc.accountId = a.accountId AND acc.accessLevel = 0 AND (acc.ban_Expire_Time IS NULL OR acc.ban_Expire_Time <= UTC_TIMESTAMP())";
+        "INNER JOIN account acc ON acc.accountId = a.accountId AND acc.accessLevel = 0 AND (acc.ban_Expire_Time IS NULL OR acc.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:acc*/";
 
     /// <summary>Output columns must match Leaderboard + AuthDbContext: Score, Account, Character, LeaderboardID.</summary>
     public static readonly string TopLum = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9005
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -51,7 +83,7 @@ public static class LeaderboardInlineSql
     public static readonly string TopBank = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9004
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -63,7 +95,7 @@ public static class LeaderboardInlineSql
     public static readonly string TopLevel = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 25
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -75,7 +107,7 @@ public static class LeaderboardInlineSql
     public static readonly string TopEnlightenment = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 390
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -87,7 +119,7 @@ public static class LeaderboardInlineSql
     public static readonly string TopTitles = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 262
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -99,7 +131,7 @@ public static class LeaderboardInlineSql
     public static readonly string TopDeaths = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 43
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -117,7 +149,7 @@ public static class LeaderboardInlineSql
                 ORDER BY c.total_Logins DESC LIMIT 1) AS `Character`,
                a.accountId AS LeaderboardID
         FROM account_quest a
-        INNER JOIN account acc ON acc.accountId = a.accountId AND acc.accessLevel = 0 AND (acc.ban_Expire_Time IS NULL OR acc.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account acc ON acc.accountId = a.accountId AND acc.accessLevel = 0 AND (acc.ban_Expire_Time IS NULL OR acc.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:acc*/
         GROUP BY a.accountId
         HAVING `Character` IS NOT NULL
         AND NOT EXISTS (
@@ -146,7 +178,7 @@ public static class LeaderboardInlineSql
         c.name AS `Character`,
         c.id AS LeaderboardID
         FROM ace_shard.character c
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (m.value IS NULL OR m.value = 0)
@@ -179,7 +211,7 @@ public static class LeaderboardInlineSql
         c.name AS `Character`,
         c.id AS LeaderboardID
         FROM ace_shard.character c
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (m.value IS NULL OR m.value = 0)
@@ -218,7 +250,7 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9005
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -238,7 +270,7 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9004
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -258,7 +290,7 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 25
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -278,7 +310,7 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 390
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -298,7 +330,7 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 262
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -318,7 +350,7 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 43
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -343,7 +375,7 @@ public static class LeaderboardInlineSql
                     ORDER BY c.total_Logins DESC LIMIT 1) AS `Character`,
                    a.accountId AS LeaderboardID
             FROM account_quest a
-            INNER JOIN account acc ON acc.accountId = a.accountId AND acc.accessLevel = 0 AND (acc.ban_Expire_Time IS NULL OR acc.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account acc ON acc.accountId = a.accountId AND acc.accessLevel = 0 AND (acc.ban_Expire_Time IS NULL OR acc.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:acc*/
             GROUP BY a.accountId
             HAVING `Character` IS NOT NULL
             AND NOT EXISTS (
@@ -376,7 +408,7 @@ public static class LeaderboardInlineSql
             c.name AS `Character`,
             c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
             WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (m.value IS NULL OR m.value = 0)
@@ -413,7 +445,7 @@ public static class LeaderboardInlineSql
             c.name AS `Character`,
             c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
             WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (m.value IS NULL OR m.value = 0)
@@ -433,7 +465,7 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = {int64PropertyType}
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = {IsMuleBoolType}
@@ -470,7 +502,7 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = {intPropertyType}
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = {IsMuleBoolType}
@@ -490,7 +522,7 @@ public static class LeaderboardInlineSql
                c.id AS LeaderboardID
         FROM ace_shard.biota_properties_int64 att
         INNER JOIN ace_shard.character c ON c.id = CAST(att.value AS UNSIGNED) AND att.type = 9052
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         LEFT JOIN ace_shard.biota_properties_int bond ON bond.object_id = att.object_id AND bond.type = 9053
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -508,7 +540,7 @@ public static class LeaderboardInlineSql
                c.id AS LeaderboardID
         FROM ace_shard.biota_properties_int64 att
         INNER JOIN ace_shard.character c ON c.id = CAST(att.value AS UNSIGNED) AND att.type = 9052
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         LEFT JOIN ace_shard.biota_properties_int bond ON bond.object_id = att.object_id AND bond.type = 9053
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -531,7 +563,7 @@ public static class LeaderboardInlineSql
                    c.id AS LeaderboardID
             FROM ace_shard.biota_properties_int64 att
             INNER JOIN ace_shard.character c ON c.id = CAST(att.value AS UNSIGNED) AND att.type = 9052
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             LEFT JOIN ace_shard.biota_properties_int bond ON bond.object_id = att.object_id AND bond.type = 9053
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -556,7 +588,7 @@ public static class LeaderboardInlineSql
                    c.id AS LeaderboardID
             FROM ace_shard.biota_properties_int64 att
             INNER JOIN ace_shard.character c ON c.id = CAST(att.value AS UNSIGNED) AND att.type = 9052
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             LEFT JOIN ace_shard.biota_properties_int bond ON bond.object_id = att.object_id AND bond.type = 9053
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -578,7 +610,7 @@ public static class LeaderboardInlineSql
                c.id AS LeaderboardID
         FROM ace_shard.biota_properties_int64 att
         INNER JOIN ace_shard.character c ON c.id = CAST(att.value AS UNSIGNED) AND att.type = 9052
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         LEFT JOIN ace_shard.biota_properties_int pot ON pot.object_id = att.object_id AND pot.type = 9056
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -600,7 +632,7 @@ public static class LeaderboardInlineSql
                    c.id AS LeaderboardID
             FROM ace_shard.biota_properties_int64 att
             INNER JOIN ace_shard.character c ON c.id = CAST(att.value AS UNSIGNED) AND att.type = 9052
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             LEFT JOIN ace_shard.biota_properties_int pot ON pot.object_id = att.object_id AND pot.type = 9056
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
             LEFT JOIN ace_shard.biota_properties_bool m ON m.object_id = c.id AND m.type = 131
@@ -646,7 +678,7 @@ public static class LeaderboardInlineSql
           INNER JOIN ace_shard.character c ON c.id = pet.CharacterId AND c.is_Deleted = 0
           GROUP BY c.account_Id
         ) src
-        INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN (
           SELECT r.account_Id, r.name, r.id
           FROM (
@@ -698,7 +730,7 @@ public static class LeaderboardInlineSql
           INNER JOIN ace_shard.character c ON c.id = pet.CharacterId AND c.is_Deleted = 0
           GROUP BY c.account_Id
         ) src
-        INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN (
           SELECT r.account_Id, r.name, r.id
           FROM (
@@ -745,7 +777,7 @@ public static class LeaderboardInlineSql
           WHERE lit.type = 9079
           GROUP BY c.account_Id
         ) src
-        INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN (
           SELECT r.account_Id, r.name, r.id
           FROM (
@@ -801,7 +833,7 @@ public static class LeaderboardInlineSql
               INNER JOIN ace_shard.character c ON c.id = pet.CharacterId AND c.is_Deleted = 0
               GROUP BY c.account_Id
             ) src
-            INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN (
               SELECT r.account_Id, r.name, r.id
               FROM (
@@ -860,7 +892,7 @@ public static class LeaderboardInlineSql
               INNER JOIN ace_shard.character c ON c.id = pet.CharacterId AND c.is_Deleted = 0
               GROUP BY c.account_Id
             ) src
-            INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN (
               SELECT r.account_Id, r.name, r.id
               FROM (
@@ -910,7 +942,7 @@ public static class LeaderboardInlineSql
               WHERE lit.type = 9079
               GROUP BY c.account_Id
             ) src
-            INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = src.Account AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN (
               SELECT r.account_Id, r.name, r.id
               FROM (
@@ -946,7 +978,7 @@ public static class LeaderboardInlineSql
     public static readonly string TopJailbreak = ResolveSql("""
         SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
         FROM ace_shard.character c
-        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+        INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 55000
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
         WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
@@ -962,7 +994,7 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP())
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0 AND (a.ban_Expire_Time IS NULL OR a.ban_Expire_Time <= UTC_TIMESTAMP()) /*active:a*/
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 55000
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
             WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
@@ -972,4 +1004,34 @@ public static class LeaderboardInlineSql
         ORDER BY ranked.PlacementRank ASC
         LIMIT 1
         """);
+
+    /// <summary>
+    /// Every SQL board by id, as /top and the web portal name them. Declared last: static fields initialise in
+    /// source order, so the queries above must already exist.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> TopBoards = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["qb"] = TopQuestBonus,
+        ["level"] = TopLevel,
+        ["enl"] = TopEnlightenment,
+        ["title"] = TopTitles,
+        ["augs"] = TopAugments,
+        ["deaths"] = TopDeaths,
+        ["bank"] = TopBank,
+        ["lum"] = TopLum,
+        ["attr"] = TopAttributes,
+        ["bond"] = TopBonds,
+        ["sumbond"] = TopSumBonds,
+        ["potency"] = TopPotency,
+        ["enlcoins"] = TopBankedEnlightenedCoins,
+        ["wenlcoins"] = TopBankedWeaklyEnlightenedCoins,
+        ["mkeys"] = TopBankedMythicalKeys,
+        ["lkeys"] = TopBankedLegendaryKeys,
+        ["jails"] = TopTimesJailed,
+        ["notguilty"] = TopUcmChecksPassed,
+        ["mutations"] = TopPetMutations,
+        ["summutations"] = TopSumPetMutations,
+        ["litters"] = TopLittersBred,
+        ["jailbreak"] = TopJailbreak,
+    };
 }

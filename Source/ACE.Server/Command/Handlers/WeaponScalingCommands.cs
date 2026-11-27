@@ -112,7 +112,8 @@ namespace ACE.Server.Command.Handlers
             sb.Append("|grades=").Append(string.Join(",",
                 Managers.WeaponScaling.WeaponScalingManager.GradeBands
                     .Select(b => $"{b.Grade}~{F(cfg.GradeWeights != null && cfg.GradeWeights.TryGetValue(b.Grade, out var gw) ? gw : 0)}")));
-            // 5-field tier rows since 2026-08-15 (charm gates); the plugin parses 3 or 5.
+            // 5-field tier rows since 2026-08-15 (charm gates); the plugin parses 3 or 5. Since the 2026-11-22 Triune retire field 4
+            // (Triune) is always 0 and field 5 is the attack school's AUG count (4,500 at T16), not a charm count.
             sb.Append("|tiers=").Append(string.Join(",",
                 cfg.Tiers.Select(t => $"{t.Tier}~{t.Cap}~{t.MinWieldAugs}~{t.MinWieldTriune}~{t.MinWieldSkillCharm}")));
             sb.Append("|scripts=").Append(string.Join(",",
@@ -141,9 +142,47 @@ namespace ACE.Server.Command.Handlers
 
         private static string F(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
 
+        /// <summary>
+        /// [[ZCHG]] (2026-11-22, the Zone Control panel's Hit Gate card): |t=tier~check~school,... for every T11+ row -
+        /// check 1 = the tier asks the attack school (to hit and to count as that tier), 0 = it does not; school = the count
+        /// it asks (MinWieldSkillCharm). Append-only: new fields go at the END of a row or as new |key= parts.
+        /// </summary>
+        internal static string BuildHitGatePayload(WeaponScalingConfig cfg)
+            => "[[ZCHG]]|t=" + string.Join(",", cfg.Tiers.Where(t => t.Tier >= 11).Select(t =>
+                string.Join("~", t.Tier.ToString(CultureInfo.InvariantCulture), t.SchoolCheckOff ? "0" : "1", t.MinWieldSkillCharm.ToString(CultureInfo.InvariantCulture))));
+
+        /// <summary>/weaponscale tier &lt;t|all&gt; schoolcheck on|off - the per-tier school check (WeaponScalingTier.SchoolCheckOff).</summary>
+        private static void SetSchoolCheck(Session session, string tierArg, string onOffArg, Action<string> Msg)
+        {
+            var onOff = onOffArg.ToLowerInvariant();
+            if (onOff != "on" && onOff != "off")
+            { Msg("Usage: /weaponscale tier <11-25|all> schoolcheck on|off"); return; }
+            var all = tierArg.Equals("all", StringComparison.OrdinalIgnoreCase);
+            var one = 0;
+            if (!all && (!int.TryParse(tierArg.TrimStart('t', 'T'), out one) || one < 11 || one > 25))
+            { Msg("tier: the school check is T11-T25 (or all) - there is no hit gate below T11."); return; }
+            var off = onOff == "off";
+            var changed = new List<int>();
+            WeaponScalingManager.Mutate(cfg =>
+            {
+                foreach (var row in cfg.Tiers.Where(r => r.Tier >= 11 && r.Tier <= 25 && (all || r.Tier == one)))
+                {
+                    row.SchoolCheckOff = off;
+                    changed.Add(row.Tier);
+                }
+            });
+            if (changed.Count == 0)
+            { Msg($"Tier T{one} not found (use tier add)."); return; }
+            var which = all ? "T11-T25" : $"T{one}";
+            Managers.PlayerManager.BroadcastToAuditChannel(session?.Player, $"{(session != null ? session.Player.Name : "CONSOLE")} set the {which} school check {onOff.ToUpperInvariant()} (weapon scaling)");
+            Msg($"School check {which}: {onOff.ToUpperInvariant()}. "
+                + (off ? "Monsters there can be hit without the attack school's augs, and the school no longer counts toward a player's own tier there."
+                       : "The attack school's aug count is asked again there, to hit and to count as that tier."));
+        }
+
         [CommandHandler("weaponscale", AccessLevel.Developer, CommandHandlerFlag.None, 0,
             "Weapon Scaling config (plugin fallback).",
-            "show | enable on|off | tier <t> cap|minwield|minwieldcreature|minwieldlife|minwieldtriune|minwieldskillcharm <n> | tier add <t> [cap] [minwield] | tier remove <t> | "
+            "show | enable on|off | tier <t> cap|minwield|minwieldcreature|minwieldlife|minwieldskillcharm <n> | tier <t|all> schoolcheck on|off | schoolcheck | tier add <t> [cap] [minwield] | tier remove <t> | "
             + "script <name> kmin|kmax <v> | script add <name> [kmin] [kmax] | script remove <name> | "
             + "kc min|max <v> | sync on|off | reset | reload")]
         public static void HandleWeaponScale(Session session, params string[] parameters)
@@ -157,10 +196,11 @@ namespace ACE.Server.Command.Handlers
                 Msg("  /weaponscale enable on|off       master switch; off = static-base-only combat (current behavior)");
                 Msg("  /weaponscale tier <t> cap <n>    scaling stops growing at n item augs for tier-t weapons");
                 Msg("  /weaponscale tier <t> minwield <n>   item augs required to WIELD tier-t weapons (economy gate)");
-                Msg("  /weaponscale tier <t> minwieldcreature <n> Creature augs required to wield (T11-T15; also the hit gate)");
-                Msg("  /weaponscale tier <t> minwieldlife <n>     Life augs required to wield (T11-T15)");
-                Msg("  /weaponscale tier <t> minwieldtriune <n>   Triune Weave count required to wield (T16+ charm gate)");
-                Msg("  /weaponscale tier <t> minwieldskillcharm <n>   weapon-family charm count (RETIRED 2026-10-05: no longer stamped)");
+                Msg("  /weaponscale tier <t> minwieldcreature <n> Creature augs required to wield (also the hit gate)");
+                Msg("  /weaponscale tier <t> minwieldlife <n>     Life augs required to wield (also the hit gate)");
+                Msg("  /weaponscale tier <t> minwieldskillcharm <n>   the attack school's aug count the hit gate asks (2,000 at T11 ... 4,500 at T16)");
+                Msg("  /weaponscale tier <t|all> schoolcheck on|off   does that tier (T11-T25) ask the attack school, to hit AND to count as that tier");
+                Msg("  /weaponscale schoolcheck         the per-tier school check, one machine line ([[ZCHG]], the Zone Control panel)");
                 Msg("  /weaponscale tier add <t> [cap] [minwield] | tier remove <t>");
                 Msg("  /weaponscale script <name> kmin <v> | kmax <v> | variance <v>   per-loot-script k range + Scheme C family variance");
                 Msg("  /weaponscale script <name> ladder <anchorS> | ladder clear   seed/drop the 16-rung grade ladder (+18 pct per grade)");
@@ -197,14 +237,21 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
 
+                case "schoolcheck":
+                    // machine read-back for the panel's Hit Gate card - one short line, eaten before the chat window
+                    ChatPacket.SendServerMessage(session, BuildHitGatePayload(WeaponScalingManager.Current), ChatMessageType.Broadcast);
+                    return;
+
                 case "show":
                 {
                     var cfg = WeaponScalingManager.Current;
                     var sb = new StringBuilder();
                     sb.AppendLine($"Weapon Scaling: {(cfg.Enabled ? "Enabled" : "Disabled")} (kc {cfg.KcMin:0.###}-{cfg.KcMax:0.###}, tighten {cfg.TightenStrength:0.###})");
-                    sb.AppendLine("  tier | cap | item | creature | life | triune | skillcharm");
+                    // Current is always Normalized, and Normalize always folds the Triune column: one form only
+                    sb.AppendLine("  tier | cap | item | creature | life | attack school augs | school check");
                     foreach (var t in cfg.Tiers)
-                        sb.AppendLine($"  T{t.Tier} | {t.Cap:N0} | {t.MinWieldAugs:N0} | {t.MinWieldCreature:N0} | {t.MinWieldLife:N0} | {t.MinWieldTriune:N0} | {t.MinWieldSkillCharm:N0}");
+                        sb.AppendLine($"  T{t.Tier} | {t.Cap:N0} | {t.MinWieldAugs:N0} | {t.MinWieldCreature:N0} | {t.MinWieldLife:N0} | {t.MinWieldSkillCharm:N0} | "
+                            + (t.Tier < 11 ? "-" : t.SchoolCheckOff ? "OFF" : "on"));
                     sb.AppendLine("  script | kmin | kmax | variance | ladder");
                     foreach (var s in cfg.Scripts.OrderBy(s => s.Key, StringComparer.OrdinalIgnoreCase))
                         sb.AppendLine($"  {s.Key} | {s.Value.KMin:0.###} | {s.Value.KMax:0.###} | {s.Value.Variance:0.###} | "
@@ -308,15 +355,20 @@ namespace ACE.Server.Command.Handlers
                         Msg($"Tier T{tRem} removed.");
                         return;
                     }
+                    if (args.Length >= 4 && args[2].Equals("schoolcheck", StringComparison.OrdinalIgnoreCase))
+                    {
+                        SetSchoolCheck(session, args[1], args[3], Msg);
+                        return;
+                    }
                     if (args.Length < 4 || !int.TryParse(args[1], out var tier) || !int.TryParse(args[3], out var value))
                     {
-                        Msg("Usage: /weaponscale tier <t> cap|minwield|minwieldcreature|minwieldlife|minwieldtriune|minwieldskillcharm <n>  |  tier add <t> [cap] [minwield]  |  tier remove <t>");
+                        Msg("Usage: /weaponscale tier <t> cap|minwield|minwieldcreature|minwieldlife|minwieldskillcharm <n>  |  tier <t|all> schoolcheck on|off  |  tier add <t> [cap] [minwield]  |  tier remove <t>");
                         return;
                     }
                     var field = args[2].ToLowerInvariant();
                     if (field != "cap" && field != "minwield" && field != "minwieldcreature" && field != "minwieldlife" && field != "minwieldtriune" && field != "minwieldskillcharm")
                     {
-                        Msg("tier: field must be cap, minwield, minwieldcreature, minwieldlife, minwieldtriune, or minwieldskillcharm.");
+                        Msg("tier: field must be cap, minwield, minwieldcreature, minwieldlife, minwieldskillcharm, or schoolcheck.");
                         return;
                     }
                     if (value < 0)
@@ -324,14 +376,17 @@ namespace ACE.Server.Command.Handlers
                         Msg($"tier: {field} must be 0 or more.");
                         return;
                     }
-                    // a stored 0 means UNSET for these two at T11+ (WeaponScalingManager.Normalize re-seeds the ladder), so it is refused
-                    // rather than reported as set and silently undone
-                    // the same at T16+: Normalize re-seeds a T16+ row whose Triune AND (retired) charm are both 0
-                    var t16Row = tier >= 16 ? WeaponScalingManager.GetTier(tier) : null;
-                    if (value < 1 && t16Row != null
-                        && ((field == "minwieldtriune" && t16Row.MinWieldSkillCharm == 0) || (field == "minwieldskillcharm" && t16Row.MinWieldTriune == 0)))
+                    // Triune is retired (2026-11-22): its gate lives in Creature / Item / Life now, so the column cannot be set any more
+                    if (field == "minwieldtriune")
                     {
-                        Msg($"tier: at T16+ minwieldtriune and minwieldskillcharm cannot both be 0 (read as unset and re-seeded to the default ladder).");
+                        Msg("tier: minwieldtriune is retired - the Triune gate now lives in minwieldcreature / minwield / minwieldlife (+N on all three).");
+                        return;
+                    }
+                    // a stored 0 means UNSET for these three at T11+ (WeaponScalingManager.Normalize re-seeds the ladder), so it is
+                    // refused rather than reported as set and silently undone. A tier stops asking the school with 'schoolcheck off'.
+                    if (value < 1 && tier >= 11 && field == "minwieldskillcharm")
+                    {
+                        Msg($"tier: at T11+ minwieldskillcharm (the attack school's aug count) cannot be 0 (read as unset and re-seeded to the default ladder). To stop asking it: tier {tier} schoolcheck off.");
                         return;
                     }
                     if ((field == "minwieldcreature" || field == "minwieldlife") && tier >= 11 && value < 1)
@@ -349,7 +404,6 @@ namespace ACE.Server.Command.Handlers
                         else if (field == "minwield") row.MinWieldAugs = value;
                         else if (field == "minwieldcreature") row.MinWieldCreature = value;
                         else if (field == "minwieldlife") row.MinWieldLife = value;
-                        else if (field == "minwieldtriune") row.MinWieldTriune = value;
                         else row.MinWieldSkillCharm = value;
                     });
                     Msg(found ? $"Tier T{tier} {field} = {value:N0}." : $"Tier T{tier} not found (use tier add).");
@@ -1323,10 +1377,15 @@ namespace ACE.Server.Command.Handlers
         {
             ZoneControlManager.EnsureLoaded();
 
-            var playerTier = TierHitGate.PlayerTier(player);
+            var hitTier = TierHitGate.PlayerTier(player);
+            var playerTier = TierHitGate.RewardTier(player);
             var enabled = ZoneControlManager.EnabledZoneTiers;
             var ownTier = ZoneRare.OwnTier(playerTier, enabled);
-            Msg($"zcrare: your tier (highest tier whose monsters you can hit) = {(playerTier > 0 ? "T" + playerTier : "below T11")}");
+            Msg($"zcrare: your tier (highest tier whose monsters you can hit) = {(hitTier > 0 ? "T" + hitTier : "below T11")}");
+            if (playerTier < hitTier)
+                Msg(player.OwnedGemTier >= TierHitGate.MinGatedVariation
+                    ? $"zcrare: rare odds count you at T{playerTier} - the highest tier gem you own"
+                    : $"zcrare: rare odds count you at T{playerTier} - you own no tier gem, and T11 needs none");
             Msg($"zcrare: tiers with an enabled zone = {(enabled.Count > 0 ? string.Join(", ", enabled.Select(t => "T" + t)) : "(none)")}");
             Msg($"zcrare: your own tier for rare odds = {(ownTier > 0 ? "T" + ownTier : "none - no enabled zone tier at or below your tier, so no kill rolls a rare for you")}");
             Msg($"zcrare: settings - Pristine 1 in {ACE.Server.Managers.ServerConfig.zc_rare_pristine_odds.Value} (0 = off), Ascendant 1 in {ACE.Server.Managers.ServerConfig.zc_rare_ascendant_odds.Value} (0 = off), "

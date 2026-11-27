@@ -305,6 +305,13 @@ namespace ACE.Server.Entity
                     return;
                 }
 
+                // bank lock (/banklock), set while the popup was open: the luminance would not be paid, so nothing is taken
+                if (player.IsBankLocked)
+                {
+                    Say(player, collector, $"I pay into your bank, and your bank is locked. Your {itemName} is still yours.");
+                    return;
+                }
+
                 // Everything may have changed while the popup was open: find the item again, in the pack only, and re-check.
                 var again = player.FindObject(itemGuid, Player.SearchLocations.MyInventory);
                 if (again == null)

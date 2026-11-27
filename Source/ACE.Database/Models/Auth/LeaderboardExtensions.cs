@@ -2,8 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using log4net;
 using ACE.Common;
@@ -15,235 +13,30 @@ namespace ACE.Database.Models.Auth
     public partial class Leaderboard
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         /// <summary>
-        /// Retrieves the top players by quest bonus count from the database asynchronously.
+        /// Top list for one SQL board (see <see cref="LeaderboardInlineSql.TopBoards"/>), limited to accounts active within
+        /// <paramref name="activeDays"/> days (0 = everyone). Returns an empty list if the query fails.
         /// </summary>
-        /// <param name="context">The database context to use for the query.</param>
-        /// <returns>A list of Leaderboard entries sorted by quest bonus count, or an empty list if the query fails.</returns>
-        public static async Task<List<Leaderboard>> GetTopQBLeaderboardAsync(AuthDbContext context)
+        public static async Task<List<Leaderboard>> GetTopBoardAsync(AuthDbContext context, string boardId, string sql, int activeDays)
         {
             try
             {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopQuestBonus).AsNoTracking().ToListAsync();
+                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.ForWindow(sql, activeDays)).AsNoTracking().ToListAsync();
             }
             catch (Exception ex)
             {
-                log.Error($"Failed to get TopQuestBonus leaderboard: {ex.Message}");
+                log.Error($"Failed to get {boardId} leaderboard: {ex.Message}", ex);
                 return new List<Leaderboard>();
             }
         }
 
         /// <summary>
-        /// Retrieves the top players by character level from the database asynchronously.
-        /// </summary>
-        /// <param name="context">The database context to use for the query.</param>
-        /// <returns>A list of Leaderboard entries sorted by character level, or an empty list if the query fails.</returns>
-        public static async Task<List<Leaderboard>> GetTopLevelLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopLevel).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopLevel leaderboard: {ex.Message}");
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Retrieves the top players by enlightenment count from the database asynchronously.
-        /// </summary>
-        /// <param name="context">The database context to use for the query.</param>
-        /// <returns>A list of Leaderboard entries sorted by enlightenment count, or an empty list if the query fails.</returns>
-        public static async Task<List<Leaderboard>> GetTopEnlightenmentLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopEnlightenment).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopEnlightenment leaderboard: {ex.Message}", ex);
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Retrieves the top players by title count from the database asynchronously.
-        /// </summary>
-        /// <param name="context">The database context to use for the query.</param>
-        /// <returns>A list of Leaderboard entries sorted by title count, or an empty list if the query fails.</returns>
-        public static async Task<List<Leaderboard>> GetTopTitleLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopTitles).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopTitles leaderboard: {ex.Message}");
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Retrieves the top players by augmentation count from the database asynchronously.
-        /// </summary>
-        /// <param name="context">The database context to use for the query.</param>
-        /// <returns>A list of Leaderboard entries sorted by augmentation count, or an empty list if the query fails.</returns>
-        public static async Task<List<Leaderboard>> GetTopAugLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopAugments).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopAugments leaderboard: {ex.Message}");
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Retrieves the top players by death count from the database asynchronously.
-        /// </summary>
-        /// <param name="context">The database context to use for the query.</param>
-        /// <returns>A list of Leaderboard entries sorted by death count, or an empty list if the query fails.</returns>
-        public static async Task<List<Leaderboard>> GetTopDeathsLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopDeaths).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopDeaths leaderboard: {ex.Message}");
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Retrieves the top players by bank value from the database asynchronously.
-        /// </summary>
-        /// <param name="context">The database context to use for the query.</param>
-        /// <returns>A list of Leaderboard entries sorted by bank value, or an empty list if the query fails.</returns>
-        public static async Task<List<Leaderboard>> GetTopBankLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopBank).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopBank leaderboard: {ex.Message}");
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Retrieves the top players by luminance value from the database asynchronously.
-        /// </summary>
-        /// <param name="context">The database context to use for the query.</param>
-        /// <returns>A list of Leaderboard entries sorted by luminance value, or an empty list if the query fails.</returns>
-        public static async Task<List<Leaderboard>> GetTopLumLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopLum).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopLum leaderboard: {ex.Message}");
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Retrieves the top players by attribute values from the database asynchronously.
-        /// </summary>
-        /// <param name="context">The database context to use for the query.</param>
-        /// <returns>A list of Leaderboard entries sorted by attribute values, or an empty list if the query fails.</returns>
-        public static async Task<List<Leaderboard>> GetTopAttrLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopAttributes).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopAttributes leaderboard: {ex.Message}", ex);
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>Banked PropertyInt64 leaderboards (enlightened coins, keys, etc.).</summary>
-        public static async Task<List<Leaderboard>> GetTopBankedInt64LeaderboardAsync(AuthDbContext context, string sql)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(sql).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get banked int64 leaderboard: {ex.Message}", ex);
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Max pet bond level (per attuned essence) per character.
-        /// </summary>
-        public static async Task<List<Leaderboard>> GetTopBondsLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopBonds).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopBonds leaderboard: {ex.Message}", ex);
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Sum of pet bond levels across attuned essences per character.
-        /// </summary>
-        public static async Task<List<Leaderboard>> GetTopSumBondsLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopSumBonds).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopSumBonds leaderboard: {ex.Message}", ex);
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Max pet potency level (per attuned essence) per character.
-        /// </summary>
-        public static async Task<List<Leaderboard>> GetTopPotencyLeaderboardAsync(AuthDbContext context)
-        {
-            try
-            {
-                return await context.Leaderboard.FromSqlRaw(LeaderboardInlineSql.TopPotency).AsNoTracking().ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to get TopPotency leaderboard: {ex.Message}", ex);
-                return new List<Leaderboard>();
-            }
-        }
-
-        /// <summary>
-        /// Best row for the account on this board (highest score among qualifying characters) and global rank.
+        /// Best row for the account on this board (highest score among qualifying characters) and global rank, among
+        /// accounts active within <paramref name="activeDays"/> days (0 = everyone).
         /// Returns null if the account has no qualifying entry or the query fails.
         /// </summary>
-        public static async Task<LeaderboardPlacementRow> GetSelfPlacementRowAsync(AuthDbContext context, string boardId, uint accountId)
+        public static async Task<LeaderboardPlacementRow> GetSelfPlacementRowAsync(AuthDbContext context, string boardId, uint accountId, int activeDays)
         {
             try
             {
@@ -323,7 +116,7 @@ namespace ACE.Database.Models.Auth
                 }
 
                 return await context.Set<LeaderboardPlacementRow>()
-                    .FromSqlInterpolated(sql)
+                    .FromSqlInterpolated(LeaderboardInlineSql.ForWindow(sql, activeDays))
                     .AsNoTracking()
                     .FirstOrDefaultAsync();
             }
@@ -336,621 +129,64 @@ namespace ACE.Database.Models.Auth
     }
 
     /// <summary>
-    /// Provides thread-safe caching for leaderboard data with automatic refresh and variance to prevent database load spikes.
+    /// Thread-safe cache for the SQL leaderboards: one slot per board and activity window, refreshed every 15 minutes
+    /// (plus a random 15-120 s so the boards do not all hit the database at once).
     /// </summary>
     public class LeaderboardCache
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
-        private static readonly LeaderboardCache instance = new LeaderboardCache();
         private const int cacheTimeout = 15; // minutes
 
-        // Semaphores for thread-safe async operations
-        private static readonly SemaphoreSlim _qbCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _levelCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _enlCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _titleCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _augsCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _deathsCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _bankCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _lumCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _attrCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _bondsCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _sumBondsCacheSemaphore = new SemaphoreSlim(1, 1);
-        private static readonly SemaphoreSlim _potencyCacheSemaphore = new SemaphoreSlim(1, 1);
+        /// <summary>An empty result (no entries yet, or a failed query) is retried sooner.</summary>
+        private const int emptyRetrySeconds = 60;
 
-        private sealed class BankedInt64LeaderboardSlot
+        private sealed class Slot
         {
             public List<Leaderboard> Cache = new List<Leaderboard>();
+            public bool Loaded;
             public DateTime NextUpdate = DateTime.MinValue;
             public readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
         }
 
-        private readonly ConcurrentDictionary<string, BankedInt64LeaderboardSlot> _bankedInt64Slots = new ConcurrentDictionary<string, BankedInt64LeaderboardSlot>(StringComparer.OrdinalIgnoreCase);
-
-        static LeaderboardCache()
-        {
-        }
+        private readonly ConcurrentDictionary<string, Slot> slots = new ConcurrentDictionary<string, Slot>(StringComparer.OrdinalIgnoreCase);
 
         private LeaderboardCache()
         {
         }
 
-        /// <summary>
-        /// Gets the singleton instance of the LeaderboardCache.
-        /// </summary>
-        public static LeaderboardCache Instance
-        {
-            get
-            {
-                return instance;
-            }
-        }
+        /// <summary>Gets the singleton instance of the LeaderboardCache.</summary>
+        public static LeaderboardCache Instance { get; } = new LeaderboardCache();
 
-        public List<Leaderboard> QBCache = new List<Leaderboard>();
-        public List<Leaderboard> LevelCache = new List<Leaderboard>();
-        public List<Leaderboard> EnlCache = new List<Leaderboard>();
-        public List<Leaderboard> TitleCache = new List<Leaderboard>();
-        public List<Leaderboard> AugsCache = new List<Leaderboard>();
-        public List<Leaderboard> DeathsCache = new List<Leaderboard>();
-        public List<Leaderboard> BankCache = new List<Leaderboard>();
-        public List<Leaderboard> LumCache = new List<Leaderboard>();
-        public List<Leaderboard> AttrCache = new List<Leaderboard>();
-        public List<Leaderboard> BondsCache = new List<Leaderboard>();
-        public List<Leaderboard> SumBondsCache = new List<Leaderboard>();
-        public List<Leaderboard> PotencyCache = new List<Leaderboard>();
+        private static string Key(string boardId, int activeDays) => $"{boardId}|{Math.Max(0, activeDays)}";
+
+        /// <summary>When the cached list for this board and window is next refreshed (UTC), or now if never loaded.</summary>
+        public DateTime GetNextUpdate(string boardId, int activeDays) =>
+            slots.TryGetValue(Key(boardId, activeDays), out var slot) && slot.Loaded ? slot.NextUpdate : DateTime.UtcNow;
 
         /// <summary>
-        /// Timestamp indicating when the cache was last updated (UTC). This represents the time when the cache was refreshed with new data from the database.
+        /// Cached top list for a board in <see cref="LeaderboardInlineSql.TopBoards"/>, limited to accounts active within
+        /// <paramref name="activeDays"/> days (0 = everyone). Returns an empty list for an unknown board.
         /// </summary>
-        public DateTime QBLastUpdate = DateTime.UtcNow;
-        public DateTime LevelLastUpdate = DateTime.UtcNow;
-        public DateTime EnlLastUpdate = DateTime.UtcNow;
-        public DateTime TitleLastUpdate = DateTime.UtcNow;
-        public DateTime AugsLastUpdate = DateTime.UtcNow;
-        public DateTime DeathsLastUpdate = DateTime.UtcNow;
-        public DateTime BanksLastUpdate = DateTime.UtcNow;
-        public DateTime LumLastUpdate = DateTime.UtcNow;
-        public DateTime AttrLastUpdate = DateTime.UtcNow;
-        public DateTime BondsLastUpdate = DateTime.UtcNow;
-        public DateTime SumBondsLastUpdate = DateTime.UtcNow;
-        public DateTime PotencyLastUpdate = DateTime.UtcNow;
-
-        /// <summary>
-        /// Updates the QB cache with new data and sets the next update time with variance to prevent database load spikes.
-        /// </summary>
-        /// <param name="list">The new leaderboard data to cache.</param>
-        public void UpdateQBCache(List<Leaderboard> list)
+        public async Task<List<Leaderboard>> GetTopAsync(AuthDbContext context, string boardId, int activeDays)
         {
-            QBCache = list;
-            QBLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }
+            if (!LeaderboardInlineSql.TopBoards.TryGetValue(boardId, out var sql))
+                return new List<Leaderboard>();
 
-        /// <summary>
-        /// Updates the Level cache with new data and sets the next update time with variance to prevent database load spikes.
-        /// </summary>
-        /// <param name="list">The new leaderboard data to cache.</param>
-        public void UpdateLevelCache(List<Leaderboard> list)
-        {
-            LevelCache = list;
-            LevelLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }
-
-        /// <summary>
-        /// Updates the Enlightenment cache with new data and sets the next update time with variance to prevent database load spikes.
-        /// </summary>
-        /// <param name="list">The new leaderboard data to cache.</param>
-        public void UpdateEnlCache(List<Leaderboard> list)
-        {
-            EnlCache = list;
-            EnlLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }
-
-        /// <summary>
-        /// Updates the Title cache with new data and sets the next update time with variance to prevent database load spikes.
-        /// </summary>
-        /// <param name="list">The new leaderboard data to cache.</param>
-        public void UpdateTitleCache(List<Leaderboard> list)
-        {
-            TitleCache = list;
-            TitleLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }
-
-        /// <summary>
-        /// Updates the Augmentations cache with new data and sets the next update time with variance to prevent database load spikes.
-        /// </summary>
-        /// <param name="list">The new leaderboard data to cache.</param>
-        public void UpdateAugsCache(List<Leaderboard> list)
-        {
-            AugsCache = list;
-            AugsLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }
-
-        /// <summary>
-        /// Updates the Deaths cache with new data and sets the next update time with variance to prevent database load spikes.
-        /// </summary>
-        /// <param name="list">The new leaderboard data to cache.</param>
-        public void UpdateDeathsCache(List<Leaderboard> list)
-        {
-            DeathsCache = list;
-            DeathsLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }
-
-        /// <summary>
-        /// Updates the Bank cache with new data and sets the next update time with variance to prevent database load spikes.
-        /// </summary>
-        /// <param name="list">The new leaderboard data to cache.</param>
-        public void UpdateBankCache(List<Leaderboard> list)
-        {
-            BankCache = list;
-            BanksLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }
-
-        /// <summary>
-        /// Updates the Luminance cache with new data and sets the next update time with variance to prevent database load spikes.
-        /// </summary>
-        /// <param name="list">The new leaderboard data to cache.</param>
-        public void UpdateLumCache(List<Leaderboard> list)
-        {
-            LumCache = list;
-            LumLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }
-
-        /// <summary>
-        /// Updates the Attributes cache with new data and sets the next update time with variance to prevent database load spikes.
-        /// </summary>
-        /// <param name="list">The new leaderboard data to cache.</param>
-        public void UpdateAttrCache(List<Leaderboard> list)
-        {
-            AttrCache = list;
-            AttrLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }
-
-        public void UpdateBondsCache(List<Leaderboard> list)
-        {
-            BondsCache = list;
-            BondsLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
-        }
-
-        public void UpdateSumBondsCache(List<Leaderboard> list)
-        {
-            SumBondsCache = list;
-            SumBondsLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
-        }
-
-        public void UpdatePotencyCache(List<Leaderboard> list)
-        {
-            PotencyCache = list;
-            PotencyLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
-        }
-
-        /// <summary>
-        /// Gets the top players by quest bonus count from cache, refreshing if necessary.
-        /// </summary>
-        /// <param name="context">The database context to use for refreshing the cache.</param>
-        /// <returns>A list of Leaderboard entries sorted by quest bonus count.</returns>
-        public async Task<List<Leaderboard>> GetTopQBAsync(AuthDbContext context)
-        {
-            if (QBCache.Count == 0 || QBLastUpdate < DateTime.UtcNow)
-            {
-                log.Debug($"QB Cache miss - Count: {QBCache.Count}, NextUpdate: {QBLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                await _qbCacheSemaphore.WaitAsync();
-                try
-                {
-                    // Double-check inside the lock
-                    if (QBCache.Count == 0 || QBLastUpdate < DateTime.UtcNow)
-                    {
-                        log.Debug("QB Cache refresh starting - calling database");
-                        var result = await Leaderboard.GetTopQBLeaderboardAsync(context);
-                        UpdateQBCache(result);
-                        log.Debug($"QB Cache refresh completed - {result.Count} records cached, next update: {QBLastUpdate:yyyy-MM-dd HH:mm:ss}");
-                    }
-                    else
-                    {
-                        log.Debug("QB Cache was refreshed by another thread - using cached data");
-                    }
-                }
-                finally
-                {
-                    _qbCacheSemaphore.Release();
-                }
-            }
-            else
-            {
-                log.Debug($"QB Cache hit - using {QBCache.Count} cached records, last updated: {QBLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
-            }
-            return QBCache;
-        }
-
-        /// <summary>
-        /// Gets the top players by character level from cache, refreshing if necessary.
-        /// </summary>
-        /// <param name="context">The database context to use for refreshing the cache.</param>
-        /// <returns>A list of Leaderboard entries sorted by character level.</returns>
-        public async Task<List<Leaderboard>> GetTopLevelAsync(AuthDbContext context)
-        {
-            if (LevelCache.Count == 0 || LevelLastUpdate < DateTime.UtcNow)
-            {
-                log.Debug($"Level Cache miss - Count: {LevelCache.Count}, NextUpdate: {LevelLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                await _levelCacheSemaphore.WaitAsync();
-                try
-                {
-                    // Double-check inside the lock
-                    if (LevelCache.Count == 0 || LevelLastUpdate < DateTime.UtcNow)
-                    {
-                        log.Debug("Level Cache refresh starting - calling database");
-                        var result = await Leaderboard.GetTopLevelLeaderboardAsync(context);
-                        UpdateLevelCache(result);
-                        log.Debug($"Level Cache refresh completed - {result.Count} records cached, next update: {LevelLastUpdate:yyyy-MM-dd HH:mm:ss}");
-                    }
-                    else
-                    {
-                        log.Debug("Level Cache was refreshed by another thread - using cached data");
-                    }
-                }
-                finally
-                {
-                    _levelCacheSemaphore.Release();
-                }
-            }
-            else
-            {
-                log.Debug($"Level Cache hit - using {LevelCache.Count} cached records, last updated: {LevelLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
-            }
-            return LevelCache;
-        }
-
-        /// <summary>
-        /// Gets the top players by enlightenment count from cache, refreshing if necessary.
-        /// </summary>
-        /// <param name="context">The database context to use for refreshing the cache.</param>
-        /// <returns>A list of Leaderboard entries sorted by enlightenment count.</returns>
-        public async Task<List<Leaderboard>> GetTopEnlAsync(AuthDbContext context)
-        {
-            if (EnlCache.Count == 0 || EnlLastUpdate < DateTime.UtcNow)
-            {
-                log.Debug($"Enlightenment Cache miss - Count: {EnlCache.Count}, NextUpdate: {EnlLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                await _enlCacheSemaphore.WaitAsync();
-                try
-                {
-                    // Double-check inside the lock
-                    if (EnlCache.Count == 0 || EnlLastUpdate < DateTime.UtcNow)
-                    {
-                        log.Debug("Enlightenment Cache refresh starting - calling database");
-                        var result = await Leaderboard.GetTopEnlightenmentLeaderboardAsync(context);
-                        UpdateEnlCache(result);
-                        log.Debug($"Enlightenment Cache refresh completed - {result.Count} records cached, next update: {EnlLastUpdate:yyyy-MM-dd HH:mm:ss}");
-                    }
-                    else
-                    {
-                        log.Debug("Enlightenment Cache was refreshed by another thread - using cached data");
-                    }
-                }
-                finally
-                {
-                    _enlCacheSemaphore.Release();
-                }
-            }
-            else
-            {
-                log.Debug($"Enlightenment Cache hit - using {EnlCache.Count} cached records, last updated: {EnlLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
-            }
-            return EnlCache;
-        }
-
-        /// <summary>
-        /// Gets the top players by title count from cache, refreshing if necessary.
-        /// </summary>
-        /// <param name="context">The database context to use for refreshing the cache.</param>
-        /// <returns>A list of Leaderboard entries sorted by title count.</returns>
-        public async Task<List<Leaderboard>> GetTopTitleAsync(AuthDbContext context)
-        {
-            if (TitleCache.Count == 0 || TitleLastUpdate < DateTime.UtcNow)
-            {
-                log.Debug($"Title Cache miss - Count: {TitleCache.Count}, NextUpdate: {TitleLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                await _titleCacheSemaphore.WaitAsync();
-                try
-                {
-                    // Double-check inside the lock
-                    if (TitleCache.Count == 0 || TitleLastUpdate < DateTime.UtcNow)
-                    {
-                        log.Debug("Title Cache refresh starting - calling database");
-                        var result = await Leaderboard.GetTopTitleLeaderboardAsync(context);
-                        UpdateTitleCache(result);
-                        log.Debug($"Title Cache refresh completed - {result.Count} records cached, next update: {TitleLastUpdate:yyyy-MM-dd HH:mm:ss}");
-                    }
-                    else
-                    {
-                        log.Debug("Title Cache was refreshed by another thread - using cached data");
-                    }
-                }
-                finally
-                {
-                    _titleCacheSemaphore.Release();
-                }
-            }
-            else
-            {
-                log.Debug($"Title Cache hit - using {TitleCache.Count} cached records, last updated: {TitleLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
-            }
-            return TitleCache;
-        }
-
-        /// <summary>
-        /// Gets the top players by augmentation count from cache, refreshing if necessary.
-        /// </summary>
-        /// <param name="context">The database context to use for refreshing the cache.</param>
-        /// <returns>A list of Leaderboard entries sorted by augmentation count.</returns>
-        public async Task<List<Leaderboard>> GetTopAugsAsync(AuthDbContext context)
-        {
-            if (AugsCache.Count == 0 || AugsLastUpdate < DateTime.UtcNow)
-            {
-                log.Debug($"Augmentations Cache miss - Count: {AugsCache.Count}, NextUpdate: {AugsLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                await _augsCacheSemaphore.WaitAsync();
-                try
-                {
-                    // Double-check inside the lock
-                    if (AugsCache.Count == 0 || AugsLastUpdate < DateTime.UtcNow)
-                    {
-                        log.Debug("Augmentations Cache refresh starting - calling database");
-                        var result = await Leaderboard.GetTopAugLeaderboardAsync(context);
-                        UpdateAugsCache(result);
-                        log.Debug($"Augmentations Cache refresh completed - {result.Count} records cached, next update: {AugsLastUpdate:yyyy-MM-dd HH:mm:ss}");
-                    }
-                    else
-                    {
-                        log.Debug("Augmentations Cache was refreshed by another thread - using cached data");
-                    }
-                }
-                finally
-                {
-                    _augsCacheSemaphore.Release();
-                }
-            }
-            else
-            {
-                log.Debug($"Augmentations Cache hit - using {AugsCache.Count} cached records, last updated: {AugsLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
-            }
-            return AugsCache;
-        }
-
-        /// <summary>
-        /// Gets the top players by death count from cache, refreshing if necessary.
-        /// </summary>
-        /// <param name="context">The database context to use for refreshing the cache.</param>
-        /// <returns>A list of Leaderboard entries sorted by death count.</returns>
-        public async Task<List<Leaderboard>> GetTopDeathsAsync(AuthDbContext context)
-        {
-            if (DeathsCache.Count == 0 || DeathsLastUpdate < DateTime.UtcNow)
-            {
-                log.Debug($"Deaths Cache miss - Count: {DeathsCache.Count}, NextUpdate: {DeathsLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                await _deathsCacheSemaphore.WaitAsync();
-                try
-                {
-                    // Double-check inside the lock
-                    if (DeathsCache.Count == 0 || DeathsLastUpdate < DateTime.UtcNow)
-                    {
-                        log.Debug("Deaths Cache refresh starting - calling database");
-                        var result = await Leaderboard.GetTopDeathsLeaderboardAsync(context);
-                        UpdateDeathsCache(result);
-                        log.Debug($"Deaths Cache refresh completed - {result.Count} records cached, next update: {DeathsLastUpdate:yyyy-MM-dd HH:mm:ss}");
-                    }
-                    else
-                    {
-                        log.Debug("Deaths Cache was refreshed by another thread - using cached data");
-                    }
-                }
-                finally
-                {
-                    _deathsCacheSemaphore.Release();
-                }
-            }
-            else
-            {
-                log.Debug($"Deaths Cache hit - using {DeathsCache.Count} cached records, last updated: {DeathsLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
-            }
-            return DeathsCache;
-        }
-
-        /// <summary>
-        /// Gets the top players by bank value from cache, refreshing if necessary.
-        /// </summary>
-        /// <param name="context">The database context to use for refreshing the cache.</param>
-        /// <returns>A list of Leaderboard entries sorted by bank value.</returns>
-        public async Task<List<Leaderboard>> GetTopBankAsync(AuthDbContext context)
-        {
-            if (BankCache.Count == 0 || BanksLastUpdate < DateTime.UtcNow)
-            {
-                log.Debug($"Bank Cache miss - Count: {BankCache.Count}, NextUpdate: {BanksLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                await _bankCacheSemaphore.WaitAsync();
-                try
-                {
-                    // Double-check inside the lock
-                    if (BankCache.Count == 0 || BanksLastUpdate < DateTime.UtcNow)
-                    {
-                        log.Debug("Bank Cache refresh starting - calling database");
-                        var result = await Leaderboard.GetTopBankLeaderboardAsync(context);
-                        UpdateBankCache(result);
-                        log.Debug($"Bank Cache refresh completed - {result.Count} records cached, next update: {BanksLastUpdate:yyyy-MM-dd HH:mm:ss}");
-                    }
-                    else
-                    {
-                        log.Debug("Bank Cache was refreshed by another thread - using cached data");
-                    }
-                }
-                finally
-                {
-                    _bankCacheSemaphore.Release();
-                }
-            }
-            else
-            {
-                log.Debug($"Bank Cache hit - using {BankCache.Count} cached records, last updated: {BanksLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
-            }
-            return BankCache;
-        }
-
-        /// <summary>
-        /// Gets the top players by luminance value from cache, refreshing if necessary.
-        /// </summary>
-        /// <param name="context">The database context to use for refreshing the cache.</param>
-        /// <returns>A list of Leaderboard entries sorted by luminance value.</returns>
-        public async Task<List<Leaderboard>> GetTopLumAsync(AuthDbContext context)
-        {
-            if (LumCache.Count == 0 || LumLastUpdate < DateTime.UtcNow)
-            {
-                log.Debug($"Luminance Cache miss - Count: {LumCache.Count}, NextUpdate: {LumLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                await _lumCacheSemaphore.WaitAsync();
-                try
-                {
-                    // Double-check inside the lock
-                    if (LumCache.Count == 0 || LumLastUpdate < DateTime.UtcNow)
-                    {
-                        log.Debug("Luminance Cache refresh starting - calling database");
-                        var result = await Leaderboard.GetTopLumLeaderboardAsync(context);
-                        UpdateLumCache(result);
-                        log.Debug($"Luminance Cache refresh completed - {result.Count} records cached, next update: {LumLastUpdate:yyyy-MM-dd HH:mm:ss}");
-                    }
-                    else
-                    {
-                        log.Debug("Luminance Cache was refreshed by another thread - using cached data");
-                    }
-                }
-                finally
-                {
-                    _lumCacheSemaphore.Release();
-                }
-            }
-            else
-            {
-                log.Debug($"Luminance Cache hit - using {LumCache.Count} cached records, last updated: {LumLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
-            }
-            return LumCache;
-        }
-
-        /// <summary>
-        /// Gets the top players by attribute values from cache, refreshing if necessary.
-        /// </summary>
-        /// <param name="context">The database context to use for refreshing the cache.</param>
-        /// <returns>A list of Leaderboard entries sorted by attribute values.</returns>
-        public async Task<List<Leaderboard>> GetTopAttrAsync(AuthDbContext context)
-        {
-            if (AttrCache.Count == 0 || AttrLastUpdate < DateTime.UtcNow)
-            {
-                log.Debug($"Attributes Cache miss - Count: {AttrCache.Count}, NextUpdate: {AttrLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                await _attrCacheSemaphore.WaitAsync();
-                try
-                {
-                    // Double-check inside the lock
-                    if (AttrCache.Count == 0 || AttrLastUpdate < DateTime.UtcNow)
-                    {
-                        log.Debug("Attributes Cache refresh starting - calling database");
-                        var result = await Leaderboard.GetTopAttrLeaderboardAsync(context);
-                        UpdateAttrCache(result);
-                        log.Debug($"Attributes Cache refresh completed - {result.Count} records cached, next update: {AttrLastUpdate:yyyy-MM-dd HH:mm:ss}");
-                    }
-                    else
-                    {
-                        log.Debug("Attributes Cache was refreshed by another thread - using cached data");
-                    }
-                }
-                finally
-                {
-                    _attrCacheSemaphore.Release();
-                }
-            }
-            else
-            {
-                log.Debug($"Attributes Cache hit - using {AttrCache.Count} cached records, last updated: {AttrLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
-            }
-            return AttrCache;
-        }
-
-        public async Task<List<Leaderboard>> GetTopBondsAsync(AuthDbContext context)
-        {
-            if (BondsCache.Count == 0 || BondsLastUpdate < DateTime.UtcNow)
-            {
-                await _bondsCacheSemaphore.WaitAsync();
-                try
-                {
-                    if (BondsCache.Count == 0 || BondsLastUpdate < DateTime.UtcNow)
-                    {
-                        var result = await Leaderboard.GetTopBondsLeaderboardAsync(context);
-                        UpdateBondsCache(result);
-                    }
-                }
-                finally
-                {
-                    _bondsCacheSemaphore.Release();
-                }
-            }
-            return BondsCache;
-        }
-
-        public async Task<List<Leaderboard>> GetTopSumBondsAsync(AuthDbContext context)
-        {
-            if (SumBondsCache.Count == 0 || SumBondsLastUpdate < DateTime.UtcNow)
-            {
-                await _sumBondsCacheSemaphore.WaitAsync();
-                try
-                {
-                    if (SumBondsCache.Count == 0 || SumBondsLastUpdate < DateTime.UtcNow)
-                    {
-                        var result = await Leaderboard.GetTopSumBondsLeaderboardAsync(context);
-                        UpdateSumBondsCache(result);
-                    }
-                }
-                finally
-                {
-                    _sumBondsCacheSemaphore.Release();
-                }
-            }
-            return SumBondsCache;
-        }
-
-        public async Task<List<Leaderboard>> GetTopPotencyAsync(AuthDbContext context)
-        {
-            if (PotencyCache.Count == 0 || PotencyLastUpdate < DateTime.UtcNow)
-            {
-                await _potencyCacheSemaphore.WaitAsync();
-                try
-                {
-                    if (PotencyCache.Count == 0 || PotencyLastUpdate < DateTime.UtcNow)
-                    {
-                        var result = await Leaderboard.GetTopPotencyLeaderboardAsync(context);
-                        UpdatePotencyCache(result);
-                    }
-                }
-                finally
-                {
-                    _potencyCacheSemaphore.Release();
-                }
-            }
-            return PotencyCache;
-        }
-
-        /// <summary>Next scheduled refresh for a banked-int64 board (UTC), or now if never loaded.</summary>
-        public DateTime GetBankedInt64NextUpdate(string boardId)
-        {
-            if (_bankedInt64Slots.TryGetValue(boardId, out var slot))
-                return slot.NextUpdate;
-            return DateTime.UtcNow;
-        }
-
-        /// <summary>Cached top list for one PropertyInt64 banked counter (9020, 9027, 9021, 9015, …).</summary>
-        public async Task<List<Leaderboard>> GetTopBankedInt64Async(AuthDbContext context, string boardId, string sql)
-        {
-            var slot = _bankedInt64Slots.GetOrAdd(boardId, _ => new BankedInt64LeaderboardSlot());
-            if (slot.Cache.Count == 0 || slot.NextUpdate < DateTime.UtcNow)
+            activeDays = Math.Max(0, activeDays);
+            var slot = slots.GetOrAdd(Key(boardId, activeDays), _ => new Slot());
+            if (!slot.Loaded || slot.NextUpdate < DateTime.UtcNow)
             {
                 await slot.Gate.WaitAsync();
                 try
                 {
-                    if (slot.Cache.Count == 0 || slot.NextUpdate < DateTime.UtcNow)
+                    // double-check inside the lock: another request may have refreshed it
+                    if (!slot.Loaded || slot.NextUpdate < DateTime.UtcNow)
                     {
-                        var result = await Leaderboard.GetTopBankedInt64LeaderboardAsync(context, sql);
+                        var result = await Leaderboard.GetTopBoardAsync(context, boardId, sql, activeDays);
                         slot.Cache = result;
-                        slot.NextUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
+                        slot.Loaded = true;
+                        slot.NextUpdate = result.Count == 0
+                            ? DateTime.UtcNow.AddSeconds(emptyRetrySeconds)
+                            : DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
                     }
                 }
                 finally

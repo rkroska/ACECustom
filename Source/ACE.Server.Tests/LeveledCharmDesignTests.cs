@@ -167,26 +167,31 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Preset_EntryAugs_AreTheTiersWieldRequirements()
         {
-            // T16 as the weapon scaling defaults build it: item 4000 (frozen at the buy cap), creature 6000, life 4000,
-            // Triune + skill charms 500 each
+            // T16 as the weapon scaling defaults build it since the 2026-11-22 Triune retire (one stat): item 4500, creature 6500,
+            // life 4500, attack schools 4500
             var row = new ACE.Server.Managers.WeaponScaling.WeaponScalingTier
             {
-                Tier = 16, MinWieldAugs = 4000, MinWieldCreature = 6000, MinWieldLife = 4000, MinWieldTriune = 500, MinWieldSkillCharm = 500,
+                Tier = 16, MinWieldAugs = 4500, MinWieldCreature = 6500, MinWieldLife = 4500, MinWieldSkillCharm = 4500,
             };
-            var (augs, charms) = ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(16, row, max: false);
+            var augs = ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(16, row, max: false);
             // creature,item,life,war,void,duration,specialize,summon,melee,missile
-            Assert.AreEqual("6000,4000,4000,4000,4000,4000,0,0,4000,4000", augs);
-            // weave,wrath,nether,steel,trueshot
-            Assert.AreEqual("500,500,500,500,500", charms);
+            Assert.AreEqual("6500,4500,4500,4500,4500,4500,0,0,4500,4500", augs);
 
-            // T12: item 2500, creature 4500, life 2500, no Triune / skill charms yet
+            // T12: item 2500, creature 4500, life 2500, attack schools 2500 (the uniform gate, 2026-11-22)
             var t12 = new ACE.Server.Managers.WeaponScaling.WeaponScalingTier
             {
-                Tier = 12, MinWieldAugs = 2500, MinWieldCreature = 4500, MinWieldLife = 2500,
+                Tier = 12, MinWieldAugs = 2500, MinWieldCreature = 4500, MinWieldLife = 2500, MinWieldSkillCharm = 2500,
             };
-            var (augs12, charms12) = ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(12, t12, max: false);
+            var augs12 = ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(12, t12, max: false);
             Assert.AreEqual("4500,2500,2500,2500,2500,2500,0,0,2500,2500", augs12);
-            Assert.AreEqual("0,0,0,0,0", charms12);
+
+            // CodeRabbit #620: a row with minwield 0 stamps the suit at the 2,000 Item floor - the preset must hold that, not 0
+            var zeroItem = new ACE.Server.Managers.WeaponScaling.WeaponScalingTier
+            {
+                Tier = 16, MinWieldAugs = 0, MinWieldCreature = 6500, MinWieldLife = 4500, MinWieldSkillCharm = 4500,
+            };
+            Assert.AreEqual(ACE.Server.Factories.LootGenerationFactory.ZoneLootSetWieldItemAugs, ACE.Server.Factories.LootGenerationFactory.WieldItemAugs(zeroItem));
+            Assert.AreEqual("6500,2000,4500,4500,4500,4500,0,0,4500,4500", ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(16, zeroItem, max: false));
         }
 
         [TestMethod]

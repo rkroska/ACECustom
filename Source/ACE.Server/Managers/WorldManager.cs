@@ -62,11 +62,14 @@ namespace ACE.Server.Managers
 
         public static void Initialize()
         {
+            // 16 MB stack (2026-11-17): the default 1 MB overflowed when a login into the unloaded 00E5 v3 dungeon loaded its
+            // ~1000 cells recursively on this thread (0xc00000fd). LScape now loads those cells iteratively; the larger
+            // stack is headroom for any other deep work that lands on the world thread.
             var thread = new Thread(() =>
             {
                 LandblockManager.PreloadConfigLandblocks();
                 UpdateWorld();
-            });
+            }, 16 * 1024 * 1024);
             thread.Name = "World Manager";
             thread.Priority = ThreadPriority.AboveNormal;
             thread.Start();

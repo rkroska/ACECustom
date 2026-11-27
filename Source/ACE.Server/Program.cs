@@ -41,6 +41,9 @@ namespace ACE.Server
 
         private static int ctrlCShutdownStarted;
 
+        // .NET 10 no longer raises ProcessExit on SIGTERM by default. Kept in a field so it isn't disposed when Main returns.
+        private static System.Runtime.InteropServices.PosixSignalRegistration sigtermRegistration;
+
         public static readonly bool IsRunningInContainer = Convert.ToBoolean(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
 
         public static async Task Main(string[] args)
@@ -484,6 +487,10 @@ namespace ACE.Server
                 }
             };
 
+            // route SIGTERM (systemd stop, docker stop, kill) through Environment.Exit so OnProcessExit runs
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                sigtermRegistration = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ => Environment.Exit(0));
+
             //Register mod commands
             log.Info("Registering ModManager commands...");
             ModManager.RegisterCommands();
@@ -496,6 +503,8 @@ namespace ACE.Server
             {
                 WorldManager.Open(null);
             }
+
+            ServerStatusAnnouncer.AnnounceOnline(!ServerConfig.world_closed.Value);
 
             // Start the Web Portal (optional — game server runs without it when disabled)
             if (ServerConfig.enable_web_portal.Value)
@@ -524,7 +533,11 @@ namespace ACE.Server
             if (!IsRunningInContainer)
             {
                 if (!ServerManager.ShutdownInitiated)
+                {
                     log.Warn("Unsafe server shutdown detected! Data loss is possible!");
+                    // stopped on purpose (SIGTERM etc.), not a crash: say so before the process is gone
+                    ServerStatusAnnouncer.AnnounceOfflineStopped();
+                }
 
 
                 PropertyManager.StopUpdating();

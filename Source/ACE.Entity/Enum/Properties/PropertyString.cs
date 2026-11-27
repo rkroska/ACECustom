@@ -190,8 +190,9 @@ namespace ACE.Entity.Enum.Properties
         /// "%s's Reflection".</summary>
         ReflectionNameFormat = 59201,
 
-        /// <summary>Item bounties (2026-11-10), on the CHARACTER: the active bounty slots R1, R2 (rings) and B1, B2
-        /// (bracelets), one entry per filled slot (ItemBounties.cs owns the format). 57700, free in EVERY Property enum.</summary>
+        /// <summary>Item bounties (2026-11-10), on the CHARACTER: the bounties going, slots #1-#4 (keys "1".."8"; R1, R2, B1,
+        /// B2 before the 2026-11-12 Bounty Ledger rework, still read as #1-#4), one entry per filled slot (ItemBounties.cs owns
+        /// the format). 57700, free in EVERY Property enum.</summary>
         ItemBountySlots = 57700,
 
         /// <summary>Item bounties, on a bounty ITEM (Species): the target's display name in the plural, e.g. "Banderlings".
@@ -215,5 +216,15 @@ namespace ACE.Entity.Enum.Properties
         /// override it at that place). The rewards and weights live in Zone Control (/zonecontrol bountytable), never on the
         /// weenie, so the admins can change them live for every mystery bounty already out there. 57704.</summary>
         ItemBountyRewardTable = 57704,
+
+        /// <summary>Personal Lifestone (2026-11-14), server-only: the exact spot a personal stone set this character's death
+        /// point to ("CELL x y z variation"). The death point counts as personal only while it still matches.</summary>
+        PersonalLifestoneAttuneSpot = 59100,
+        /// <summary>Personal Lifestone (2026-11-14), server-only: the spot a personal stone set this character's Lifestone Tie to.</summary>
+        PersonalLifestoneTieSpot = 59101,
+        /// <summary>Triune retire (owner 2026-11-22), on a CHARACTER: what the one-time login move added onto the augmentation
+        /// counts and which old counters it removed (AugMove owns the format). Its presence = moved; gates that still name a
+        /// retired counter read its old value. Server-only. 50667 (PropertyString ids are their own table: PropertyInt64 50667 = AugRollTier is a different property).</summary>
+        TriuneMoveRecord = 50667,
     }
 }

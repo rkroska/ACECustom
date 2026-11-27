@@ -29,6 +29,12 @@ namespace ACE.Common
         public bool IncludeAdjacents { get; set; }
 
         /// <summary>
+        /// the variation (layer) to preload; omitted or null = the base world. (2026-11-17: a big dungeon layer such as
+        /// 00E5 v3 can be preloaded + permaloaded, so a login there never has to load the whole dungeon on the world thread.)
+        /// </summary>
+        public int? Variation { get; set; }
+
+        /// <summary>
         /// whether or not this landblock is included for preload.
         /// </summary>
         [System.ComponentModel.DefaultValue(false)]

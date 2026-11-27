@@ -73,7 +73,13 @@ These still live in `Enlightenment.cs` and should behave as before:
 - Luminance augs total 65 for T > 10
 - Society master for T > 30
 - Society removal still governed by `enl_removes_society`
-- Post-enlighten: level 1, skills reset, spells dispelled, sigil/token consumption, etc.
+- Post-enlighten: level 1 (without a Level Retention Stone), skills reset, spells dispelled, sigil/token consumption, etc.
+- Level Retention Stone (98760530, `2026-11-19-00-Level-Retention-Stone.sql`): stacks to 1,000, Bonded, Sticky Attuned (cannot be traded, given or dropped), unsellable ("...is unsellable."), Value 100. Below Enlightenment `enl_level_retention_from` (50) using one is refused; at 50 or higher it asks Yes/No. No keeps the stone; Yes uses up one from the stack. Using another before enlightening is refused ("Your next enlightenment already keeps your level."). Change `enl_keeps_level_up_to` while the stone's Yes/No is open, then answer Yes: nothing is used up ("...changed while you were deciding. Nothing was used up. Please answer again.") and the Yes/No comes back with the new level.
+- After a stone, at level 700 or below: level and total experience unchanged, skills reset, and available skill credits = heritage + quest credits + the level credits up to that level (the chart through 274, then one every 5th level); "Your Level Retention Stone kept your level (N)." At 701 or higher: level 700 and level 700's total experience, the credits up to 700, "...your level has been lowered to 700."; leveling back up gives the credits above 700 again.
+- That enlightenment removes the stone's mark (PropertyInt 50605): the next `/enlighten` without a new stone says the level will return to 1.
+- `enl_keeps_level_up_to` 0: a stone keeps any level. `enl_level_retention_from` 0: any character can use a stone.
+- `/enlighten` prompt: without a stone, the level returns to 1 (and at Enlightenment 50 or higher, to use a stone first); with one, the stone keeps the level, or drops it to 700 above level 700. Skills reset in every case; the society is named only while `enl_removes_society` is on.
+- Confirm `/enlighten` with a stone at level 699, then reach level 701 or higher before the ritual ends (or lower `enl_keeps_level_up_to` below the character's level): it stops before spending luminance or tier items with "What enlightening would do to your level has changed since you confirmed. Nothing was spent. Use /enlighten again to see what it will do now." Reaching level 700, or raising `enl_keeps_level_up_to`, keeps the same outcome and does not stop it. A stone can't be used while the `/enlighten` box is open or during the ritual.
 
 ## 6. Runtime reload
 

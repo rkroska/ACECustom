@@ -59,6 +59,8 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly Dictionary<string, string> RenamedKeys = BuildRenamedKeys();
 
+        /// <summary>The old-name -> new-name map behind <see cref="RenamedKeys"/>: the v11_ -> zc_ endgame keys, and #595's
+        /// Prestige Coin falloff pace (same meaning under the kill cap's name).</summary>
         private static Dictionary<string, string> BuildRenamedKeys()
         {
             var d = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -73,6 +75,9 @@ namespace ACE.Server.Managers
                 "mob_dmg_taken_enabled", "mob_dmg_taken_min_variation", "mob_dmg_taken_mult", "mob_dmg_taken_boss_mult", "mob_dmg_taken_floor",
             })
                 d["v11_" + s] = "zc_" + s;
+
+            // Prestige Coin kill cap (2026-11-17): the falloff's full-rate pace from #595, same meaning under its new name
+            d["zc_pcoin_falloff_kills_per_hour"] = "zc_kill_cap_start";
             return d;
         }
 
@@ -189,6 +194,15 @@ namespace ACE.Server.Managers
                 if (_modifiedDoubleProps.ContainsKey(CanonicalKey(c.Key)) || Shadowed(c.Key)) continue;
                 SetValue(c.Key, c.Value, markModified: false);
             }
+            // the Prestige Coin kill cap (2026-11-17) replaced #595's falloff share zc_pcoin_falloff_mult (the share KEPT past the
+            // pace; 1 = no falloff) with zc_kill_cap_reduction (the share CUT at each step) - not a plain rename. A server that
+            // stored the old share keeps its meaning (1 stays "no cut"): written ONCE as 1 - share (markModified), so later loads
+            // read zc_kill_cap_reduction itself, as #539 did for the combat switch. (#595's zc_pcoin_falloff_reserve has no
+            // counterpart in the coin hour; a stored row is ignored.)
+            var legacyFalloffShare = doubles.FirstOrDefault(c => c.Key == "zc_pcoin_falloff_mult");
+            if (legacyFalloffShare != null && double.IsFinite(legacyFalloffShare.Value)
+                && !storedKeys.Contains(nameof(zc_kill_cap_reduction)) && !_modifiedDoubleProps.ContainsKey(nameof(zc_kill_cap_reduction)))
+                SetValue(nameof(zc_kill_cap_reduction), 1.0 - Math.Clamp(legacyFalloffShare.Value, 0.0, 1.0), markModified: true);
 
             foreach (ConfigPropertiesString c in strings)
             {
@@ -198,50 +212,140 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Writes the updated config values to the database.
+        /// Writes the updated config values to the database. Returns false when a row could not be written.
+        /// A row that fails (e.g. the database is unreachable) is NOT dropped (2026-11-19): it is queued again, so the next save
+        /// - the property worker's, every 5 minutes - tries it again, and LoadFromDb keeps the in-memory value meanwhile
+        /// instead of reverting it to the old row. When the DATABASE is the problem (a connection or transient failure) the
+        /// pass stops there, as before - the rows after it stay queued, so an outage costs one row's retries per pass, not one
+        /// per queued row. Any other failure belongs to that row only: it is logged and queued again, and the pass goes on,
+        /// so one row that can never be written does not hold back every other setting.
+        /// One pass at a time (FlushLock; the property worker holds it for its write AND its reload, see FlushAndReload): a
+        /// failed older row can only be queued again while no newer value for its key is pending (TryAdd), so it never comes
+        /// back over a newer one.
         /// </summary>
-        public static void WriteUpdatesToDb()
+        public static bool WriteUpdatesToDb()
         {
-            foreach (var key in _modifiedBoolProps.Keys)
+            lock (FlushLock)
+                return WriteUpdatesToDbLocked();
+        }
+
+        /// <summary>
+        /// For an admin command (often on the world thread): write the queued rows now. It waits at most 2 s for a pass that is
+        /// already running (the property worker's) instead of queueing behind it; its own write is synchronous, as it always
+        /// was. Returns true only when THIS key has really been written; false = not saved yet (the write failed, or the
+        /// worker's pass was still running) - a later pass writes it, and only a crash or forced stop before that loses it.
+        /// </summary>
+        public static bool SaveNow(string key)
+        {
+            if (!System.Threading.Monitor.TryEnter(FlushLock, TimeSpan.FromSeconds(2)))
+                return false;   // the worker's pass may be writing this very row right now - never report it as saved
+            try
             {
-                if (_modifiedBoolProps.TryRemove(key, out ConfigProperty<bool>? property))
+                WriteUpdatesToDbLocked();
+                return !IsPendingSave(key);   // answered inside the lock: no other pass can be half way through it
+            }
+            finally { System.Threading.Monitor.Exit(FlushLock); }
+        }
+
+        /// <summary>The property worker's pass (and the shutdown flush): write, then reload, under the save lock - so no save
+        /// can complete between the reload reading a row and checking whether that key is still queued, and put the old row
+        /// back over a value that was just saved.</summary>
+        /// <param name="skipIfBusy">The 5-minute timer: when a pass is still running (stuck on a database outage), skip this
+        /// tick instead of piling up threads waiting behind it. The shutdown flush waits.</param>
+        public static void FlushAndReload(bool skipIfBusy = false)
+        {
+            if (!System.Threading.Monitor.TryEnter(FlushLock, skipIfBusy ? TimeSpan.Zero : System.Threading.Timeout.InfiniteTimeSpan))
+                return;
+            try
+            {
+                WriteUpdatesToDbLocked();
+                LoadFromDb();
+            }
+            finally { System.Threading.Monitor.Exit(FlushLock); }
+        }
+
+        /// <summary>True when the database itself failed (connection, timeout, retries used up) - not this one row.</summary>
+        public static bool IsDatabaseOutage(Exception ex)
+        {
+            for (var e = ex; e != null; e = e.InnerException)
+            {
+                if (e is Microsoft.EntityFrameworkCore.Storage.RetryLimitExceededException || e is TimeoutException
+                    || e is System.Net.Sockets.SocketException || (e is System.Data.Common.DbException db && db.IsTransient))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>True while a change to this config key is queued and not yet in the database.</summary>
+        public static bool IsPendingSave(string key)
+        {
+            var k = CanonicalKey(key);
+            return _modifiedBoolProps.ContainsKey(k) || _modifiedLongProps.ContainsKey(k)
+                || _modifiedDoubleProps.ContainsKey(k) || _modifiedStringProps.ContainsKey(k);
+        }
+
+        private static readonly object FlushLock = new();
+
+        private static bool WriteUpdatesToDbLocked()
+        {
+            var outage = false;
+            var ok = FlushPending(_modifiedBoolProps, ref outage, (key, property) =>
                 {
                     if (DatabaseManager.ShardConfig.BoolExists(key))
                         DatabaseManager.ShardConfig.SaveBool(new ConfigPropertiesBoolean { Key = key, Value = property.Value, Description = property.Description });
                     else
                         DatabaseManager.ShardConfig.AddBool(key, property.Value, property.Description);
-                }
-            }
-            foreach (var key in _modifiedLongProps.Keys)
-            {
-                if (_modifiedLongProps.TryRemove(key, out ConfigProperty<long>? property))
+                });
+            if (!outage) ok &= FlushPending(_modifiedLongProps, ref outage, (key, property) =>
                 {
                     if (DatabaseManager.ShardConfig.LongExists(key))
                         DatabaseManager.ShardConfig.SaveLong(new ConfigPropertiesLong { Key = key, Value = property.Value, Description = property.Description });
                     else
                         DatabaseManager.ShardConfig.AddLong(key, property.Value, property.Description);
-                }
-            }
-            foreach (var key in _modifiedDoubleProps.Keys)
-            {
-                if (_modifiedDoubleProps.TryRemove(key, out ConfigProperty<double>? property))
+                });
+            if (!outage) ok &= FlushPending(_modifiedDoubleProps, ref outage, (key, property) =>
                 {
                     if (DatabaseManager.ShardConfig.DoubleExists(key))
                         DatabaseManager.ShardConfig.SaveDouble(new ConfigPropertiesDouble { Key = key, Value = property.Value, Description = property.Description });
                     else
                         DatabaseManager.ShardConfig.AddDouble(key, property.Value, property.Description);
-                }
-            }
-            foreach (var key in _modifiedStringProps.Keys)
-            {
-                if (_modifiedStringProps.TryRemove(key, out ConfigProperty<string>? property))
+                });
+            if (!outage) ok &= FlushPending(_modifiedStringProps, ref outage, (key, property) =>
                 {
                     if (DatabaseManager.ShardConfig.StringExists(key))
                         DatabaseManager.ShardConfig.SaveString(new ConfigPropertiesString { Key = key, Value = property.Value, Description = property.Description });
                     else
                         DatabaseManager.ShardConfig.AddString(key, property.Value, property.Description);
+                });
+            return ok && !outage;
+        }
+
+        /// <summary>Writes the queued rows. A row that throws is logged and queued again (a newer change made meanwhile wins);
+        /// on a database outage the pass stops there (<paramref name="outage"/> set), otherwise it goes on with the next row.</summary>
+        private static bool FlushPending<T>(ConcurrentDictionary<string, ConfigProperty<T>> pending, ref bool outage, Action<string, ConfigProperty<T>> save)
+        {
+            var ok = true;
+            foreach (var key in pending.Keys)
+            {
+                if (!pending.TryRemove(key, out var property))
+                    continue;
+                try
+                {
+                    save(key, property);
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    pending.TryAdd(key, property);
+                    log.Error($"[CONFIG] could not write {key} to the database - kept, it is tried again on the next save: {ex.Message}");
+                    if (IsDatabaseOutage(ex))
+                    {
+                        outage = true;   // the database is down: leave the rest queued for the next pass
+                        return false;
+                    }
                 }
             }
+            return ok;
         }
 
         /// <summary>
@@ -462,6 +566,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> house_per_char { get; private set; } = new(false, "if TRUE, allows 1 house per char instead of 1 house per account");
         public static ConfigProperty<bool> house_purchase_requirements { get; private set; } = new(true, "if disabled, requirements to purchase/rent house are not checked");
         public static ConfigProperty<bool> house_rent_enabled { get; private set; } = new(true, "If FALSE then rent is not required");
+        public static ConfigProperty<bool> emote_give_merge_stacks { get; private set; } = new(true, "(non-retail function) If enabled, stackable items an NPC gives (emote Give) first top up matching stacks the player already carries, so a reward needs no free pack slot when a stack has room");
         public static ConfigProperty<bool> iou_trades { get; private set; } = new(false, "(non-retail function) If enabled, IOUs can be traded for objects that are missing in DB but added/restored later on");
         public static ConfigProperty<bool> item_dispel { get; private set; } = new(false, "if enabled, allows players to dispel items. defaults to end of retail, where item dispels could only target creatures");
         public static ConfigProperty<bool> legacy_loot_system { get; private set; } = new(false, "use the previous iteration of the ace lootgen system");
@@ -475,6 +580,10 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> missile_power_full { get; private set; } = new(2.5, "Missile power ladder: damage multiplier at full draw (bar 1). Active only while missile_power_bar is TRUE. Edit with /missilepower <fast> <full> [mid].");
         /// <summary>Missile power ladder: multiplier at MID bar (0.5). 0 = unset = the average of fast and full (a straight line).</summary>
         public static ConfigProperty<double> missile_power_mid { get; private set; } = new(0.0, "Missile power ladder: damage multiplier at mid bar (0.5). 0 = the average of fast and full (straight line). Active only while missile_power_bar is TRUE. Edit with /missilepower <fast> <full> [mid].");
+        /// <summary>Windup move cap for NPK casters, in metres (2026-11-23). PK casters always use WindupMoveCap.PkCap (6 m);
+        /// NPKs had no cap at all, so a client that does not stop its character during a windup could run through every cast.
+        /// 0 = off (retail ACE behavior). See WindupMoveCap.</summary>
+        public static ConfigProperty<double> npk_windup_max_move { get; private set; } = new(0.0, "Max distance in metres an NPK may move from where a spell windup started before the cast fizzles ('Your movement disrupted spell casting!'; once the gesture has started, mana and components are still spent, like the PK cap). Client positions in the first 0.25 s of a cast move the start point (the server's view lags the client), so up to ~4.5 m of running at cast start is forgiven. Checked at every client position during the cast and when the spell lands; for 3 s after it lands, positions further than run speed allows from the cast start are refused and the client is sent back. 0 = off, NPKs move freely (default, retail ACE). PKs always use the fixed 6 m cap. Measured 2026-11-23: retail client 1.7-9.2 m per Clouded Soul windup while moving, a client that ignores windups 6.7-17 m. Applies live. Use /modifydouble npk_windup_max_move <metres>.");
         public static ConfigProperty<bool> myquest_throttle_enabled { get; private set; } = new(true, "if TRUE, then the player will be limited in their calls to this");
         public static ConfigProperty<bool> zc_weapon_zone_lock { get; private set; } = new(false, "if TRUE, ZC-stamped weapons (ZcTier 11+) only apply their CUSTOM power - aug-scaling damage, modifier cards, procs - while their PLAYER wielder stands inside an enabled Zone Control area; outside, the weapon performs at its base T11 stats (the fallback). FALSE (default) = full power everywhere. Applies live, no restart. Use /modifybool zc_weapon_zone_lock <true/false>. Surfaced as the GM Tools > Combat 'Only in Authored Areas' toggle.");
         public static ConfigProperty<bool> zc_armor_zone_lock { get; private set; } = new(false, "if TRUE, worn ZC-stamped gear (ZcTier 11+) only contributes its Modifier LINES - the 50200-block bonuses and the ZC portion of the Gear* rating sums - while the PLAYER wearing it stands inside an enabled Zone Control area; outside, the gear falls back to its base stats (AL/protections stay). FALSE (default) = full power everywhere. Applies live. Use /modifybool zc_armor_zone_lock <true/false>. GM Tools > Shard Combat 'Armor Zone Lock'.");
@@ -574,6 +683,12 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> pet_combat_summon_skips_shared_cooldown { get; private set; } = new(false, "If TRUE, a successful combat pet summon does not start the essence SharedCooldown; use pet_combat_essence_damage_cooldown_ring_seconds for combat pings and death (or pet_summon_cooldown_on_pet_death_only) for full essence duration.");
         public static ConfigProperty<bool> pet_device_pyreal_auto_refill_enabled { get; private set; } = new(false, "If TRUE, players with PetDevicePyrealAutoRefillEnrolled may pay pyreals to refill empty summoning essence charges when summoning.");
         public static ConfigProperty<bool> pet_charm_universal_summoning_mastery_enabled { get; private set; } = new(true, "If TRUE, players with Universal Summoning Mastery charm active may use pet devices of any SummoningMastery (Primalist / Necromancer / Naturalist). Toggle: /modifybool pet_charm_universal_summoning_mastery_enabled false");
+
+        // Universal Quiver charm (WCID 78780032, Player_UniversalQuiver.cs): bow / crossbow / atlatl swaps without ammo swaps.
+        public static ConfigProperty<bool> universal_quiver_enabled { get; private set; } = new(true, "If TRUE, a player with the Universal Quiver charm active fires the matching prismatic ammo (universal_quiver_projectiles) from any bow, crossbow or atlatl while the ammo slot is EMPTY. Ammo in the slot is always used first. Toggle: /modifybool universal_quiver_enabled false");
+        public static ConfigProperty<double> universal_quiver_look_size { get; private set; } = new(1.5, "Quiver looks (Quiver Pattern on the Universal Quiver Charm or a launcher): the creature model a shot takes is scaled to about this many meters across. Applies to every look at once, including ones already applied. Toggle: /modifydouble universal_quiver_look_size 1.5");
+        public static ConfigProperty<string> universal_quiver_look_size_overrides { get; private set; } = new("", "Quiver looks: per-creature size factors for models that come out too big or too small, as creatureWcid:factor pairs (e.g. 1234:1.5,5678:0.7). Multiplies universal_quiver_look_size; applies at once. Edit: /modifystring universal_quiver_look_size_overrides 1234:1.5");
+        public static ConfigProperty<string> universal_quiver_projectiles { get; private set; } = new("1:4395100,2:4395101,4:4395102", "Universal Quiver: the projectile weenie fired for each launcher AmmoType, as ammoType:wcid pairs. Default: Infinite Deadly Prismatic Arrow / Quarrel / Atlatl Dart, so damage matches the purchasable set exactly.");
 
         // Room Assign (RoomAssignManager): holds live in memory only - a server restart clears them. Negative counts as 0.
         public static ConfigProperty<bool> room_assign_test_tools { get; private set; } = new(false, "Dungeon TEST tools (/zonecontrol dungeon fill, clear, admin, markers, doors show): fake players that make rooms count as taken, admins counting as players, landing markers, a door preview. They change real hand-out decisions or spawn objects, so they are OFF unless this is true. Change live: /modifybool room_assign_test_tools true");
@@ -809,6 +924,9 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> economy_snapshot_items { get; private set; } = new(true, "Economy ledger: if TRUE, the daily supply snapshot also counts currency items in character packs (read-only queries, one item type at a time; 20 to 50 seconds of database reads in total on a large shard). FALSE counts banked balances only. Change live: /modifybool economy_snapshot_items false");
         public static ConfigProperty<long> economy_snapshot_hour_utc { get; private set; } = new(10, "Economy ledger: the daily supply snapshot runs at the first minute of this UTC hour (0-23) or later; pick a quiet hour. A server that has never taken one takes it right away. Change live: /modifylong economy_snapshot_hour_utc <hour>");
         public static ConfigProperty<long> economy_ledger_retention_days { get; private set; } = new(180, "Economy ledger: flow rows older than this many days are deleted (checked every 6 hours, in small batches). Supply snapshots are kept. 0 = keep everything. Change live: /modifylong economy_ledger_retention_days <days>");
+        public static ConfigProperty<long> economy_active_days { get; private set; } = new(30, "Economy page: the starting value of its 'active in the last N days' filter (the viewer can change it on the page). An account counts as active when one of its characters logged into the game within that many days. 0 = everyone. Change live: /modifylong economy_active_days 30");
+        public static ConfigProperty<long> economy_holder_retention_days { get; private set; } = new(180, "Economy ledger: the per-account holdings that each daily supply snapshot saves (so the Economy page can filter by activity) are deleted after this many days. The daily totals are kept. 0 = keep everything. Change live: /modifylong economy_holder_retention_days 180");
+        public static ConfigProperty<long> leaderboard_active_days { get; private set; } = new(30, "Leaderboards: in-game /top only lists accounts with a character that logged into the game within this many days, and the web leaderboards start with this filter (the viewer can change it there). 0 = everyone. Change live: /modifylong leaderboard_active_days 30");
         public static ConfigProperty<double> economy_target_weekly_min_pct { get; private set; } = new(-1.0, "Economy page: a currency whose supply changes by less than this percent per week is shown as deflating. Change live: /modifydouble economy_target_weekly_min_pct -1");
         public static ConfigProperty<double> economy_target_weekly_max_pct { get; private set; } = new(0.1, "Economy page: a currency whose supply changes by more than this percent per week is shown as inflating. A little above zero so that day to day noise does not read as inflation. Change live: /modifydouble economy_target_weekly_max_pct 0.1");
         public static ConfigProperty<string> pyreal_ledger_exchange_accounts { get; private set; } = new("", "Pyreal ledger: comma-separated CHARACTER NAMES of player-run exchanges (players who buy and sell currency for others). Each name marks the whole account that owns it; the Transfers and Stalled exporters reports then treat its volume as trade. Change live: /modifystring pyreal_ledger_exchange_accounts Atm");
@@ -816,6 +934,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> pyreal_auto_deposit_on_kill { get; private set; } = new(true, "if TRUE, the pyreal coins a monster would leave on its corpse go straight to the killer's banked pyreals instead (top damager, or a pet's owner). The killer must be an online player, otherwise the coins stay on the corpse. Pyreal peas and trade notes are not affected. Change live: /modifybool pyreal_auto_deposit_on_kill false");
         public static ConfigProperty<bool> world_closed { get; private set; } = new(false, "enable this to startup world as a closed to players world");
         public static ConfigProperty<bool> enl_removes_society { get; private set; } = new(true, "if true, enlightenment will remove society flags");
+        public static ConfigProperty<long> enl_level_retention_from { get; private set; } = new(50, "ENLIGHTENMENT: characters at this Enlightenment or higher can use a Level Retention Stone, which makes their next enlightenment keep their level (up to enl_keeps_level_up_to) instead of returning it to 1. Skills still reset. 0 = any Enlightenment. Change live: /modifylong enl_level_retention_from 50");
+        public static ConfigProperty<long> enl_keeps_level_up_to { get; private set; } = new(700, "ENLIGHTENMENT: a character that used a Level Retention Stone keeps its level when it enlightens, up to this level; above it the level drops to this level and its total experience to this level's. Skills still reset, and the skill credit pool is rebuilt with the level credits of the kept level. 0 = keep any level. Change live: /modifylong enl_keeps_level_up_to 700");
         public static ConfigProperty<bool> enl_gate_fee_enabled { get; private set; } = new(true, "ENLIGHTENMENT GATE FEE: if TRUE, a character refused at the 150 or 300 enlightenment gate for lacking the Paragon is offered a fee instead (enl_gate_150_* / enl_gate_300_*). Characters who already paid keep their pass when this is FALSE. Change live: /modifybool enl_gate_fee_enabled false");
         public static ConfigProperty<long> enl_gate_150_pyreals { get; private set; } = new(20_000_000_000, "ENLIGHTENMENT GATE FEE: pyreals to enlighten past 150 without the 50th Paragon (pack coins and trade notes first, then the bank). 0 = no pyreal cost.");
         public static ConfigProperty<long> enl_gate_150_enlightened_coins { get; private set; } = new(50_000, "ENLIGHTENMENT GATE FEE: Enlightened Coins to enlighten past 150 without the 50th Paragon (pack first, then the bank). 0 = none.");
@@ -952,6 +1072,9 @@ namespace ACE.Server.Managers
         // (percent_hp_base, vuln_cap, true_damage ...) work regardless.
         public static ConfigProperty<bool> zc_combat_rules_enabled { get; private set; } = new(true, "Zone Control endgame combat rules for monsters at variation 11+: the %HP floor (where it is the fallback), the attack-skill floor, vuln compression, crit compression (zc_crit_compress) and damage-taken mitigation. Zone-authored stats work regardless.");
 
+        // No run and gun (owner 2026-11-23): see Player_Missile.cs LaunchMissile
+        public static ConfigProperty<bool> missile_block_while_moving { get; private set; } = new(false, "if TRUE, a player's missile shot (bow, crossbow, atlatl, thrown weapon) is refused while a walk, run or strafe key is down (no run and gun); OFF = retail");
+
         // Crit compression (owner 2026-10-21): crits on Zone Control monsters follow a power curve set by the tier's
         // crit_damage_resist_rating row, instead of being divided by it - see Entity/CritCompression.cs
         public static ConfigProperty<bool> zc_crit_compress { get; private set; } = new(true, "if TRUE, a PLAYER's crit on a Zone Control monster (variation 11+) lands at the bigger of raw^p times a normal hit and the old Crit Damage Resist division, with p read from the monster's Crit Damage Resist so the stack its row was solved for still crits at zc_crit_target_ratio - never below today's crit, and at least zc_crit_floor_ratio times a normal hit (that floor capped at the target and at the un-resisted crit). Pets and monsters keep the old rule. Also needs zc_combat_rules_enabled. FALSE = Crit Damage Resist divides the crit as before (below BiS a crit can land under a normal hit).");
@@ -1066,7 +1189,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> defense_scaling_missile_agg { get; private set; } = new(0.75, "aggression factor for missile defense scaling (range 0.5-2.0, recommended: 0.75). Higher = lower evasion at high skills");
         public static ConfigProperty<double> defense_scaling_magic_agg { get; private set; } = new(1.75, "aggression factor for magic defense scaling (range 0.5-2.5, recommended: 1.75). Higher = lower evasion at high skills");
         public static ConfigProperty<bool> zc_low_tier_item_spell_resist { get; private set; } = new(true, "T11+ LOW-TIER PROC RESIST (owner 2026-10-06): when TRUE a monster Zone Control governs at variation 11+ ALWAYS resists a harmful PROC from gear below T11 - weapon Cast on Strike, jewelry and cloak procs. Hand-casts (any wand, bare hands) and gems are never affected. Shows the normal resist message; Overpower cannot land it. T11+ gear (ZcTier or WeaponAugScaleTier >= 11) lands normally; aetheria surges are exempt (no T11 aetheria exists). Retail variations never affected. See TierHitGate.BlockLowTierCast.");
-        public static ConfigProperty<bool> zc_tier_hit_gate_enabled { get; private set; } = new(true, "T11+ HIT GATE: when TRUE a player's melee, missile and spell attacks MISS OUTRIGHT against a monster at variation 11+ unless their augmentation counters meet that tier's requirement (WeaponScalingTier MinWieldCreature / MinWieldAugs / MinWieldTriune). All-or-nothing, no partial damage. Player -> monster only; monsters are never gated. Retail variations are never affected. Defaults TRUE since 2026-09-01 (owner): per-tier tuning depends on it - the gate, not the stat curve, is what guarantees a player cannot fight a tier they have not earned, so monster scaling only has to stay consistent with the aug ladder rather than track measured player power. Gates ONLY monsters Zone Control actually governs (ResolveForCreature), so ExemptFromZoneScaling still opts a vendor or quest NPC out.");
+        public static ConfigProperty<bool> zc_tier_hit_gate_enabled { get; private set; } = new(true, "T11+ HIT GATE: when TRUE a player's melee, missile and spell attacks MISS OUTRIGHT against a monster at variation 11+ unless their augmentation counters meet that tier's requirement (WeaponScalingTier MinWieldCreature / MinWieldAugs / MinWieldLife, and the attack school's MinWieldSkillCharm unless that tier's school check is off). All-or-nothing, no partial damage. Player -> monster only; monsters are never gated. Retail variations are never affected. Defaults TRUE since 2026-09-01 (owner): per-tier tuning depends on it - the gate, not the stat curve, is what guarantees a player cannot fight a tier they have not earned, so monster scaling only has to stay consistent with the aug ladder rather than track measured player power. Gates ONLY monsters Zone Control actually governs (ResolveForCreature), so ExemptFromZoneScaling still opts a vendor or quest NPC out.");
 
         // T11+ RARES (owner 2026-10-08). A T11+ kill can upgrade ONE item of its own loot to a rare - no new item class. Two tiers, each
         // with its own odds; 0 = that tier is off, which is how both ship. All five are read live on every eligible kill, so a rate can
@@ -1091,15 +1214,20 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> zc_pcoin_kill_base { get; private set; } = new(0.05, "PRESTIGE COINS PER KILL: coins a T11 Zone Control kill banks for the top damager (or a pet's owner) before the tier dip - 0.05 = one coin per 20 kills. Fractions carry over on the character. 0 = off.");
         public static ConfigProperty<double> zc_pcoin_kill_tier_step { get; private set; } = new(1.20, "PRESTIGE COINS PER KILL: each zone tier above T11 is worth this much more per kill than the tier below it (1.20 = +20 pct per tier: T12 0.060, T13 0.072 at a 0.05 base).");
 
-        // PRESTIGE COIN FALLOFF (2026-11-01): coins per kill stay as they are up to a pace of N kills an hour; every kill past that
-        // pace pays a share of its coins. Counted per character in full-value kills (a below-tier kill counts as its tier-dip credit),
-        // one count across every zone and tier: each kill adds to a small reserve that drains at N an hour, and a kill that finds the
-        // reserve full pays zc_pcoin_falloff_mult of its coins. The Zone Control stats pcoin_falloff_kills_per_hour /
-        // pcoin_falloff_mult re-tune the first two per zone or tier Default, read where the kill happens. Read live. See
-        // TierRewardScale.Falloff / TierRewards.
-        public static ConfigProperty<double> zc_pcoin_falloff_kills_per_hour { get; private set; } = new(375.0, "PRESTIGE COIN FALLOFF: kills an hour a character can make at the full Prestige Coin rate (a kill below their own tier counts as its tier-dip credit); every kill past that pace pays zc_pcoin_falloff_mult of its coins. 0 = no falloff. A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_kills_per_hour.");
-        public static ConfigProperty<double> zc_pcoin_falloff_mult { get; private set; } = new(0.5, "PRESTIGE COIN FALLOFF: share of its normal Prestige Coins a kill pays once the character is past zc_pcoin_falloff_kills_per_hour (0.5 = 50 pct, 1 = no falloff, 0 = nothing). A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_mult.");
-        public static ConfigProperty<double> zc_pcoin_falloff_reserve { get; private set; } = new(30.0, "PRESTIGE COIN FALLOFF: how many kills ahead of the hourly pace a character can get before the falloff starts (30 = about 5 minutes at 375 an hour). The pace is judged over that window: a pull of more kills than this pays the falloff on the extra kills even when the hour's average is under the pace. Set it to the pace itself (375) to judge over a whole hour. A zone with its own pace gets the same number of minutes. Never below 1.");
+        // PRESTIGE COIN KILL CAP (falloff 2026-11-01; steps per coin hour 2026-11-17): a character's T11+ Zone Control coin kills
+        // are counted per coin hour (60 minutes from their first coin kill; the next kill after it ends starts a new one). Of the
+        // kills in an hour, the first zc_kill_cap_start pay in full; then every zc_kill_cap_interval kills the share is cut by
+        // zc_kill_cap_reduction (each step keeps 1 - reduction of the step before), and past zc_kill_cap_max (when set) nothing is
+        // paid until the hour ends. Defaults: kills 1-375 full, then 50 pct less every 75 kills (376-450 half, 451-525 a quarter,
+        // 526-600 an eighth ...) with no stop - an hour can never pay more than 450 kills' worth (375 + 75). Prestige Coins only:
+        // XP, loot, kill tasks and bounties are untouched. Counted in full-value kills (a below-tier kill counts as its tier-dip
+        // credit), one count per character across every zone and tier. The Zone Control stats pcoin_falloff_kills_per_hour (the
+        // zone's start; stretches the interval and max with it; 0 = off there) and pcoin_falloff_mult (the share each step keeps
+        // there, 1 - reduction) re-tune it per zone or tier Default. Read live. See TierRewardScale.FalloffKill / TierRewards.
+        public static ConfigProperty<double> zc_kill_cap_start { get; private set; } = new(375.0, "PRESTIGE COIN KILL CAP: kills a character can make in a coin hour (60 minutes from their first coin kill) at the full Prestige Coin rate - a kill below their own tier counts as its tier-dip credit. Past it the share is cut by zc_kill_cap_reduction every zc_kill_cap_interval kills. 0 = no kill cap, except in a zone whose Default authors pcoin_falloff_kills_per_hour above 0 (stretched from 375). A zone or tier Default can move it with the Zone Control stat pcoin_falloff_kills_per_hour, which stretches the interval and max with it. (Was zc_pcoin_falloff_kills_per_hour; the old name still works.)");
+        public static ConfigProperty<double> zc_kill_cap_reduction { get; private set; } = new(0.5, "PRESTIGE COIN KILL CAP: how much of the share is cut at each interval past zc_kill_cap_start - each step keeps 1 minus this of the step before (0.5 = 50 pct less each time: 50, 25, 12.5 pct ...; 0.25 = 75, 56.25, 42.2 pct ...; 0 = full pay, up to zc_kill_cap_max if set; 1 = nothing past the start). (Replaces zc_pcoin_falloff_mult, the share kept: a stored value of it loads once as 1 - share.) A zone or tier Default can re-tune it with the Zone Control stat pcoin_falloff_mult, the share kept (1 - this).");
+        public static ConfigProperty<double> zc_kill_cap_interval { get; private set; } = new(75.0, "PRESTIGE COIN KILL CAP: kills in each step past zc_kill_cap_start; each new step cuts the share by zc_kill_cap_reduction (75 = 50 pct less every 75 kills at a 0.5 reduction). 0 = one step: every kill past the start pays 1 - zc_kill_cap_reduction up to zc_kill_cap_max.");
+        public static ConfigProperty<double> zc_kill_cap_max { get; private set; } = new(0.0, "PRESTIGE COIN KILL CAP: optional hard stop - kills past this many in a coin hour pay no Prestige Coins until the hour ends. 0 = no stop: the steps keep falling (with the defaults an hour never pays more than 450 kills' worth either way; a stop at 750 makes it 447.66).");
 
         // KILL-TASK CREDIT ON T11+ ZONE KILLS (owner 2026-10-24, locked): only for monsters Zone Control governs at T11+ - every other kill keeps
         // the stock kill-task code. Taggers get a full kill, non-damaging fellowship / Zone Share sharers the fellowship share, everyone x their
@@ -1107,13 +1235,16 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> zc_tier_dip_xp_enabled { get; private set; } = new(false, "TIER DIP for kill XP and luminance: when TRUE each player's share of a T11+ Zone Control kill's XP and luminance (killer, fellows and Zone Share members alike) is also multiplied by their tier-dip credit. FALSE (default) = XP and luminance are never cut. Coins and kill tasks follow zc_tier_dip_enabled alone.");
         public static ConfigProperty<bool> zc_kt_decimal_credit_enabled { get; private set; } = new(true, "T11+ KILL TASKS: when TRUE a kill of a T11+ Zone Control monster gives decimal kill-task credit - full for anyone who damaged it (pets count for the owner), the fellowship share for fellows / Zone Share members who did not, everyone x their tier-dip credit; capped at the task target, shown with decimals. FALSE = the stock kill-task rules for every kill. Other kills always use the stock rules.");
 
-        // ITEM BOUNTIES (owner 2026-11-10, ItemBounties.cs): a bounty ITEM is used on a ring or bracelet and fills the character's next
-        // free bounty slot of that kind (R1, R2, B1, B2); only that character's own kills in the bounty's tier (or, for a region bounty,
-        // in its region below T11) count; the reward is paid automatically. Confirmations are console-only (/bounty confirm <code>):
-        // custom clients may not show popups.
-        public static ConfigProperty<bool> item_bounty_enabled { get; private set; } = new(true, "ITEM BOUNTIES: when TRUE a bounty item can be applied to a ring or bracelet slot, active bounties count kills and pay out, and bounties drop from monsters. FALSE = applying is refused, no kill counts, nothing is paid out and no bounty drops from monsters (T11+ or regions); bounties already in slots are kept and resume when it is turned back on.");
-        public static ConfigProperty<string> item_bounty_slots { get; private set; } = new("rings,bracelets", "ITEM BOUNTIES: which bounty slots exist - 'rings' (R1, R2), 'bracelets' (B1, B2), or both, comma-separated. A slot kind left out cannot take new bounties; bounties already in it keep counting and paying out.");
-        public static ConfigProperty<long> item_bounty_confirm_seconds { get; private set; } = new(60, "ITEM BOUNTIES: how long a console confirmation (/bounty confirm <code>) stays valid - removing a bounty, or applying one while standing in a different tier or region from the one it counts in. After this the request expires and nothing changes. 10 to 600.");
+        // ITEM BOUNTIES (owner 2026-11-10, ItemBounties.cs; Bounty Ledger rework 2026-11-12): a bounty ITEM used on the player's
+        // Bounty Ledger (item_bounty_ledger_wcid) starts in the character's lowest free bounty slot, #1 to #item_bounty_max_active;
+        // the ledger opens as a book showing every bounty and its progress. Only that character's own kills in the bounty's tier (or,
+        // for a region bounty, in its region below T11) count; the reward is paid automatically. Confirmations are the same thing done
+        // again (the same /bounty abandon, or a second use), never a popup: custom clients may not show popups. The rework replaced item_bounty_slots
+        // ('rings,bracelets') with item_bounty_max_active.
+        public static ConfigProperty<bool> item_bounty_enabled { get; private set; } = new(true, "ITEM BOUNTIES: when TRUE a bounty item can be started (used on the Bounty Ledger; with ledgers off, double-clicked twice), bounties going count kills and pay out, and bounties drop from monsters. FALSE = starting is refused, no kill counts, nothing is paid out and no bounty drops from monsters (T11+ or regions); bounties already going are kept and resume when it is turned back on.");
+        public static ConfigProperty<long> item_bounty_max_active { get; private set; } = new(4, "ITEM BOUNTIES: how many bounties a character can have going at once (slots #1 to #N), 1 to 8. Lowering it never removes a bounty already going - it keeps counting and paying out - but no new one starts until the character is under the new cap.");
+        public static ConfigProperty<long> item_bounty_confirm_seconds { get; private set; } = new(60, "ITEM BOUNTIES: how long a confirmation stays open - typing the same /bounty abandon <#> again, and the second use that starts a bounty without a ledger, or on the ledger while standing in another tier or region. After this the request expires and nothing changes. 10 to 600.");
+        public static ConfigProperty<long> item_bounty_ledger_wcid { get; private set; } = new(98760483, "ITEM BOUNTIES: the Bounty Ledger's weenie (a Book; Database/Updates/World/2026-11-12-00-Bounty-Ledger.sql). A bounty used on the ledger starts; the ledger opens as a book with a page per bounty and its progress, and its description lists them. One is handed to any player with bounties and no ledger (when a bounty is used, and at login). 0 = no ledgers: a bounty is started with two double-clicks. Bounties a player carries switch over at their next login.");
 
         public static ConfigProperty<string> nolog_landblocks { get; private set; } = new("", "Overrides for the no-log landblock list (log out here, log back in at your lifestone). Comma-separated tokens, each [-]HEX[:base|all|<variation>] - e.g. \"016C:11, 0007:all, -0002\". A bare token or one starting '+' ADDS; one starting '-' SUPPRESSES, including entries from the built-in retail list. Variation omitted means base only; 'all' means base and every variation. Edit with /nolog rather than by hand.");
         public static ConfigProperty<bool> tiered_dungeons_enabled { get; private set; } = new(false, "TIERED DUNGEONS master switch (owner 2026-10-09). ON = a registered retail dungeon (the Colosseum, 0x00AF-0x00B4) can also be entered as a per-tier copy at variation 11+, built in memory from the retail spawn rows, with its own tier-tagged locks, timers and events. OFF = fully inert: nothing is copied, tagged or paid. Retail (variation null) is never touched either way.");
@@ -1123,6 +1254,15 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> tiered_dungeon_room_health_ramp { get; private set; } = new(1.8, "Tiered Colosseum room ramp: monster health multiplier in the LAST room (18), rising in a straight line from x1 in the first room of a run (6). On top of the copy's own zone max_health. Stamped at spawn, so it applies to monsters spawned after a change. 1 = off. Range 0.1-10.");
         public static ConfigProperty<double> tiered_dungeon_room_damage_ramp { get; private set; } = new(1.0, "Tiered Colosseum room ramp: multiplier on everything a monster deals to players in the LAST room (18), rising in a straight line from x1 in the first room of a run (6). Stacks with the zone's monster_damage_mult and per-monster damagemult. Read live. 1 = off (launch value: raise after deaths per room are logged). Range 0.1-10.");
         public static ConfigProperty<double> tiered_dungeon_min_room_tag_share { get; private set; } = new(0.25, "Tiered Colosseum room credit: a player must have this many tags, as a share of the room's kills, to be credited with that room when it clears (0.25 = a quarter). A tag is a monster they (or their pet) damaged, or a heal that restored health to another player in the room. Standing in the room is not enough; with no kills recorded nobody is credited. 0 = presence only.");
+        // PERSONAL LIFESTONE (owner 2026-11-14): a carried item that raises an owner-only lifestone in front of the player for a
+        // short time. See Player_PersonalLifestone.cs. All read live.
+        public static ConfigProperty<bool> personal_lifestone_enabled { get; private set; } = new(true, "PERSONAL LIFESTONE: when FALSE the Personal Lifestone item refuses to work. Stones already standing still fade on their own.");
+        public static ConfigProperty<long> personal_lifestone_cooldown_seconds { get; private set; } = new(72000, "PERSONAL LIFESTONE: real-time cooldown in seconds after a stone is raised (72000 = 20 hours; used within 0 - 31536000, one year). Per character, keeps running while logged out. Spent only when a stone actually appears.");
+        public static ConfigProperty<long> personal_lifestone_lifetime_seconds { get; private set; } = new(120, "PERSONAL LIFESTONE: how long a raised stone stands before it deletes itself, in seconds (used within 1 - 86400, one day). An attune or tie made on it stays after it fades.");
+        public static ConfigProperty<string> personal_lifestone_excluded_landblocks { get; private set; } = new("", "PERSONAL LIFESTONE: areas where the item cannot be used, on top of the built-in list (housing, apartments, Marketplace, jail, arenas). Comma-separated tokens, each [-]HEX[:base|all|<variation>] - the same grammar as nolog_landblocks. A '-' token removes a built-in entry. Variation omitted = base only; 'all' = base and every variation. The most specific token wins (a variation's or base's token beats an 'all' token; at one scope '-' beats '+'). Edit with /plstone rather than by hand.");
+        public static ConfigProperty<bool> personal_lifestone_block_nolog_areas { get; private set; } = new(true, "PERSONAL LIFESTONE: when TRUE every no-log area (the /nolog list) also blocks the item.");
+        public static ConfigProperty<bool> personal_lifestone_block_t10_vod { get; private set; } = new(false, "PERSONAL LIFESTONE: optional, OFF by default (owner 2026-11-19). When TRUE Thaelaryn Island (T10, LandblockCollections.ThaelarynIslandLandblocks) and the Valley of Death (ValleyOfDeathLandblocks) block the item in EVERY variation. FALSE = allowed there. A '-' token in personal_lifestone_excluded_landblocks still lifts one landblock. Toggle with /plstone t10vod on|off.");
+        public static ConfigProperty<bool> personal_lifestone_block_dungeons { get; private set; } = new(false, "PERSONAL LIFESTONE: when TRUE the item only works outdoors - any indoor/dungeon cell refuses it. A landblock token in personal_lifestone_excluded_landblocks still blocks outdoors too.");
 
         public static ConfigProperty<string> content_folder { get; private set; } = new("Content", "for content creators to live edit weenies. defaults to Content folder found in same directory as ACE.Server.dll");
         public static ConfigProperty<long> content_template_export_wcid_start { get; private set; } = new(78790000, "@export-template / @et / @ed template: first wcid of the TEMPORARY export staging block. Automatic ids come only from [start, end] (the 7879 prefix; 7878 stays hand-authored), and @id / @import-sql / @import-json refuse a wcid inside it unless the word force is added. See docs/WCID_ALLOCATION_7878.md.");
@@ -1173,6 +1313,15 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> discord_audit_level { get; private set; } = new(1, "Controls Admin Audit logs. 0=None, 1=Info (Bans/Kicks), 2=Verbose (All commands).");
         public static ConfigProperty<long> discord_broadcast_level { get; private set; } = new(1, "Controls World Broadcasts. 0=None, 1=Info (@broadcast/@event), 2=Verbose.");
         public static ConfigProperty<long> discord_performance_level { get; private set; } = new(1, "Controls Performance Alerts. 0=None, 1=Info (Overload/Queue), 2=Verbose (ActionLag/SlowSave).");
+        public static ConfigProperty<long> discord_server_status_channel { get; private set; } = new(0, "Discord channel id for server status posts: online, restart scheduled/cancelled, offline (planned or stopped on purpose), and back online after a crash. 0 = off. Use /modifylong discord_server_status_channel <channel id>.");
+        public static ConfigProperty<long> discord_ops_alert_channel { get; private set; } = new(0, "Discord channel id for staff alerts about server problems, e.g. an area where players keep getting stuck loading (stuck_area_*). 0 = off; the alert is still logged as [STUCK AREA]. Use /modifylong discord_ops_alert_channel <channel id>.");
+
+        // Stuck area alert: many different players unable to finish loading the same landblock (2026-11-20 Qalaba'r)
+        public static ConfigProperty<long> stuck_area_min_players { get; private set; } = new(5, "Stuck area alert: this many DIFFERENT players stuck loading (forced out of portal space) in the same landblock within stuck_area_window_minutes raises a [STUCK AREA] alert. 0 = off. On 2026-11-20 the busiest normal landblock reached 3 in 30 min; Qalaba'r reached 6. Use /modifylong stuck_area_min_players <n>.");
+        public static ConfigProperty<long> stuck_area_window_minutes { get; private set; } = new(30, "Stuck area alert: the window, in minutes, the different players are counted over. Use /modifylong stuck_area_window_minutes <minutes>.");
+        public static ConfigProperty<long> stuck_area_alert_cooldown_minutes { get; private set; } = new(60, "Stuck area alert: minutes before the same landblock can post a new Discord alert after it cleared. Use /modifylong stuck_area_alert_cooldown_minutes <minutes>.");
+        public static ConfigProperty<long> stuck_area_clear_quiet_minutes { get; private set; } = new(20, "Stuck area alert: an area that alerted is called clear (an [OK] post in game and to Discord) once nobody has been stuck loading there for this many minutes. Use /modifylong stuck_area_clear_quiet_minutes <minutes>.");
+        public static ConfigProperty<long> stuck_area_staff_reminder_minutes { get; private set; } = new(10, "Stuck area alert: in game, the alert goes to the Audit channel (staff only) when it starts, again every this many minutes while it is still happening, and once when it clears. 0 = no in-game posts. Use /modifylong stuck_area_staff_reminder_minutes <minutes>.");
 
         // Network Throttle Configuration
         public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(0, "Maximum UDP packets sent to a single client per server tick. 0 = unlimited (drain the whole queue each tick, matching base ACE) and is the default. A burst of CreateObject packets on landblock entry/teleport must not be trickled out over many ticks or objects pop in slowly. Set a positive value ONLY as an emergency throttle during mass-spawn incidents. Use /modifylong net_max_packets_per_tick <value>.");
@@ -1275,7 +1424,7 @@ namespace ACE.Server.Managers
                 ServerConfig.SetValue("content_folder", "/ace/Content");
 
             // Subscribe the worker thread to  execute DoWork whenever it elapses.
-            _workerThread.Elapsed += (source, e) => DoWork();
+            _workerThread.Elapsed += (source, e) => DoWork(skipIfBusy: true);
             _workerThread.AutoReset = true;
             _workerThread.Start();
         }
@@ -1302,11 +1451,10 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Flushes pending writes to the datbase, then refreshes our view to be consistent.
         /// </summary>
-        private static void DoWork()
+        private static void DoWork(bool skipIfBusy = false)
         {
             var startTime = DateTime.UtcNow;
-            ServerConfig.WriteUpdatesToDb();
-            ServerConfig.LoadFromDb();
+            ServerConfig.FlushAndReload(skipIfBusy);
             log.Debug($"PropertyManager DoWork took {(DateTime.UtcNow - startTime).TotalMilliseconds:N0} ms");
         }
     }

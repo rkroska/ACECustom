@@ -262,7 +262,19 @@ namespace ACE.Server.WorldObjects
             // pre-validate movement (skip during forced server teleport; CurrentLandblock is often null mid-handoff)
             if (player != null && !(Teleporting && forceUpdate) && !player.ValidateMovement(newPosition))
             {
-                log.Warn($"{Name}.UpdatePosition() - movement pre-validation failed from {Location} to {newPosition}, t: {Teleporting}");
+                // a move into a landblock that doesn't exist is logged by ValidateMovement, rate-limited and naming the
+                // sender; logging it here too would write one unthrottled line per packet
+                if (!player.IsMoveIntoMissingLandblock(newPosition))
+                    log.Warn($"{Name}.UpdatePosition() - movement pre-validation failed from {Location} to {newPosition}, t: {Teleporting}");
+                return false;
+            }
+
+            // Windup catch-up guard (2026-11-23, see WindupMoveCap): right after an NPK cast lands, a position further from the
+            // cast start than the character could have run is refused, and the client is sent back like a trespass below.
+            if (player != null && !Teleporting && !forceUpdate && player.WindupCatchUpRefuses(newPosition))
+            {
+                Sequences.GetNextSequence(ACE.Server.Network.Sequence.SequenceType.ObjectForcePosition);
+                SendUpdatePosition();
                 return false;
             }
 

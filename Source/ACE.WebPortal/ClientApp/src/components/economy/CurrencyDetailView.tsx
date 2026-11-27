@@ -21,7 +21,7 @@ import {
 } from '../pyreal-ledger/LedgerShared'
 import { Amount, ChangeText, NetAmount, StatusPill } from './EconomyShared'
 import { FlowChart, SupplyChart } from './EconomyCharts'
-import { ECONOMY_BASE_PATH, basisNote, formatCompact, formatDateTime, formatFull, formatPct, useEconomyFetch } from './economyUtils'
+import { ECONOMY_BASE_PATH, activeDaysQuery, activeLabel, basisNote, formatCompact, formatDateTime, formatFull, formatPct, useEconomyFetch } from './economyUtils'
 
 function DetailTable({ rows, mode, empty, flowTotal }: { rows: EconomyDetailRow[]; mode: 'in' | 'out'; empty: string; flowTotal: number }) {
   if (rows.length === 0) return <EmptyState message={empty} />
@@ -61,13 +61,23 @@ function DetailTable({ rows, mode, empty, flowTotal }: { rows: EconomyDetailRow[
   )
 }
 
-export default function CurrencyDetailView({ currencyKey, days, reloadToken }: { currencyKey: string; days: number; reloadToken: number }) {
+export default function CurrencyDetailView({
+  currencyKey,
+  days,
+  active,
+  reloadToken,
+}: {
+  currencyKey: string
+  days: number
+  active: number | null
+  reloadToken: number
+}) {
   const { data, loading, error } = useEconomyFetch<CurrencyDetail>(
-    `/currencies/${encodeURIComponent(currencyKey)}?days=${days}&r=${reloadToken}`,
+    `/currencies/${encodeURIComponent(currencyKey)}?days=${days}${activeDaysQuery(active)}&r=${reloadToken}`,
   )
 
   const back = (
-    <Link to={`${ECONOMY_BASE_PATH}?days=${days}`} className={`inline-flex items-center gap-1.5 text-xs mb-4 ${LINK_CLASS}`}>
+    <Link to={`${ECONOMY_BASE_PATH}?days=${days}${active === null ? '' : `&active=${active}`}`} className={`inline-flex items-center gap-1.5 text-xs mb-4 ${LINK_CLASS}`}>
       <ArrowLeft className="w-3.5 h-3.5" /> All currencies
     </Link>
   )
@@ -92,7 +102,9 @@ export default function CurrencyDetailView({ currencyKey, days, reloadToken }: {
   const c = data.summary
   const s = c.supply
   const hasSnapshot = s.day !== null
-  const top1Share = s.total > 0 ? (s.top1PctAmount / s.total) * 100 : null
+  const a = s.accounts
+  const windowLabel = activeLabel(data.activeDays)
+  const top1Share = a ? (a.total > 0 ? (a.top1PctAmount / a.total) * 100 : null) : s.total > 0 ? (s.top1PctAmount / s.total) * 100 : null
   const sources = data.sources ?? []
   const faucets = data.faucets ?? []
   const sinks = data.sinks ?? []
@@ -116,15 +128,29 @@ export default function CurrencyDetailView({ currencyKey, days, reloadToken }: {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Total supply" value={hasSnapshot ? <Amount value={s.total} /> : '-'} hint={hasSnapshot ? `Snapshot ${s.day}` : 'no snapshots yet'} />
         <StatCard label="Banked / in items" value={hasSnapshot ? <><Amount value={s.banked} /> / <Amount value={s.items} /></> : '-'} />
+        {a ? (
+          <StatCard
+            label={`Held by accounts (${windowLabel})`}
+            value={<Amount value={a.total} />}
+            hint={`${formatCompact(a.accounts)} accounts; ${formatCompact(s.total - a.total)} held by the rest`}
+          />
+        ) : (
+          <StatCard
+            label="Active players"
+            value={hasSnapshot ? <Amount value={s.activeSupply} /> : '-'}
+            hint={hasSnapshot ? `${formatCompact(s.activeHolders)} of ${formatCompact(s.holders)} holders (no per-account data for this snapshot)` : undefined}
+          />
+        )}
         <StatCard
-          label="Active players"
-          value={hasSnapshot ? <Amount value={s.activeSupply} /> : '-'}
-          hint={hasSnapshot ? `${formatCompact(s.activeHolders)} of ${formatCompact(s.holders)} holders` : undefined}
-        />
-        <StatCard
-          label="Held by top 1%"
+          label={a ? 'Top 1% of those accounts' : 'Held by top 1%'}
           value={top1Share === null ? '-' : `${top1Share.toFixed(1)}%`}
-          hint={hasSnapshot ? `Largest holder ${formatCompact(s.largestHolder)}; admin ${formatCompact(s.adminSupply)}` : undefined}
+          hint={
+            a
+              ? `Largest account ${formatCompact(a.largestHolder)}; admin ${formatCompact(s.adminSupply)}`
+              : hasSnapshot
+                ? `Largest holder ${formatCompact(s.largestHolder)}; admin ${formatCompact(s.adminSupply)}`
+                : undefined
+          }
         />
         <StatCard
           label="Unexplained"
@@ -141,8 +167,8 @@ export default function CurrencyDetailView({ currencyKey, days, reloadToken }: {
         <StatCard label="Net" value={<NetAmount value={c.flow.net} />} hint={`Moved, not created: ${formatCompact(c.flow.internal)}`} />
       </div>
 
-      <Panel title="Supply over time" help="Total supply and the part held by recently active players, one point per daily snapshot.">
-        <SupplyChart series={c.series ?? []} />
+      <Panel title="Supply over time" help="Total supply and the part held by the accounts the filter keeps, one point per daily snapshot.">
+        <SupplyChart series={c.series ?? []} filterLabel={windowLabel} />
       </Panel>
 
       <Panel title="Faucets vs sinks" help="Currency created (faucets, up) and removed (sinks, down) per day.">
@@ -234,7 +260,7 @@ export default function CurrencyDetailView({ currencyKey, days, reloadToken }: {
         )}
       </Panel>
 
-      <Panel title="Largest holders" help="Characters holding the most of this currency in the bank at the last snapshot.">
+      <Panel title="Largest holders" help={`Characters holding the most of this currency in the bank right now, on ${windowLabel === 'All accounts' ? 'any account' : `accounts that played in the last ${data.activeDays} days`}.`}>
         {holders.length === 0 ? (
           <EmptyState message="No snapshots yet." />
         ) : (
@@ -247,6 +273,7 @@ export default function CurrencyDetailView({ currencyKey, days, reloadToken }: {
                   <th className={TH_NUM_CLASS}>Account</th>
                   <th className={TH_NUM_CLASS}>Banked</th>
                   <th className={TH_CLASS}>Last login</th>
+                  <th className={TH_CLASS} title="Newest game login of any character on the account">Account last played</th>
                 </tr>
               </thead>
               <tbody className={TBODY_CLASS}>
@@ -261,6 +288,7 @@ export default function CurrencyDetailView({ currencyKey, days, reloadToken }: {
                     <td className={TD_CLASS} title={formatFull(r.banked)}>
                       {formatDateTime(r.lastLoginUtc)}
                     </td>
+                    <td className={TD_CLASS}>{formatDateTime(r.accountLastLoginUtc)}</td>
                   </tr>
                 ))}
               </tbody>

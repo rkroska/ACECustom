@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Managers;
@@ -150,17 +151,34 @@ namespace ACE.Server.Entity
 
         public string Quest = quest;
 
+        /// <summary>
+        /// ILT: the InqAccountQuest claims of the emote chain that asked (null if it holds none). They stay held while the
+        /// question is open, and the answer's set carries them on (EmoteManager.ExecuteAnswerSet).
+        /// </summary>
+        public List<AccountQuestLimits.Claim> ChainClaims;
+
         public override void ProcessConfirmation(bool response, bool timeout = false)
         {
             var player = Player;
-            if (player == null) return;
+            if (player == null)
+            {
+                AccountQuestLimits.AnswerNotTaken(ChainClaims);   // ILT: no answer can run
+                return;
+            }
 
             var source = player.FindObject(SourceGuid.Full, Player.SearchLocations.Landblock);
 
             if (source is Hook hook && hook.Item != null)
                 source = hook.Item;
 
-            source?.EmoteManager.ExecuteEmoteSet(response ? EmoteCategory.TestSuccess : EmoteCategory.TestFailure, Quest, player);
+            var category = response ? EmoteCategory.TestSuccess : EmoteCategory.TestFailure;
+
+            if (ChainClaims == null)
+                source?.EmoteManager.ExecuteEmoteSet(category, Quest, player);
+            else if (source != null)
+                source.EmoteManager.ExecuteAnswerSet(category, Quest, player, ChainClaims);
+            else
+                AccountQuestLimits.AnswerNotTaken(ChainClaims);
         }
     }
 

@@ -1,10 +1,12 @@
 using System;
 
+using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Entity.Actions;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 
@@ -28,6 +30,57 @@ namespace ACE.Server.WorldObjects
             SetEphemeralValues();
         }
 
+        // ---- Personal Lifestone (2026-11-14): a stone raised by a player's item, usable by that player only -------------
+
+        /// <summary>The only player who may attune to or tie this stone; null on every ordinary lifestone.</summary>
+        public uint? PersonalLifestoneOwner
+        {
+            get => GetProperty(PropertyInstanceId.PersonalLifestoneOwner);
+            set { if (!value.HasValue) RemoveProperty(PropertyInstanceId.PersonalLifestoneOwner); else SetProperty(PropertyInstanceId.PersonalLifestoneOwner, value.Value); }
+        }
+
+        /// <summary>Unix time the stone fades. TimeToRot normally removes it first; this backs that up when the landblock
+        /// heartbeat has been slow (dormant), so a stale stone can never be used.</summary>
+        public double? PersonalLifestoneExpiresAt;
+
+        public bool IsPersonalLifestone => PersonalLifestoneOwner.HasValue;
+
+        /// <summary>
+        /// True when this player may attune to or tie this stone. Ordinary lifestones: always. A personal one: only its
+        /// owner, and only while it has not faded. Sends the refusal itself.
+        /// </summary>
+        public bool CheckPersonalLifestoneAccess(Player player)
+        {
+            if (!IsPersonalLifestone)
+                return true;
+
+            if (PersonalLifestoneExpiresAt.HasValue && Time.GetUnixTime() >= PersonalLifestoneExpiresAt.Value)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The lifestone has faded.", ChatMessageType.Broadcast));
+                if (!IsDestroyed)
+                    Destroy();
+                return false;
+            }
+
+            if (player.Guid.Full != PersonalLifestoneOwner.Value)
+            {
+                var ownerName = PlayerManager.FindByGuid(PersonalLifestoneOwner.Value)?.Name;
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(ownerName != null
+                    ? $"This lifestone is bound to {ownerName}. It will not answer you."
+                    : "This lifestone is bound to someone else. It will not answer you.", ChatMessageType.Broadcast));
+                return false;
+            }
+
+            // the rules as they stand NOW (an admin may have blocked this spot since the stone rose) - for attune and tie alike
+            if (Player.PersonalLifestoneBlockReason(Location) != null)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The stone has lost its hold on this place. It will not bind you here.", ChatMessageType.Broadcast));
+                return false;
+            }
+
+            return true;
+        }
+
         private void SetEphemeralValues()
         {
             ObjectDescriptionFlags |= ObjectDescriptionFlag.LifeStone;
@@ -46,6 +99,10 @@ namespace ACE.Server.WorldObjects
             if (!(worldObject is Player player))
                 return;
 
+            // Personal Lifestone: only its owner, only while it stands
+            if (!CheckPersonalLifestoneAccess(player))
+                return;
+
             var actionChain = new ActionChain();
             if (player.CombatMode != CombatMode.NonCombat)
             {
@@ -55,15 +112,35 @@ namespace ACE.Server.WorldObjects
                 player.LastUseTime += stanceTime;
             }
 
-            actionChain.AddAction(this, ActionType.Lifestone_EnqueueSound, () => player.EnqueueBroadcast(new GameMessageSound(player.Guid, Sound.LifestoneOn, 1.0f)));
+            // a personal stone can rot during the animation: an action queued on a destroyed object is dropped, so run its
+            // steps on the player (who then gets "The lifestone has faded."). Ordinary lifestones keep the stock actor.
+            WorldObject actor = IsPersonalLifestone ? player : this;
+
+            actionChain.AddAction(actor, ActionType.Lifestone_EnqueueSound, () =>
+            {
+                if (!IsDestroyed)   // a personal stone may have faded since the click: no "it worked" sound for it
+                    player.EnqueueBroadcast(new GameMessageSound(player.Guid, Sound.LifestoneOn, 1.0f));
+            });
 
             player.LastUseTime += player.EnqueueMotion(actionChain, MotionCommand.Sanctuary);
 
-            actionChain.AddAction(this, ActionType.Lifestone_Use, () =>
+            actionChain.AddAction(actor, ActionType.Lifestone_Use, () =>
             {
-                if (player.IsWithinUseRadiusOf(this))
+                if (IsDestroyed)
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("The lifestone has faded.", ChatMessageType.Broadcast));
+                else if (IsPersonalLifestone && !CheckPersonalLifestoneAccess(player))
                 {
-                    player.Sanctuary = new Position(player.Location);
+                    // checked again at the bind: the stone may have passed its time (before the heartbeat rots it) or been
+                    // blocked by an admin during the animation - it already told the player why
+                }
+                else if (player.IsWithinUseRadiusOf(this))
+                {
+                    // Personal Lifestone: bind to the STONE's own spot - the one checked when it rose and again by
+                    // CheckPersonalLifestoneAccess - never to where the player stands (that can be across a blocked line,
+                    // e.g. a step into T10 or a house yard). Lifestone Tie records the stone's spot too.
+                    player.Sanctuary = new Position(IsPersonalLifestone ? Location : player.Location);
+                    if (IsPersonalLifestone)
+                        player.RecordPersonalLifestoneSpot(PositionType.Sanctuary, player.Sanctuary);   // for /plstone audit
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(GetProperty(PropertyString.UseMessage), ChatMessageType.Magic));
                     var newStamina = (uint)Math.Round(player.Stamina.Current / 2f);
                     player.UpdateVital(player.Stamina, newStamina);

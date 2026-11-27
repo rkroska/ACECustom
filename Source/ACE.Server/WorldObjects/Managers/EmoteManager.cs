@@ -44,9 +44,91 @@ namespace ACE.Server.WorldObjects.Managers
         private WorldObject _proxy;
 
         /// <summary>
-        /// Returns TRUE if this WorldObject is currently busy processing other emotes
+        /// Returns TRUE if this WorldObject is currently busy processing other emotes. Going idle with no emotes left in
+        /// flight (Nested 0) also ends the InqAccountQuest claims this object took (AccountQuestLimits.Claim): its emotes,
+        /// reward and stamp included, are done. OnDeath and OnPortal clear IsBusy while emotes may still be in flight, so
+        /// the claims stay until those have finished.
         /// </summary>
-        public bool IsBusy { get; set; }
+        public bool IsBusy
+        {
+            get => isBusy;
+            set
+            {
+                isBusy = value;
+
+                if (!value && Nested == 0)
+                    ReleaseHeldAccountClaims();
+            }
+        }
+
+        private bool isBusy;
+
+        /// <summary>ILT: InqAccountQuest claims this object holds until its emotes have finished (created on first use).</summary>
+        private List<AccountQuestLimits.Claim> heldAccountClaims;
+
+        /// <summary>ILT: true while this object holds InqAccountQuest claims for the emotes it has in flight.</summary>
+        private bool HoldsAccountClaims => heldAccountClaims != null && heldAccountClaims.Count > 0;
+
+        /// <summary>ILT: ends the InqAccountQuest claims this object holds: the emotes that took them are over.</summary>
+        private void ReleaseHeldAccountClaims()
+        {
+            if (!HoldsAccountClaims)
+                return;
+
+            foreach (var claim in heldAccountClaims)
+                AccountQuestLimits.Release(claim);
+
+            heldAccountClaims.Clear();
+        }
+
+        /// <summary>
+        /// ILT: the InqAccountQuest claims of the emote chain whose step is running right now (null if it has none). An
+        /// InqAccountQuest step adds its claim here, and the sets the step defers (EnqueueNestedSet) carry it on, so each
+        /// chain acts only on its own claims: another emote set on the object (a ReceiveDamage, say) has none.
+        /// </summary>
+        private List<AccountQuestLimits.Claim> executingClaims;
+
+        /// <summary>
+        /// ILT: before each step of a chain holding InqAccountQuest claims. False when the chain must stop: a claim was
+        /// taken over (its object left the world before the chain acted), or the chain's target has left the world to log
+        /// out (Player.HasLeftWorldToLogOut, a normal logout or a forced logoff), so a stamp would no longer be saved
+        /// (AccountQuestLimits.Abandon: released if the chain never acted, otherwise closed). Otherwise the claims can't be
+        /// taken over from then on (AccountQuestLimits.TryAct), so what the step queues (a Give, a CastSpell) is covered too.
+        /// </summary>
+        private bool TryActOnChainClaims(List<AccountQuestLimits.Claim> chainClaims, WorldObject targetObject)
+        {
+            if (chainClaims == null || chainClaims.Count == 0)
+                return true;
+
+            if (targetObject is Player target && target.HasLeftWorldToLogOut)
+            {
+                AccountQuestLimits.Abandon(chainClaims);
+                heldAccountClaims?.RemoveAll(chainClaims.Contains);
+                return false;
+            }
+
+            return AccountQuestLimits.TryAct(chainClaims);
+        }
+
+        /// <summary>
+        /// ILT: where this object's emotes stand, for a claim to follow (AccountQuestLimits.Claim.Chain), through a weak
+        /// reference, so a claim left behind doesn't keep a destroyed object alive.
+        /// </summary>
+        private Func<AccountQuestLimits.ChainState> NewClaimChain()
+        {
+            var self = new WeakReference<EmoteManager>(this);
+            return () => self.TryGetTarget(out var manager) ? manager.AccountClaimChain() : AccountQuestLimits.ChainState.Gone;
+        }
+
+        /// <summary>ILT: where this object's emotes stand, for the InqAccountQuest claims it takes (AccountQuestLimits.Claim).</summary>
+        private AccountQuestLimits.ChainState AccountClaimChain()
+        {
+            if (Nested == 0)
+                return AccountQuestLimits.ChainState.Finished;
+
+            return WorldObject.IsDestroyed ? AccountQuestLimits.ChainState.Gone : AccountQuestLimits.ChainState.Running;
+        }
+
         public int Nested { get; set; }
 
         /// <summary>
@@ -164,34 +246,14 @@ namespace ACE.Server.WorldObjects.Managers
             { "Specialize", 266 },
         };
 
-        /// <summary>Charm of the Triune Weave. The charm must be in inventory to use Gems; progress lives on the player (PropertyInt64.TriuneWeaveCount), never on the item.</summary>
-        private const uint TriuneCharmWcid = 777700030;
-
-        private sealed class SchoolCharmDef
-        {
-            public string FullName;
-            public uint CharmWcid;
-            public uint Mote1;
-            public uint Mote10;
-            public uint Mote50;
-            public uint Mote100;
-            public PropertyInt64 CountProperty;
-        }
-
         /// <summary>
-        /// School charms keyed by their gem emote-message prefix. Each counter feeds its own school's
-        /// Effective*AugCount, which is how a player gets past the 4,000 cap - the cap bounds
-        /// luminance purchases, the charm is a separate path bought with Prestige Coins. The cap
-        /// check below deliberately still reads the RAW count, so a charm never eats purchase
-        /// headroom.
+        /// The four attack school gem emote prefixes (War / Void / Melee / Missile). Since 2026-11-22 (Triune retire) only an
+        /// EARNED +1 gem does anything (SchoolGems.TryUse); the school charms are keepsakes and nothing reads them here.
         /// </summary>
-        private static readonly Dictionary<string, SchoolCharmDef> SchoolCharms = new Dictionary<string, SchoolCharmDef>
-        {
-            { "Wrath",    new SchoolCharmDef { FullName = "Charm of the Battlemage's Wrath", CharmWcid = 777700051, Mote1 = 777700052, Mote10 = 777700053, Mote50 = 777700054, Mote100 = 777700055, CountProperty = PropertyInt64.BattlemagesWrathCharmCount } },
-            { "Nether",   new SchoolCharmDef { FullName = "Charm of the Nether Veil",    CharmWcid = 777700056, Mote1 = 777700057, Mote10 = 777700058, Mote50 = 777700059, Mote100 = 777700060, CountProperty = PropertyInt64.NetherVeilCharmCount } },
-            { "Steel",    new SchoolCharmDef { FullName = "Charm of Crashing Steel",     CharmWcid = 777700061, Mote1 = 777700062, Mote10 = 777700063, Mote50 = 777700064, Mote100 = 777700065, CountProperty = PropertyInt64.CrashingSteelCharmCount } },
-            { "TrueShot", new SchoolCharmDef { FullName = "Charm of the True Shot",      CharmWcid = 777700066, Mote1 = 777700067, Mote10 = 777700068, Mote50 = 777700069, Mote100 = 777700070, CountProperty = PropertyInt64.TrueShotCharmCount } },
-        };
+        private static readonly HashSet<string> SchoolGemPrefixes = new HashSet<string> { "Wrath", "Nether", "Steel", "TrueShot" };
+
+        /// <summary>What a retired gem (Triune, an unstamped attack school gem) says when used (owner 2026-11-22). It stays put.</summary>
+        private const string RetiredGemLine = "This gem is no longer used. Its power now lives in your augmentations.";
 
         /// <summary>
         /// Checked both when the gem is used and again inside the confirmation callback (before any
@@ -200,6 +262,8 @@ namespace ACE.Server.WorldObjects.Managers
         private static bool CheckAugmentationCap(Player player, string school, long currentCount, int augCount)
         {
             var cap = AugmentationCaps[school];
+            // one stat (owner 2026-11-22): the count already holds everything earned from kills and gems, so luminance buys
+            // stop at the cap however the count got there - and nothing ever lowers a count above it
             if (currentCount + augCount <= cap)
                 return true;
 
@@ -609,8 +673,9 @@ namespace ACE.Server.WorldObjects.Managers
                         current -= emote.Amount64 ?? 1;
                         targetObject.SetProperty(int64Property, current);
 
+                        // what was stored: a locked bank (/banklock) refuses the write, and the client must not show it as made
                         if (player != null)
-                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, current));
+                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, targetObject.GetProperty(int64Property) ?? 0));
 
                         // a lower unassigned XP balance: top it up from its overflow bank (Player_Xp)
                         if (targetObject is Player bankTarget && IsXpBalanceProperty(int64Property))
@@ -768,11 +833,7 @@ namespace ACE.Server.WorldObjects.Managers
                     // TODO: revisit if nested chains need to back-propagate timers
                     var gotoSet = GetEmoteSet(EmoteCategory.GotoSet, emote.Message);
                     if (gotoSet != null)
-                    {
-                        var actionChain = new ActionChain();
-                        actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => ExecuteEmoteSet(gotoSet, targetObject, true));
-                        actionChain.EnqueueChain();
-                    }
+                        EnqueueNestedSet(gotoSet, targetObject);
                     break;
 
                 /* increments a PropertyInt stat by some amount */
@@ -808,8 +869,9 @@ namespace ACE.Server.WorldObjects.Managers
                         current += emote.Amount64 ?? 1;
                         targetObject.SetProperty(int64Property, current);
 
+                        // what was stored: a locked bank (/banklock) refuses the write, and the client must not show it as made
                         if (player != null)
-                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, current));
+                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, targetObject.GetProperty(int64Property) ?? 0));
 
                         if (targetObject is Player bankTarget && IsXpBalanceProperty(int64Property))
                             bankTarget.RefillAvailableXpFromOverflow();
@@ -1105,7 +1167,14 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (targetObject != null)
                     {
-                        var stat = targetObject.GetProperty((PropertyInt64)emote.Stat);
+                        // a retired counter (Triune Weave, a school charm) on a creature reads what replaced it (GetInt64ForGate)
+                        var stat = targetObject is Creature gateCreature
+                            ? gateCreature.GetInt64ForGate((PropertyInt64)emote.Stat)
+                            : targetObject.GetProperty((PropertyInt64)emote.Stat);
+
+                        // bank lock (/banklock): a locked bank reads as empty, so an NPC never takes payment it can't collect
+                        if (targetObject is Player inqBankPlayer && BankLock.IsBankProperty((PropertyInt64)emote.Stat) && inqBankPlayer.IsBankLocked)
+                            stat = 0;
 
                         if (stat == null && HasValidTestNoQuality(emote.Message))
                             ExecuteEmoteSet(EmoteCategory.TestNoQuality, emote.Message, targetObject, true);
@@ -1200,6 +1269,57 @@ namespace ACE.Server.WorldObjects.Managers
                         success = hasQuest && !canSolve;
 
                         ExecuteEmoteSet(success ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+
+                    break;
+
+                case EmoteType.InqAccountQuest:
+
+                    // ILT custom: InqQuest counted across every character on the player's account, so any content gated on
+                    // InqQuest can be account-locked by switching that step to this one (docs/ACCOUNT_LOCKED_CONTENT_GUIDE.md).
+                    // QuestSuccess = a character on the account has the quest and the account can't solve it yet
+                    // (max solves reached across the account, or the newest completion's timer still running), or another
+                    // use on the account holds the quest's gate. Letting the character through takes the account's claim on
+                    // the gate, held until this object's emotes have all finished, so it covers the reward and the stamp.
+                    if (player != null)
+                    {
+                        // the claim holds while this object still has emotes in flight (Nested, which OnDeath and OnPortal
+                        // leave alone when they clear IsBusy) and is still in the world (AccountClaimChain). It refers to
+                        // this object weakly, so a claim left behind doesn't keep a destroyed object alive (one that is
+                        // gone reads as Gone).
+                        var accountQuestDone = AccountQuestLimits.HasQuestAndCannotSolve(player, emote.Message, NewClaimChain(), out var accountClaim);
+
+                        if (accountClaim != null)
+                        {
+                            (heldAccountClaims ??= new List<AccountQuestLimits.Claim>()).Add(accountClaim);
+
+                            // the outcome set and what it goes on to run are this claim's chain
+                            (executingClaims ??= new List<AccountQuestLimits.Claim>()).Add(accountClaim);
+                        }
+
+                        // runs on the next tick, as for InqQuest; with a claim held, this object stays busy until then
+                        // (EnqueueNestedSet)
+                        ExecuteEmoteSet(accountQuestDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+
+                    break;
+
+                case EmoteType.InqIPQuest:
+
+                    // ILT custom: "at most Amount per IP address" over the quest's MinDelta window (AccountQuestLimits, IP
+                    // section). Claims work as for InqAccountQuest. Give it its own @comment so its sets don't clash with an
+                    // InqAccountQuest on the same quest.
+                    if (player != null)
+                    {
+                        var ipDone = AccountQuestLimits.IpHasQuestAndCannotSolve(player, emote.Message, emote.Amount ?? 2, NewClaimChain(), out var ipClaim);
+
+                        if (ipClaim != null)
+                        {
+                            (heldAccountClaims ??= new List<AccountQuestLimits.Claim>()).Add(ipClaim);
+                            (executingClaims ??= new List<AccountQuestLimits.Claim>()).Add(ipClaim);
+                        }
+
+                        ExecuteEmoteSet(ipDone ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
                     }
 
                     break;
@@ -1454,9 +1574,20 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (player != null)
                     {
-                        if (!player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(WorldObject.Guid, player.Guid, emote.Message), Replace(emote.TestString, WorldObject, targetObject, emoteSet.Quest)))
+                        // ILT: the answer runs as a new emote set. A chain holding InqAccountQuest claims hands them to it,
+                        // and they stay held while the question is open (at most the confirmation's timeout), so the account's
+                        // gate stays closed until the answer has run (ExecuteAnswerSet). A copy: the answer carries on the
+                        // claims the chain holds as it asks
+                        var answerClaims = executingClaims != null && executingClaims.Count > 0 ? new List<AccountQuestLimits.Claim>(executingClaims) : null;
+
+                        if (!player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(WorldObject.Guid, player.Guid, emote.Message) { ChainClaims = answerClaims }, Replace(emote.TestString, WorldObject, targetObject, emoteSet.Quest)))
                         {
                             ExecuteEmoteSet(EmoteCategory.TestFailure, emote.Message, player);
+                        }
+                        else if (answerClaims != null)
+                        {
+                            // a few seconds past the timeout, for the abort that ends an unanswered question to run
+                            AccountQuestLimits.AwaitAnswer(answerClaims, TimeSpan.FromSeconds(ConfirmationManager.DefaultTimeoutSeconds + 5));
                         }
                     }
                     break;
@@ -2076,15 +2207,24 @@ namespace ACE.Server.WorldObjects.Managers
                             log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Parsing quest stamps from Message: {stampList}");
 
                             // Parse and deduplicate stamps (case-insensitive)
-                            var availableStamps = stampList.Split(',')
+                            var parsedStamps = stampList.Split(',')
                                 .Select(q => q.Trim())
                                 .Where(q => !string.IsNullOrWhiteSpace(q))
                                 .Distinct(StringComparer.OrdinalIgnoreCase)
                                 .ToList();
 
+                            // ILT: a quest marked [NoQB] earns no quest bonus, so it can never be "granted" - the player
+                            // would be charged for nothing and the stamp would stay on offer. Leave it out, before payment.
+                            var availableStamps = WithoutQbExempt(parsedStamps, QuestManager.IsQbExempt);
+                            if (availableStamps.Count < parsedStamps.Count)
+                                log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: GrantRandomQuestStamp lists quests marked [NoQB], which are skipped: {string.Join(", ", parsedStamps.Except(availableStamps))}");
+
                             log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found {availableStamps.Count} available quest stamps: {string.Join(", ", availableStamps)}");
 
-                            if (availableStamps.Count == 0)
+                            // Only an empty list exits here. A list that is empty only because every stamp is [NoQB] goes on
+                            // to the "nothing eligible" handling below, which refunds an old-style turn-in (REFUND:) that
+                            // an earlier TakeItems already consumed, and leaves a TAKE: turn-in untaken.
+                            if (parsedStamps.Count == 0)
                             {
                                 log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp has no valid quest stamps after parsing.");
                                 break;
@@ -2706,10 +2846,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // price floor (owner 2026-11-08): a T11-T14 drip player's gems are priced from max(used, the own tier's entry)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Creature", creatureAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = creatureAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -2744,11 +2886,29 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on creatureAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentCreatureCount ?? 0) != creatureAugs
+                                                || ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Creature", creatureAugs) != priceFrom)   // the price start moved (own tier, drip settings)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations or the gem's price changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Creature", player.LuminanceAugmentCreatureCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+                                            // Consume the correct augmentation item based on the number of augmentations
+                                            int itemId = augCount == 1 ? 300005 :
+                                                         augCount == 10 ? 81000125 :
+                                                         augCount == 50 ? 81000135 :
+                                                         augCount == 100 ? 81000145 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!player.SpendLuminance((long)totalCost))
@@ -2757,19 +2917,15 @@ namespace ACE.Server.WorldObjects.Managers
                                                 return;
                                             }
 
-                                            // Apply the augmentations
-                                            player.LuminanceAugmentCreatureCount = creatureAugs + augCount;
-
-                                            // Consume the correct augmentation item based on the number of augmentations
-                                            int itemId = augCount == 1 ? 300005 :
-                                                         augCount == 10 ? 81000125 :
-                                                         augCount == 50 ? 81000135 :
-                                                         augCount == 100 ? 81000145 : 0;
-
-                                            if (itemId != 0)
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
                                             {
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
                                             }
+
+                                            // Apply the augmentations
+                                            player.LuminanceAugmentCreatureCount = (player.LuminanceAugmentCreatureCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Creature casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Creature spell effects. Are you sure?");
@@ -2796,10 +2952,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // price floor (owner 2026-11-08): a T11-T14 drip player's gems are priced from max(used, the own tier's entry)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Item", itemAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = itemAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -2834,11 +2992,29 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on itemAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentItemCount ?? 0) != itemAugs
+                                                || ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Item", itemAugs) != priceFrom)   // the price start moved (own tier, drip settings)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations or the gem's price changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Item", player.LuminanceAugmentItemCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300006 :
+                                                         augCount == 10 ? 81000126 :
+                                                         augCount == 50 ? 81000136 :
+                                                         augCount == 100 ? 81000146 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!player.SpendLuminance((long)totalCost))
@@ -2847,17 +3023,15 @@ namespace ACE.Server.WorldObjects.Managers
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
-                                            player.LuminanceAugmentItemCount = itemAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300006 :
-                                                         augCount == 10 ? 81000126 :
-                                                         augCount == 50 ? 81000136 :
-                                                         augCount == 100 ? 81000146 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
+                                            player.LuminanceAugmentItemCount = (player.LuminanceAugmentItemCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Item casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Item spell effects. Are you sure?");
@@ -2885,10 +3059,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // price floor (owner 2026-11-08): a T11-T14 drip player's gems are priced from max(used, the own tier's entry)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Life", lifeAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = lifeAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -2923,11 +3099,29 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on lifeAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentLifeCount ?? 0) != lifeAugs
+                                                || ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Life", lifeAugs) != priceFrom)   // the price start moved (own tier, drip settings)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations or the gem's price changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Life", player.LuminanceAugmentLifeCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300007 :
+                                                         augCount == 10 ? 81000127 :
+                                                         augCount == 50 ? 81000137 :
+                                                         augCount == 100 ? 81000147 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!player.SpendLuminance((long)totalCost))
@@ -2936,17 +3130,15 @@ namespace ACE.Server.WorldObjects.Managers
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
-                                            player.LuminanceAugmentLifeCount = lifeAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300007 :
-                                                         augCount == 10 ? 81000127 :
-                                                         augCount == 50 ? 81000137 :
-                                                         augCount == 100 ? 81000147 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
+                                            player.LuminanceAugmentLifeCount = (player.LuminanceAugmentLifeCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Life casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Life spell effects. Are you sure?");
@@ -2974,10 +3166,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // priced from the count itself: only Creature / Item / Life have a T11-T14 price floor (TriuneEarning.GemPriceCount)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "War", warAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = warAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -3012,11 +3206,28 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on warAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentWarCount ?? 0) != warAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "War", player.LuminanceAugmentWarCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300008 :
+                                                         augCount == 10 ? 81000128 :
+                                                         augCount == 50 ? 81000138 :
+                                                         augCount == 100 ? 81000148 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!player.SpendLuminance((long)totalCost))
@@ -3025,17 +3236,15 @@ namespace ACE.Server.WorldObjects.Managers
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
-                                            player.LuminanceAugmentWarCount = warAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300008 :
-                                                         augCount == 10 ? 81000128 :
-                                                         augCount == 50 ? 81000138 :
-                                                         augCount == 100 ? 81000148 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
+                                            player.LuminanceAugmentWarCount = (player.LuminanceAugmentWarCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your War casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your War spell effects. Are you sure?");
@@ -3062,10 +3271,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // priced from the count itself: only Creature / Item / Life have a T11-T14 price floor (TriuneEarning.GemPriceCount)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Void", voidAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = voidAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -3100,11 +3311,28 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on voidAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentVoidCount ?? 0) != voidAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Void", player.LuminanceAugmentVoidCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300009 :
+                                                         augCount == 10 ? 81000129 :
+                                                         augCount == 50 ? 81000139 :
+                                                         augCount == 100 ? 81000149 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!player.SpendLuminance((long)totalCost))
@@ -3113,17 +3341,15 @@ namespace ACE.Server.WorldObjects.Managers
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
-                                            player.LuminanceAugmentVoidCount = voidAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300009 :
-                                                         augCount == 10 ? 81000129 :
-                                                         augCount == 50 ? 81000139 :
-                                                         augCount == 100 ? 81000149 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
+                                            player.LuminanceAugmentVoidCount = (player.LuminanceAugmentVoidCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Void casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Void spell effects. Are you sure?");
@@ -3150,10 +3376,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // priced from the count itself: only Creature / Item / Life have a T11-T14 price floor (TriuneEarning.GemPriceCount)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Melee", meleeAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = meleeAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -3188,11 +3416,28 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on meleeAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentMeleeCount ?? 0) != meleeAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Melee", player.LuminanceAugmentMeleeCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 2003002 :
+                                                         augCount == 10 ? 81000133 :
+                                                         augCount == 50 ? 81000143 :
+                                                         augCount == 100 ? 81000153 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!player.SpendLuminance((long)totalCost))
@@ -3201,17 +3446,15 @@ namespace ACE.Server.WorldObjects.Managers
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
-                                            player.LuminanceAugmentMeleeCount = meleeAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 2003002 :
-                                                         augCount == 10 ? 81000133 :
-                                                         augCount == 50 ? 81000143 :
-                                                         augCount == 100 ? 81000153 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
+                                            player.LuminanceAugmentMeleeCount = (player.LuminanceAugmentMeleeCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Melee casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Melee spell effects. Are you sure?");
@@ -3238,10 +3481,12 @@ namespace ACE.Server.WorldObjects.Managers
                                     GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
+                                    // priced from the count itself: only Creature / Item / Life have a T11-T14 price floor (TriuneEarning.GemPriceCount)
+                                    long priceFrom = ACE.Server.Managers.ZoneControl.TriuneEarning.GemPriceCount(player, "Missile", missileAugs);
                                     // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        long currentAugCount = missileAugs + i;
+                                        long currentAugCount = priceFrom + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
@@ -3276,11 +3521,28 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
                                             if (!response) return;
+                                            // the price above was worked out on missileAugs: a reward or school gem that landed while the box was open changes it
+                                            if ((player.LuminanceAugmentMissileCount ?? 0) != missileAugs)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentations changed while this was open - use the gem again for the new price.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!CheckAugmentationCap(player, "Missile", player.LuminanceAugmentMissileCount ?? 0, augCount))
                                                 return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 2003003 :
+                                                         augCount == 10 ? 81000134 :
+                                                         augCount == 50 ? 81000144 :
+                                                         augCount == 100 ? 81000154 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
                                                 return;
                                             }
                                             if (!player.SpendLuminance((long)totalCost))
@@ -3289,17 +3551,15 @@ namespace ACE.Server.WorldObjects.Managers
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
-                                            player.LuminanceAugmentMissileCount = missileAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 2003003 :
-                                                         augCount == 10 ? 81000134 :
-                                                         augCount == 50 ? 81000144 :
-                                                         augCount == 100 ? 81000154 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
+                                            player.LuminanceAugmentMissileCount = (player.LuminanceAugmentMissileCount ?? 0) + augCount; // fresh read: rewards / school gems can land while the box is open
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Missile casting abilities by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your Missile spell effects. Are you sure?");
@@ -3374,23 +3634,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300016 :
+                                                         augCount == 10 ? 81000130 :
+                                                         augCount == 50 ? 81000140 :
+                                                         augCount == 100 ? 81000150 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentSpellDurationCount = durationAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300016 :
-                                                         augCount == 10 ? 81000130 :
-                                                         augCount == 50 ? 81000140 :
-                                                         augCount == 100 ? 81000150 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your spell Duration by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {durationIncreasePercent}% to the duration of all of your spell effects. Are you sure?");
@@ -3462,23 +3731,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 300021 :
+                                                         augCount == 10 ? 81000131 :
+                                                         augCount == 50 ? 81000141 :
+                                                         augCount == 100 ? 81000151 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentSpecializeCount = specAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 300021 :
-                                                         augCount == 10 ? 81000131 :
-                                                         augCount == 50 ? 81000141 :
-                                                         augCount == 100 ? 81000151 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your Max Specialized Skill Credits by {augCount}.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} points to your max specialized skill credits. Are you sure?");
@@ -3550,23 +3828,32 @@ namespace ACE.Server.WorldObjects.Managers
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
                                                 return;
                                             }
+                                            // Consume the correct item based on augCount
+                                            int itemId = augCount == 1 ? 2003001 :
+                                                         augCount == 10 ? 81000132 :
+                                                         augCount == 50 ? 81000142 :
+                                                         augCount == 100 ? 81000152 : 0;
+                                            // the gem must still be in the pack (the box does not hold it, and the consume below says true when nothing is there)
+                                            if (itemId != 0 && player.GetNumInventoryItemsOfWCID((uint)itemId) < 1)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem is no longer in your pack.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
                                             if (!player.SpendLuminance((long)totalCost))
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
                                                 return;
                                             }
 
+                                            if (itemId != 0 && !player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1))
+                                            {
+                                                log.Error($"[AugGem] {player.Name}: spent {totalCost:N0} luminance but the gem {itemId} could not be consumed - no augmentations given");
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The gem could not be used. Please tell staff.", ChatMessageType.Broadcast));
+                                                return;
+                                            }
+
                                             // Apply the augmentations
                                             player.LuminanceAugmentSummonCount = summonAugs + augCount;
-
-                                            // Consume the correct item based on augCount
-                                            int itemId = augCount == 1 ? 2003001 :
-                                                         augCount == 10 ? 81000132 :
-                                                         augCount == 50 ? 81000142 :
-                                                         augCount == 100 ? 81000152 : 0;
-
-                                            if (itemId != 0)
-                                                player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
                                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your summons attributes and skills by {augCount} point(s) each.", ChatMessageType.Broadcast));
                                         }), $"You are about to spend {totalCost:N0} luminance to add {augCount} point(s) to all of your summons attributes and skills. Are you sure?");
@@ -3577,39 +3864,9 @@ namespace ACE.Server.WorldObjects.Managers
                             case "Triune10":
                             case "Triune50":
                             case "Triune100":
-                                {
-                                    // Gems are bought with Prestige Coins, so no luminance cost and no cap here.
-                                    int augCount = emote.Message == "Triune" ? 1 :
-                                                   emote.Message == "Triune10" ? 10 :
-                                                   emote.Message == "Triune50" ? 50 :
-                                                   emote.Message == "Triune100" ? 100 : 0;
-
-                                    if (player.GetNumInventoryItemsOfWCID(TriuneCharmWcid) == 0)
-                                    {
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must possess a Charm of the Triune Weave to use this gem.", ChatMessageType.Broadcast));
-                                        break;
-                                    }
-
-                                    int moteId = augCount == 1 ? 777700031 :
-                                                 augCount == 10 ? 777700032 :
-                                                 augCount == 50 ? 777700033 :
-                                                 augCount == 100 ? 777700034 : 0;
-
-                                    // No confirmation dialog (owner, 2026-08-15): using the gem is
-                                    // itself the deliberate act, and the gem is bought with coins
-                                    // rather than spent from luminance, so there is nothing to
-                                    // second-guess. Consume before granting, so a failed consume
-                                    // never awards a free point.
-                                    if (moteId == 0 || !player.TryConsumeFromInventoryWithNetworking((uint)moteId, 1))
-                                    {
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to consume the gem. Please try again.", ChatMessageType.Broadcast));
-                                        break;
-                                    }
-
-                                    player.TriuneWeaveCount = (player.TriuneWeaveCount ?? 0) + augCount;
-                                    player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.TriuneWeaveCount, player.TriuneWeaveCount ?? 0));
-                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your Triune Weave has been empowered by {augCount:N0}, and now stands at {player.TriuneWeaveCount:N0}!", ChatMessageType.Broadcast));
-                                }
+                                // RETIRED 2026-11-22 (Triune retire): the Triune Weave lives in Creature / Item / Life now. The gem
+                                // does nothing and is kept - never consumed, never deleted.
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat(RetiredGemLine, ChatMessageType.Broadcast));
                                 break;
                             case "Wrath":
                             case "Wrath10":
@@ -3634,42 +3891,16 @@ namespace ACE.Server.WorldObjects.Managers
                                                    moteMessage.EndsWith("10") ? 10 : 1;
                                     var prefix = augCount == 1 ? moteMessage : moteMessage.Substring(0, moteMessage.Length - (augCount == 100 ? 3 : 2));
 
-                                    if (!SchoolCharms.TryGetValue(prefix, out var charm))
+                                    if (!SchoolGemPrefixes.Contains(prefix))
                                         break;
 
-                                    // School gems past the cap (owner 2026-11-01): an EARNED +1 gem has its own rules (earner only,
-                                    // the gem's tier ceiling, no charm item, free) - SchoolGems.TryUse; an old unstamped gem falls through
+                                    // An EARNED +1 gem (owner 2026-11-01) adds +1 straight onto the school's augmentations (one stat,
+                                    // 2026-11-22) - SchoolGems.TryUse. Every other gem of these schools (unstamped, the 10 / 50 / 100
+                                    // packs) is RETIRED 2026-11-22: it does nothing and is kept - never consumed, never deleted.
                                     if (augCount == 1 && ACE.Server.Managers.ZoneControl.SchoolGems.TryUse(player, WorldObject))
                                         break;
 
-                                    if (player.GetNumInventoryItemsOfWCID(charm.CharmWcid) == 0)
-                                    {
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must possess a {charm.FullName} to use this gem.", ChatMessageType.Broadcast));
-                                        break;
-                                    }
-
-                                    uint moteId = augCount == 1 ? charm.Mote1 :
-                                                  augCount == 10 ? charm.Mote10 :
-                                                  augCount == 50 ? charm.Mote50 : charm.Mote100;
-
-                                    // No confirmation dialog (owner, 2026-08-15) - see the Triune
-                                    // case above. Consume before granting. The gem being used, not the first of its wcid
-                                    // (2026-11-01): an earned +1 gem shares the wcid and must never be eaten by this path.
-                                    // If something other than the gem ran this emote, take the first UNSTAMPED gem of that wcid - an
-                                    // earned gem only ever pays through SchoolGems.TryUse.
-                                    var usedThis = WorldObject != null && WorldObject.WeenieClassId == moteId;
-                                    var gemToUse = usedThis ? WorldObject
-                                        : player.GetInventoryItemsOfWCID(moteId).FirstOrDefault(g => ACE.Server.Managers.ZoneControl.SchoolGems.Stamp(g) == null);
-                                    if (gemToUse == null || !player.TryConsumeFromInventoryWithNetworking(gemToUse, 1))
-                                    {
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to consume the gem. Please try again.", ChatMessageType.Broadcast));
-                                        break;
-                                    }
-
-                                    var newCount = (player.GetProperty(charm.CountProperty) ?? 0) + augCount;
-                                    player.SetProperty(charm.CountProperty, newCount);
-                                    player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, charm.CountProperty, newCount));
-                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {charm.FullName} has been empowered by {augCount:N0}, and now stands at {newCount:N0}!", ChatMessageType.Broadcast));
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(RetiredGemLine, ChatMessageType.Broadcast));
                                 }
                                 break;
                             default:
@@ -3946,9 +4177,7 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (nested)
             {
-                var actionChain = new ActionChain();
-                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => ExecuteEmoteSet(emoteSet, targetObject, true));
-                actionChain.EnqueueChain();
+                EnqueueNestedSet(emoteSet, targetObject);
             }
             else
             {
@@ -3965,12 +4194,90 @@ namespace ACE.Server.WorldObjects.Managers
         }
 
         /// <summary>
+        /// Runs a nested set on the next tick: a branch's QuestSuccess or QuestFailure (and the like), or a Goto. ILT: the
+        /// set carries on the InqAccountQuest claims of the chain that defers it, and while there are any, this object also
+        /// stays busy until the set has started (Nested is held), so the claims last through every branch of the chain.
+        /// Otherwise Nested can reach 0 in between (the branching set ends first) and end them before the reward and the
+        /// stamp.
+        /// </summary>
+        private void EnqueueNestedSet(PropertiesEmote emoteSet, WorldObject targetObject)
+        {
+            var chainClaims = executingClaims;
+            var holdForClaims = chainClaims != null && chainClaims.Count > 0;
+
+            // held until the set has started (it counts itself in Nested while it runs)
+            if (holdForClaims)
+                Nested++;
+
+            var actionChain = new ActionChain();
+            actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () =>
+            {
+                ExecuteEmoteSet(emoteSet, targetObject, true, chainClaims);
+
+                if (holdForClaims)
+                {
+                    Nested--;
+
+                    if (Nested == 0)
+                        IsBusy = false;
+                }
+            });
+            actionChain.EnqueueChain();
+        }
+
+        /// <summary>
+        /// ILT: runs the set for the answer to a yes/no question (Confirmation_YesNo) as part of the chain that asked, with that
+        /// chain's InqAccountQuest claims, which stayed held while the question was open (InqYesNo). As for any answer, an
+        /// object busy with other emotes, or with no set for it, doesn't take it; the claims then end as they would have with
+        /// no question (AccountQuestLimits.AnswerNotTaken). Nor does an answer that comes after the question has closed
+        /// (AccountQuestLimits.TryTakeAnswer). Once taken, the claims follow this object's emotes, even if another object
+        /// asked (a hook's item swapped meanwhile), but only once that object's asking emotes are over: until then they keep
+        /// the claims, and an answer run elsewhere isn't taken.
+        /// </summary>
+        public void ExecuteAnswerSet(EmoteCategory category, string quest, Player player, List<AccountQuestLimits.Claim> chainClaims)
+        {
+            var emoteSet = GetEmoteSet(category, quest);
+
+            if (emoteSet == null || IsBusy)
+            {
+                AccountQuestLimits.AnswerNotTaken(chainClaims);
+                return;
+            }
+
+            // claims still listed from emotes that are over go first, as at the start of any chain
+            if (Nested == 0)
+                ReleaseHeldAccountClaims();
+
+            // this object's own asking emotes, still in flight (OnPortal or OnDeath cleared IsBusy), already hold them
+            var heldHere = HoldsAccountClaims && chainClaims.TrueForAll(heldAccountClaims.Contains);
+
+            // from here this object's emotes are in flight, so the claims hold from the moment the answer takes them on
+            Nested++;
+
+            if (!AccountQuestLimits.TryTakeAnswer(chainClaims, NewClaimChain(), heldHere))
+            {
+                Nested--;
+                return;
+            }
+
+            heldAccountClaims ??= new List<AccountQuestLimits.Claim>();
+            foreach (var claim in chainClaims)
+            {
+                if (!heldAccountClaims.Contains(claim))
+                    heldAccountClaims.Add(claim);
+            }
+
+            Enqueue(emoteSet, player, chainClaims: chainClaims);
+        }
+
+        /// <summary>
         /// Executes a set of emotes to run with delays
         /// </summary>
         /// <param name="emoteSet">A list of emotes to execute</param>
         /// <param name="targetObject">An optional target, usually player</param>
         /// <param name="actionChain">For adding delays between emotes</param>
-        public bool ExecuteEmoteSet(PropertiesEmote emoteSet, WorldObject targetObject = null, bool nested = false)
+        /// <param name="chainClaims">ILT: the InqAccountQuest claims of the chain this set belongs to (EnqueueNestedSet).</param>
+        public bool ExecuteEmoteSet(PropertiesEmote emoteSet, WorldObject targetObject = null, bool nested = false, List<AccountQuestLimits.Claim> chainClaims = null)
         {
             //if (Debug) Console.WriteLine($"{WorldObject.Name}.EmoteManager.ExecuteEmoteSet({emoteSet}, {targetObject}, {nested})");
 
@@ -3979,14 +4286,18 @@ namespace ACE.Server.WorldObjects.Managers
             // there are some categories that shouldn't be queued, like heartbeats...
             if (IsBusy && !nested) return false;
 
+            // ILT: with nothing in flight, any InqAccountQuest claims still listed belong to emotes that are over
+            if (Nested == 0)
+                ReleaseHeldAccountClaims();
+
             // start action chain
             Nested++;
-            Enqueue(emoteSet, targetObject);
+            Enqueue(emoteSet, targetObject, chainClaims: chainClaims);
 
             return true;
         }
 
-        public void Enqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx = 0, float delay = 0.0f)
+        public void Enqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx = 0, float delay = 0.0f, List<AccountQuestLimits.Claim> chainClaims = null)
         {
             //if (Debug) Console.WriteLine($"{WorldObject.Name}.EmoteManager.Enqueue({emoteSet}, {targetObject}, {emoteIdx}, {delay})");
 
@@ -4040,26 +4351,54 @@ namespace ACE.Server.WorldObjects.Managers
                 // emote.Delay = pre-delay for current emote
                 actionChain.AddDelaySeconds(delay + emote.Delay);
 
-                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => DoEnqueue(emoteSet, targetObject, emoteIdx, emote));
+                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => DoEnqueue(emoteSet, targetObject, emoteIdx, emote, chainClaims));
                 actionChain.EnqueueChain();
             }
             else
             {
-                DoEnqueue(emoteSet, targetObject, emoteIdx, emote);
+                DoEnqueue(emoteSet, targetObject, emoteIdx, emote, chainClaims);
             }
         }
 
         /// <summary>
         /// This should only be called by Enqueue
         /// </summary>
-        private void DoEnqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx, PropertiesEmoteAction emote)
+        private void DoEnqueue(PropertiesEmote emoteSet, WorldObject targetObject, int emoteIdx, PropertiesEmoteAction emote, List<AccountQuestLimits.Claim> chainClaims = null)
         {
+            // ILT: a chain whose InqAccountQuest claim was taken over, or whose target left the world to log out, stops
+            // here, even for a step queued before then; otherwise its claims can't be taken over from here on
+            // (TryActOnChainClaims)
+            if (!TryActOnChainClaims(chainClaims, targetObject))
+            {
+                Nested--;
+                if (Nested == 0)
+                    IsBusy = false;
+                return;
+            }
+
             // If a previous emote in this chain (e.g. a failed Give) requested an abort,
             // stop here before firing this action. This prevents StampQuest from running
             // after a Give that failed due to full inventory or over-burden.
             if (AbortEmoteChain)
             {
                 AbortEmoteChain = false;
+                Nested--;
+                if (Nested == 0)
+                    IsBusy = false;
+                return;
+            }
+
+            // Bank lock (/banklock): a step on a banked currency would be refused by the locked bank (BankLock.cs) while the
+            // chain ran on - a reward handed over with its price never taken, or an item taken for a credit never made. A set
+            // continued in (Goto, an Inq test) is queued and runs after the steps that follow, so the sets this one can still
+            // reach count too: a set that can reach such a step stops here, before its next step, for a locked player, and the
+            // stop is logged for staff (BankLock.NoteStoppedSet). Like the scan-ahead below, it returns without the shared
+            // AbortEmoteChain flag, which would leak to a sibling nested chain.
+            // (The sets are the emote owner's, _worldObject, where GetEmoteSet finds every continuation - not a proxy's.)
+            if (targetObject is Player bankLockedPlayer && bankLockedPlayer.IsBankLocked && BankLock.ReachesBankStep(emoteSet, emoteIdx, _worldObject.Biota.PropertiesEmote))
+            {
+                bankLockedPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat($"Your bank is locked, so {WorldObject.Name} can't do that.", ChatMessageType.Broadcast));
+                BankLock.NoteStoppedSet(bankLockedPlayer, _worldObject, emoteSet, emoteIdx);
                 Nested--;
                 if (Nested == 0)
                     IsBusy = false;
@@ -4109,14 +4448,28 @@ namespace ACE.Server.WorldObjects.Managers
             }
             // ────────────────────────────────────────────────────────────────────────
 
-            var nextDelay = ExecuteEmote(emoteSet, emote, targetObject);
+            // ILT: the claims of this chain, for an InqAccountQuest step and the sets this step defers (executingClaims)
+            var previousClaims = executingClaims;
+            executingClaims = chainClaims;
+
+            float nextDelay;
+            try
+            {
+                nextDelay = ExecuteEmote(emoteSet, emote, targetObject);
+            }
+            finally
+            {
+                // an InqAccountQuest step can start this chain's claims: the rest of this set goes on with them too
+                chainClaims = executingClaims;
+                executingClaims = previousClaims;
+            }
 
 
             if (Debug)
                 Console.WriteLine($" - {nextDelay}");
 
             if (emoteIdx < emoteSet.PropertiesEmoteAction.Count - 1)
-                Enqueue(emoteSet, targetObject, emoteIdx + 1, nextDelay);
+                Enqueue(emoteSet, targetObject, emoteIdx + 1, nextDelay, chainClaims);
             else
             {
                 if (nextDelay > 0)
@@ -4144,7 +4497,7 @@ namespace ACE.Server.WorldObjects.Managers
             }
         }
 
-        private static bool EmoteIsBranchingType(PropertiesEmoteAction emote)
+        internal static bool EmoteIsBranchingType(PropertiesEmoteAction emote)
         {
             if (emote == null)
                 return false;
@@ -4155,6 +4508,8 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 case EmoteType.UpdateQuest:
                 case EmoteType.InqQuest:
+                case EmoteType.InqAccountQuest:
+                case EmoteType.InqIPQuest:
                 case EmoteType.InqQuestSolves:
                 case EmoteType.InqServerQuestSolves:
                 case EmoteType.InqBoolStat:
@@ -4225,6 +4580,52 @@ namespace ACE.Server.WorldObjects.Managers
             return _worldObject.Biota.PropertiesEmote.Where(x => x.Category == emoteCategory);
         }
 
+        /// <summary>
+        /// ILT: %aqt. While another use's reward is on its way (its claim holds the gate, no stamp yet), "a moment"; when a
+        /// chain that acted can't finish and the gate stays closed until a restart, says so; otherwise the account's time
+        /// until it can solve the quest again, as %tqt shows a character's.
+        /// </summary>
+        private static string AccountTimeText(AccountQuestLimits.AccountStatus status) => status.Hold switch
+        {
+            AccountQuestLimits.GateHold.InProgress => "a moment",
+            AccountQuestLimits.GateHold.ClosedUntilRestart => "a while (after the next server restart)",
+            _ => status.NextSolveTime.GetFriendlyString(),
+        };
+
+        /// <summary>ILT: a GrantRandomQuestStamp list without the quests marked [NoQB] (they can't be granted QB).</summary>
+        internal static List<string> WithoutQbExempt(IEnumerable<string> stamps, Func<string, bool> isQbExempt)
+            => stamps.Where(q => !isQbExempt(q)).ToList();
+
+        /// <summary>ILT: %iqt wording, as AccountTimeText words %aqt: a held gate says so instead of a time.</summary>
+        internal static string IpTimeText(AccountQuestLimits.IpStatus status) => status.Hold switch
+        {
+            AccountQuestLimits.GateHold.InProgress => "a moment",
+            AccountQuestLimits.GateHold.ClosedUntilRestart => "a while (after the next server restart)",
+            _ => status.NextSolveTime.GetFriendlyString(),
+        };
+
+        /// <summary>
+        /// ILT: the limit of this object's InqIPQuest step for a quest (its Amount, default 2), so %iqt in that step's sets
+        /// is worked out against the same limit as the gate. Matched on the full quest string ("Quest@ip") first, then on
+        /// the quest name.
+        /// </summary>
+        private int IpGateLimit(string quest)
+        {
+            var actions = _worldObject.Biota.PropertiesEmote?
+                .SelectMany(e => e.PropertiesEmoteAction ?? Enumerable.Empty<PropertiesEmoteAction>())
+                .Where(a => (EmoteType)a.Type == EmoteType.InqIPQuest && a.Message != null)
+                .ToList();
+
+            if (actions == null || actions.Count == 0)
+                return 2;
+
+            var name = QuestManager.GetQuestName(quest);
+            var gate = actions.FirstOrDefault(a => a.Message.Equals(quest, StringComparison.OrdinalIgnoreCase))
+                ?? actions.FirstOrDefault(a => QuestManager.GetQuestName(a.Message).Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            return gate?.Amount ?? 2;
+        }
+
         public string Replace(string message, WorldObject source, WorldObject target, string quest)
         {
             var result = message;
@@ -4279,30 +4680,61 @@ namespace ACE.Server.WorldObjects.Managers
             if (result.Contains("%CDtime"))
                 result = result.Replace($"{questName}@", "", StringComparison.OrdinalIgnoreCase);
 
+            // ILT: each quest lookup below runs only when the text uses its token, so a Tell that doesn't (one with only
+            // %aqt, say) reads no quest data, and a world database outage can't break it
             if (target is Player targetPlayer)
             {
-                result = result.Replace("%tqt", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
+                if (result.Contains("%tqt"))
+                    result = result.Replace("%tqt", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
-                result = result.Replace("%CDtime", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
+                if (result.Contains("%CDtime"))
+                    result = result.Replace("%CDtime", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
                 result = result.Replace("%tf", $"{(targetPlayer.Fellowship != null ? targetPlayer.Fellowship.FellowshipName : "")}");
 
-                result = result.Replace("%fqt", !string.IsNullOrWhiteSpace(quest) && targetPlayer.Fellowship != null && targetPlayer.Fellowship.ZoneKey == null ? targetPlayer.Fellowship.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
+                if (result.Contains("%fqt"))
+                    result = result.Replace("%fqt", !string.IsNullOrWhiteSpace(quest) && targetPlayer.Fellowship != null && targetPlayer.Fellowship.ZoneKey == null ? targetPlayer.Fellowship.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
-                result = result.Replace("%tqm", !string.IsNullOrWhiteSpace(quest) ? QuestManager.GetMaxSolves(questName).ToString() : "");
+                if (result.Contains("%tqm"))
+                    result = result.Replace("%tqm", !string.IsNullOrWhiteSpace(quest) ? QuestManager.GetMaxSolves(questName).ToString() : "");
 
-                result = result.Replace("%tqc", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetCurrentSolves(questName).ToString() : "");
+                if (result.Contains("%tqc"))
+                    result = result.Replace("%tqc", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetCurrentSolves(questName).ToString() : "");
+
+                // ILT custom: %tqt and %tqc for the whole account (InqAccountQuest content). Only read when the text uses them.
+                // When a claim holds the gate before any stamp, %aqt says so instead of "negative time" (AccountTimeText).
+                if (result.Contains("%aqt") || result.Contains("%aqc"))
+                {
+                    var account = !string.IsNullOrWhiteSpace(quest) ? AccountQuestLimits.GetStatus(targetPlayer, questName) : null;
+
+                    result = result.Replace("%aqt", account.HasValue ? AccountTimeText(account.Value) : "");
+
+                    result = result.Replace("%aqc", account.HasValue ? account.Value.Completions.ToString() : "");
+                }
+
+                // ILT custom: the IP group's window for InqIPQuest content, at the limit of this NPC's InqIPQuest step
+                if (result.Contains("%iqt") || result.Contains("%iqc"))
+                {
+                    var ip = !string.IsNullOrWhiteSpace(quest) ? AccountQuestLimits.GetIpStatus(targetPlayer, questName, IpGateLimit(quest)) : null;
+
+                    result = result.Replace("%iqt", ip.HasValue ? IpTimeText(ip.Value) : "");
+
+                    result = result.Replace("%iqc", ip.HasValue ? ip.Value.InWindow.ToString() : "");
+                }
             }
 
             if (source is Creature sourceCreature)
             {
-                result = result.Replace("%mqt", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
+                if (result.Contains("%mqt"))
+                    result = result.Replace("%mqt", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
-                result = result.Replace("%mxqt", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyLongString() : "");
+                if (result.Contains("%mxqt"))
+                    result = result.Replace("%mxqt", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyLongString() : "");
 
                 //result = result.Replace("%CDtime", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
-                result = result.Replace("%mqc", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetCurrentSolves(questName).ToString() : "");
+                if (result.Contains("%mqc"))
+                    result = result.Replace("%mqc", !string.IsNullOrWhiteSpace(quest) ? sourceCreature.QuestManager.GetCurrentSolves(questName).ToString() : "");
             }
 
             return result;
@@ -4594,7 +5026,9 @@ namespace ACE.Server.WorldObjects.Managers
                         // Gives are scheduled in data order before any later TakeItems run, so a
                         // running batch that exceeds here must fail now — a later Remove must not
                         // mask an earlier over-capacity Give.
-                        if (!batch.Add(action.WeenieClassId.Value, amount > 0 ? amount : 1))
+                        // Player.GiveFromEmote tops up carried stacks first, except for a tinted reward
+                        var intoCarriedStacks = (action.Palette ?? 0) <= 0 && (action.Shade ?? 0) <= 0;
+                        if (!batch.Add(action.WeenieClassId.Value, amount > 0 ? amount : 1, intoCarriedStacks))
                             return batch;
                         break;
 

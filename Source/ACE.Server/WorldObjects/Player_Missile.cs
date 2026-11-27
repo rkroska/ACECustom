@@ -3,6 +3,7 @@ using System.Numerics;
 
 using ACE.Entity.Enum;
 using ACE.Server.Entity.Actions;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics.Animation;
@@ -78,13 +79,17 @@ namespace ACE.Server.WorldObjects
                 return;
 
             var weapon = GetEquippedMissileWeapon();
-            var ammo = GetEquippedAmmo();
+            var ammo = GetEquippedOrQuiverAmmo();   // universal quiver: an empty slot may fire virtual ammo (Player_UniversalQuiver.cs)
 
             // sanity check
             accuracyLevel = Math.Clamp(accuracyLevel, 0.0f, 1.0f);
 
             if (weapon == null || weapon.IsAmmoLauncher && ammo == null)
             {
+                // a launcher with nothing to fire in missile mode (e.g. the Universal Quiver charm just went off)
+                if (weapon != null)
+                    QuiverOutOfAmmo();
+
                 OnAttackDone();
                 return;
             }
@@ -139,6 +144,26 @@ namespace ACE.Server.WorldObjects
             actionChain.EnqueueChain();
         }
 
+        // the "can't shoot while moving" line goes out at most once every 3 s (missile_block_while_moving)
+        private DateTime nextMovingShotMsg = DateTime.MinValue;
+
+        /// <summary>
+        /// True when missile_block_while_moving is on and a walk / run / strafe key is down: the shot must not leave. Sends
+        /// "You can't shoot while moving." (at most once every 3 s).
+        /// </summary>
+        private bool RefuseMovingShot()
+        {
+            if (!ServerConfig.missile_block_while_moving.Value || !IsHoldingMovementKey())
+                return false;
+
+            if (DateTime.UtcNow >= nextMovingShotMsg)
+            {
+                nextMovingShotMsg = DateTime.UtcNow.AddSeconds(3);
+                SendTransientError("You can't shoot while moving.");
+            }
+            return true;
+        }
+
         /// <summary>
         /// Launches a missile attack from player to target
         /// </summary>
@@ -154,9 +179,10 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var ammo = weapon.IsAmmoLauncher ? GetEquippedAmmo() : weapon;
+            var ammo = weapon.IsAmmoLauncher ? GetEquippedOrQuiverAmmo() : weapon;
             if (ammo == null)
             {
+                QuiverOutOfAmmo();   // a launcher with nothing to fire (e.g. the Universal Quiver charm just went off)
                 OnAttackDone();
                 return;
             }
@@ -178,6 +204,14 @@ namespace ACE.Server.WorldObjects
                 // this prevents the accuracy bar from refilling when 'repeat attacks' is enabled
                 OnAttackDone();
 
+                return;
+            }
+
+            // owner 2026-11-23 ("block run and gun for bow", TEST first): with missile_block_while_moving on, no shot leaves while
+            // a walk / run / strafe key is down - the first shot and every repeat shot both pass here
+            if (RefuseMovingShot())
+            {
+                OnAttackDone();
                 return;
             }
 
@@ -227,9 +261,19 @@ namespace ACE.Server.WorldObjects
 
             var launchTime = EnqueueMotionPersist(actionChain, aimLevel);
 
+            // set when movement began during the aim: no shot left, nothing was spent, and the attack ends below
+            var refusedAtLaunch = false;
+
             // launch projectile
             actionChain.AddAction(this, ActionType.PlayerMissile_LaunchProjectile, () =>
             {
+                // missile_block_while_moving: checked again here, as a walk / run / strafe key can go down during the aim
+                if (RefuseMovingShot())
+                {
+                    refusedAtLaunch = true;
+                    return;
+                }
+
                 // handle self-procs
                 TryProcEquippedItems(this, this, true, weapon);
                 TryDeedsBreathOfRenewal(target);   // QB Deeds (12k QB), against monsters only
@@ -244,14 +288,24 @@ namespace ACE.Server.WorldObjects
                 UpdateVitalDelta(Stamina, -staminaCost);
 
                 var projectile = LaunchProjectile(launcher, ammo, target, origin, orientation, velocity);
+                QuiverLogFirstShot(launcher, ammo);
                 UpdateAmmoAfterLaunch(ammo);
             });
 
-            // ammo remaining?
-            if (!ammo.UnlimitedUse && (ammo.StackSize == null || ammo.StackSize <= 1))
+            // ammo remaining? (virtual ammo never runs out; with the Universal Quiver charm the emptied slot fires on)
+            if (!IsQuiverVirtualAmmo(ammo) && !ammo.UnlimitedUse && (ammo.StackSize == null || ammo.StackSize <= 1)
+                && GetQuiverVirtualAmmo(launcher) == null)
             {
                 actionChain.AddAction(this, ActionType.PlayerMissile_OutOfAmmo, () =>
                 {
+                    if (refusedAtLaunch)
+                    {
+                        // the last arrow never left
+                        Attacking = false;
+                        OnAttackDone();
+                        return;
+                    }
+
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You are out of ammunition!"));
                     SetCombatMode(CombatMode.NonCombat);
                     Attacking = false;
@@ -273,7 +327,10 @@ namespace ACE.Server.WorldObjects
 
             actionChain.AddAction(this, ActionType.PlayerMissile_PlaceNewAmmo, () =>
             {
-                if (CombatMode == CombatMode.Missile)
+                // virtual quiver ammo is unknown to clients: nothing to show in the hand
+                // (and not for a launcher's last arrow that was used up while the charm took over: it no longer exists;
+                // a thrown weapon is its own ammo and still in the hand, so it always comes back)
+                if (CombatMode == CombatMode.Missile && !IsQuiverVirtualAmmo(ammo) && (!weapon.IsAmmoLauncher || !HasUniversalQuiverCharm || GetEquippedAmmo() == ammo))
                     EnqueueBroadcast(new GameMessageParentEvent(this, ammo, ACE.Entity.Enum.ParentLocation.RightHand, ACE.Entity.Enum.Placement.RightHandCombat));
             }); 
 
@@ -283,7 +340,7 @@ namespace ACE.Server.WorldObjects
             {
                 Attacking = false;
 
-                if (creature.IsAlive && GetCharacterOption(CharacterOption.AutoRepeatAttacks) && !IsBusy && !AttackCancelled)
+                if (!refusedAtLaunch && creature.IsAlive && GetCharacterOption(CharacterOption.AutoRepeatAttacks) && !IsBusy && !AttackCancelled)
                 {
                     // client starts refilling accuracy bar
                     Session.Network.EnqueueSend(new GameEventAttackDone(Session));
@@ -328,10 +385,19 @@ namespace ACE.Server.WorldObjects
             return 2.0f;
         }
 
+        /// <summary>
+        /// Uses up one piece of the ammo just fired (infinite ammo and Universal Quiver virtual ammo are never used up)
+        /// and tells the client.
+        /// </summary>
+        /// <param name="ammo">The ammo (or thrown weapon) that was fired.</param>
         public override void UpdateAmmoAfterLaunch(WorldObject ammo)
         {
             //if (ammo.UnlimitedUse)
             //    return;
+
+            // virtual quiver ammo was never sent to clients and is never used up
+            if (IsQuiverVirtualAmmo(ammo))
+                return;
 
             // hide previously held ammo
             EnqueueBroadcast(new GameMessagePickupEvent(ammo));

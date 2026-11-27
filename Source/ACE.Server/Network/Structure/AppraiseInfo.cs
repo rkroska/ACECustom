@@ -66,6 +66,23 @@ namespace ACE.Server.Network.Structure
         [GeneratedRegex("(\\B[A-Z])")]
         private static partial Regex CreatureNameRegex();
 
+        /// <summary>
+        /// A portal's Triune Weave requirement in the augmentation counts it now reads (the Triune retire, 2026-11-22): N asks
+        /// Creature 6,000 + N and Item and Life 4,000 + N each - the same numbers the portal's refusal names (Portal.cs). The cap
+        /// also counts the Triune the login move took (GetInt64ForGate never reads less), so the line names that too.
+        /// </summary>
+        private static string TriunePortalLine(int min, int max)
+        {
+            var hasMax = max > 0 && max != 999 && max > min;
+            var need = min > 0
+                ? $"Restricted to characters with {Creature.CreatureAugBase + min:N0} or more Creature Augmentations and {Creature.SchoolAugBase + min:N0} or more Item and Life Augmentations each."
+                : "";
+            var cap = hasMax
+                ? $"Characters augmented past {Creature.CreatureAugBase + max:N0} Creature / {Creature.SchoolAugBase + max:N0} Item and Life, or who held more than {max:N0} Triune Weave before it was retired, cannot use it."
+                : "";
+            return string.Join(" ", new[] { need, cap }.Where(x => x.Length > 0));
+        }
+
         public AppraiseInfo()
         {
             Flags = IdentifyResponseFlags.None;
@@ -126,6 +143,17 @@ namespace ACE.Server.Network.Structure
             if (Success && !(wo is Creature))
                 ACE.Server.Managers.ZoneControl.ZoneLootProps.Collect(wo, zcResolved, GearEssences.PropertiesCount(wo), IsLegacyTextBlock(zcResolved),
                     PropertiesInt, PropertiesFloat, zcFloats);
+
+            // Item bounties (rework 2026-11-12): a bounty's description is written from its terms as it is appraised, so one
+            // made before the rework (whose stored text says to use it on a ring or bracelet) reads the current instructions;
+            // a Bounty Ledger shows the examiner's bounties going and their progress when the examiner carries it. Display
+            // only - the item is never written.
+            if (!(wo is Creature))
+            {
+                var bountyText = ItemBounties.AppraisalText(wo, examiner);
+                if (bountyText != null)
+                    PropertiesString[PropertyString.LongDesc] = bountyText;
+            }
 
             // Help us make sure the item identify properly
             NPCLooksLikeObject = wo.GetProperty(PropertyBool.NpcLooksLikeObject) ?? false;
@@ -279,7 +307,9 @@ namespace ACE.Server.Network.Structure
                     var prefix = isMultiplier ? "x" : "";
                     string msg;
 
-                    if (req.max.GetValueOrDefault() > 0 && req.max.GetValueOrDefault() != 999 && req.value.GetValueOrDefault() > 0)
+                    if (req.type == PortalRequirement.TriuneWeave)
+                        msg = TriunePortalLine(req.value.GetValueOrDefault(), req.max.GetValueOrDefault());   // the counter is retired
+                    else if (req.max.GetValueOrDefault() > 0 && req.max.GetValueOrDefault() != 999 && req.value.GetValueOrDefault() > 0)
                         msg = $"Restricted to characters of {typeName} between {prefix}{req.value.Value} and {prefix}{req.max.Value}.";
                     else if (req.value.GetValueOrDefault() > 0)
                         msg = $"Restricted to characters of {typeName} {prefix}{req.value.Value} or greater.";
@@ -425,6 +455,16 @@ namespace ACE.Server.Network.Structure
                     PropertiesString[PropertyString.LongDesc] = forgeMsg;
             }
 
+            // Quiver looks: a charm or launcher with an arrow look / arrow size says so (ASCII, explicit \n).
+            var arrowMsg = ACE.Server.Entity.QuiverLook.BuildAppraisalLines(wo);
+            if (!string.IsNullOrEmpty(arrowMsg))
+            {
+                if (PropertiesString.TryGetValue(PropertyString.LongDesc, out var arrowLd) && !string.IsNullOrEmpty(arrowLd))
+                    PropertiesString[PropertyString.LongDesc] = arrowLd + $"\n\n{arrowMsg}";
+                else
+                    PropertiesString[PropertyString.LongDesc] = arrowMsg;
+            }
+
             // Enlarging / Shrinking Stones: an item drawn off its normal size says so (ASCII, explicit \n).
             var sizeMsg = ACE.Server.Entity.SizeStones.BuildAppraisalLine(wo);
             if (!string.IsNullOrEmpty(sizeMsg))
@@ -442,39 +482,15 @@ namespace ACE.Server.Network.Structure
                 (wo.WeenieClassId >= 777700051 && wo.WeenieClassId <= 777700070))
                 PropertiesBool.Remove(PropertyBool.UnlimitedUse);
 
-            // Charm of the Triune Weave - progress lives on the examiner's character, so a
-            // replacement charm always shows the true totals. Appraisal output only, never persisted.
-            if (wo.WeenieClassId == 777700030 && examiner != null)
+            // The Triune Weave charm and the four attack school charms are keepsakes since the Triune retire (owner 2026-11-22):
+            // what they held now sits on the augmentation counts. Appraisal output only, never persisted; levelled charms are
+            // other weenies and keep their own text.
+            if (wo.WeenieClassId == 777700030 || wo.WeenieClassId == 777700051 || wo.WeenieClassId == 777700056
+                || wo.WeenieClassId == 777700061 || wo.WeenieClassId == 777700066)
             {
-                var weave = examiner.GetProperty(PropertyInt64.TriuneWeaveCount) ?? 0;
-                var msg = weave > 0
-                    ? $"The weave has been empowered {weave:N0} times:\n   +{weave:N0} Creature Augmentations\n   +{weave:N0} Item Augmentations\n   +{weave:N0} Life Augmentations\n\nFeed it Gems of the Triune Weave to empower it further."
-                    : "The weave is dormant. Feed it Gems of the Triune Weave to empower it, granting +1 Creature, Item, and Life augmentation per point.";
-
-                if (PropertiesString.ContainsKey(PropertyString.LongDesc))
-                    PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
-                else
-                    PropertiesString[PropertyString.LongDesc] = msg;
-            }
-
-            // School charms (War/Void/Melee/Missile) - counters accumulate toward future ability
-            // unlocks; like the Triune Weave, progress lives on the examiner's character.
-            PropertyInt64? schoolCharmProp =
-                wo.WeenieClassId == 777700051 ? PropertyInt64.BattlemagesWrathCharmCount :
-                wo.WeenieClassId == 777700056 ? PropertyInt64.NetherVeilCharmCount :
-                wo.WeenieClassId == 777700061 ? PropertyInt64.CrashingSteelCharmCount :
-                wo.WeenieClassId == 777700066 ? PropertyInt64.TrueShotCharmCount :
-                (PropertyInt64?)null;
-
-            if (schoolCharmProp != null && examiner != null)
-            {
-                var count = examiner.GetProperty(schoolCharmProp.Value) ?? 0;
-                var msg = count > 0
-                    ? $"The charm has been empowered {count:N0} times. Its deeper powers remain sealed."
-                    : "The charm is dormant. Feed it Gems to empower it.";
-
-                if (PropertiesString.ContainsKey(PropertyString.LongDesc))
-                    PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                const string msg = "This charm's power now lives in your augmentations.";
+                if (PropertiesString.TryGetValue(PropertyString.LongDesc, out var charmLd) && !string.IsNullOrEmpty(charmLd))
+                    PropertiesString[PropertyString.LongDesc] = charmLd + "\n\n" + msg;
                 else
                     PropertiesString[PropertyString.LongDesc] = msg;
             }
@@ -1734,7 +1750,7 @@ namespace ACE.Server.Network.Structure
 
             effectDescriptions.Add($"- Effective Melee Defense: {emdVal}");
 
-            // the tier wield gates (owner 2026-10-05: Creature + Item + Life at T11-T15, Triune at T16+) - the same lines, in the
+            // the tier wield gates (Creature + Item + Life at every tier since the 2026-11-22 Triune retire) - the same lines, in the
             // same order, as the armour block (LootGenerationFactory.WieldLineFor)
             foreach (var gate in ACE.Server.Factories.LootGenerationFactory.WieldLineFor(weapon).Split('\n'))
                 if (gate.Length > 0)

@@ -103,7 +103,7 @@ namespace ACE.Server.WorldObjects
             // damager, the player the corpse and its loot belong to.
             BountyManager.OnCreatureKilled(this);
 
-            // Item bounties (owner 2026-11-10): the top damager's active bounty slots (R1, R2, B1, B2) count a T11+ kill in
+            // Item bounties (owner 2026-11-10): the top damager's bounties going (slots #1-#4) count a T11+ kill in
             // exactly their tier, or a kill in their bounty region below T11 (Valley of Death / Thaelaryn Island) - see ItemBounties.
             ItemBounties.OnCreatureKilled(this);
 
@@ -734,9 +734,10 @@ namespace ACE.Server.WorldObjects
                 return;
 
             // A player who is logging out still counts as online until the final save returns, and a bank write after
-            // that save was issued would never be stored: leave the coins on the corpse instead.
+            // that save was issued would never be stored: leave the coins on the corpse instead. The same for a locked bank
+            // (/banklock), which takes nothing in: the coins stay on the corpse rather than being destroyed for nothing.
             var player = PlayerManager.GetOnlinePlayer(killerGuid);
-            if (player == null || player.IsLoggingOut)
+            if (player == null || player.IsLoggingOut || player.IsBankLocked)
                 return;
 
             var coinStacks = corpse.Inventory.Values.Where(i => i.WeenieClassId == (uint)ACE.Entity.Enum.WeenieClassName.W_COINSTACK_CLASS).ToList();
@@ -761,6 +762,15 @@ namespace ACE.Server.WorldObjects
             // lands, so unless this thread owns the player's landblock the bank write runs on the world queue.
             LandblockManager.RunOnThreadFor(player, ActionType.CreatureDeath_BankCorpseCoins, () =>
             {
+                // bank lock (/banklock) set after the check above, while this credit waited for the player's thread: the coins
+                // are already off the corpse, so the player is told and the log says what to credit by hand
+                if (player.IsBankLocked)
+                {
+                    log.Warn($"[BankLock] {player.Name} (0x{player.Guid.Full:X8}): {total:N0} kill pyreals from {Name} not banked - the bank was locked while the credit was queued. Credit it by hand after /bankunlock.");
+                    player.SendMessage($"Your bank is locked, so {total:N0} pyreals from {Name} were not banked.", ChatMessageType.Broadcast);
+                    return;
+                }
+
                 // pyreal ledger: a labeled gain (Loot, this creature), never an unexplained one
                 using (PyrealLedger.BeginFor(PyrealLedger.SrcLoot, this, player))
                     player.BankedPyreals = (player.BankedPyreals ?? 0) + total;

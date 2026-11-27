@@ -155,6 +155,13 @@ namespace ACE.Server.Command.Handlers
             + "effect <name> [dot on|off | dmg <amount> | type <name|percent> | interval <secs>] | reload")]
         public static void HandleZoneControl(Session session, params string[] parameters)
         {
+            // every store save this command makes is logged as this player's (ZoneControlChangeLog: whole-part entries)
+            using (ZoneControlChangeLog.ActingAs(EditActor(session)))
+                HandleZoneControlCore(session, parameters);
+        }
+
+        private static void HandleZoneControlCore(Session session, params string[] parameters)
+        {
             void Msg(string s) => ChatPacket.SendServerMessage(session, s, ChatMessageType.Broadcast);
 
             // Bare /zonecontrol = this usage dump. `help` no longer stops here (2026-09-03): it falls through to
@@ -859,11 +866,7 @@ namespace ACE.Server.Command.Handlers
                         if (wcid.HasValue && rank != ZcRank.None)
                         { StatRowFor(area.Profile, wcid, rank, false, out var refusal); Msg(refusal); return; }
 
-                        ZoneControlManager.MutateArea(name, a =>
-                        {
-                            var vp = StatRowFor(a.Profile, wcid, rank, create: true, out _);
-                            vp.Stats[stat] = new StatCurve { Base = value, Growth = 1.0, Additive = false };
-                        });
+                        ZoneStatEditor.Set(ZoneStatTarget.ForZone(name, wcid, rank), stat, value, EditActor(session));
                         Msg($"'{name}'{(wcid.HasValue ? " [wcid " + wcid.Value + "]" : "")}{RankTag(rank)} {stat} = {FmtStatEcho(value)}. " +
                             $"{(area.Enabled ? "" : "Zone still DISABLED - /zonecontrol enable " + name)}");
                         return;
@@ -880,12 +883,7 @@ namespace ACE.Server.Command.Handlers
                         var stat = NormalizeStat(args[2]) ?? args[2].Trim().ToLowerInvariant();
                         if (wcid.HasValue && rank != ZcRank.None)
                         { StatRowFor(area.Profile, wcid, rank, false, out var refusal); Msg(refusal); return; }
-                        var removed = false;
-                        ZoneControlManager.MutateArea(name, a =>
-                        {
-                            var vp = StatRowFor(a.Profile, wcid, rank, create: false, out _);
-                            if (vp != null) removed = vp.Stats.Remove(stat);
-                        });
+                        var removed = ZoneStatEditor.Clear(ZoneStatTarget.ForZone(name, wcid, rank), stat, EditActor(session)).Status == ZoneStatEditStatus.Applied;
                         Msg(removed ? $"'{name}'{RankTag(rank)} {stat} cleared." : "That stat wasn't set" + (rank != ZcRank.None ? " on that rank row." : "."));
                         return;
                     }
@@ -1255,6 +1253,18 @@ namespace ACE.Server.Command.Handlers
                             return;
                         }
                         var helpFilter = args.Count >= 2 && !args[1].StartsWith("--") ? args[1] : null;
+
+                        // help <stat> = what the stat does (ZoneStatHelp, the same text as the portal's Zone Control page)
+                        var helpStat = helpFilter == null ? null : ZoneStatEditor.NormalizeStat(helpFilter);
+                        if (helpStat != null)
+                        {
+                            var statLines = ZoneStatHelp.ChatLines(helpStat);
+                            if (statLines.Count == 0)
+                                Msg($"No help has been written for {helpStat} yet.");
+                            foreach (var line in statLines) Msg(line);
+                            return;
+                        }
+
                         foreach (var g in ZoneControlCommandHelp.Groups)
                         {
                             var rows = ZoneControlCommandHelp.All.Where(e => e.Group == g
@@ -2716,10 +2726,7 @@ namespace ACE.Server.Command.Handlers
                                 || !int.TryParse(args[start + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out entryAmount)
                                 || !int.TryParse(args[start + 2], NumberStyles.Integer, CultureInfo.InvariantCulture, out entryWeight))
                                 return tableUsage;
-                            if (entryAmount < 1 || entryAmount > BountyManager.MaxAmount) return $"the amount must be 1-{BountyManager.MaxAmount:N0}.";
-                            if (entryWeight < 1 || entryWeight > BountyRewardTable.MaxWeight) return $"the weight must be 1-{BountyRewardTable.MaxWeight:N0}.";
-                            if (!BountyManager.IsGivableItem(entryWcid)) return $"{entryWcid} isn't an item a player can carry.";
-                            return null;
+                            return BountyEdits.CheckRewardRow(entryWcid, entryAmount, entryWeight);
                         }
 
                         Func<BountyRewardTable, string> tableChange;
@@ -3233,8 +3240,7 @@ namespace ACE.Server.Command.Handlers
                             if (dstat == null) { Msg("Unknown stat. Stats: " + string.Join(", ", ZoneStat.All)); return; }
                             if (!TryDouble(args[4], out var dval)) { Msg("value must be a number."); return; }
 
-                            ZoneControlManager.MutateVariationDefault(dvar, d =>
-                                d.Profile.RankLayer(rank, create: true).Stats[dstat] = new StatCurve { Base = dval, Growth = 1.0, Additive = false });
+                            ZoneStatEditor.Set(ZoneStatTarget.ForDefault(dvar, rank), dstat, dval, EditActor(session));
                             Msg($"Default v{dvar}{RankTag(rank)} {dstat} = {FmtStatEcho(dval)}. " + (rank == ZcRank.None
                                 ? $"Every zone at v{dvar} that doesn't set it inherits this."
                                 : $"Every {ZoneRank.Label(rank)} at v{dvar} reads this instead of the Default row."));
@@ -3251,12 +3257,7 @@ namespace ACE.Server.Command.Handlers
                             // Found 2026-08-24 after loot_max_drops -> loot_drops_min. Setting still
                             // validates - you may only clear rubbish, never author it.
                             var dstat = NormalizeStat(args[3]) ?? args[3].Trim().ToLowerInvariant();
-                            var dremoved = false;
-                            ZoneControlManager.MutateVariationDefault(dvar, d =>
-                            {
-                                var row = d.Profile.RankLayer(rank, create: false);
-                                if (row != null) dremoved = row.Stats.Remove(dstat);
-                            });
+                            var dremoved = ZoneStatEditor.Clear(ZoneStatTarget.ForDefault(dvar, rank), dstat, EditActor(session)).Status == ZoneStatEditStatus.Applied;
                             Msg(dremoved ? $"Default v{dvar}{RankTag(rank)} {dstat} cleared." : $"That stat wasn't set on the Default{RankTag(rank)}.");
                             return;
                         }
@@ -3498,17 +3499,18 @@ namespace ACE.Server.Command.Handlers
               .Append(d.GraceSeconds.ToString(CultureInfo.InvariantCulture));
         }
 
-        /// <summary>"|pcoindefs=killsperhour,mult" - the Prestige Coin falloff SERVER settings (zc_pcoin_falloff_kills_per_hour /
-        /// zc_pcoin_falloff_mult, cleaned as the kill path cleans them), so the plugin can show what pcoin_falloff_kills_per_hour /
-        /// pcoin_falloff_mult fall back to when a zone or tier Default leaves them unset (2026-11-01). Fixed order = the pcoin_falloff_*
-        /// tail of ZoneStat.All. Sent LAST on both [[ZC]] and [[ZCSESS]]; an older plugin ignores the unknown key. APPEND-ONLY: the
-        /// plugin indexes this list positionally.</summary>
+        /// <summary>"|pcoindefs=killsperhour,mult" - the Prestige Coin kill cap SERVER values behind the Zone Control stats
+        /// pcoin_falloff_kills_per_hour / pcoin_falloff_mult (zc_kill_cap_start, and the share each step keeps = 1 -
+        /// zc_kill_cap_reduction; cleaned as the kill path cleans them), so the plugin can show what those stats fall back to when
+        /// a zone or tier Default leaves them unset (2026-11-01; kill cap names 2026-11-17, same two values). Fixed order = the
+        /// pcoin_falloff_* tail of ZoneStat.All. Sent LAST on both [[ZC]] and [[ZCSESS]]; an older plugin ignores the unknown key.
+        /// APPEND-ONLY: the plugin indexes this list positionally.</summary>
         private static void AppendPcoinDefs(StringBuilder sb)
         {
             var d = TierRewardScale.ServerFalloff();
             sb.Append("|pcoindefs=")
-              .Append(d.KillsPerHour.ToString(CultureInfo.InvariantCulture)).Append(',')
-              .Append(d.Mult.ToString(CultureInfo.InvariantCulture));
+              .Append(d.Start.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(d.Keep.ToString(CultureInfo.InvariantCulture));
         }
 
         /// <summary>REGION BOUNTIES (2026-10-07): "|regionbounty_vod=0|regionbountylist_vod=..." per region (same list format as
@@ -4530,16 +4532,12 @@ namespace ACE.Server.Command.Handlers
         /// inside it. Returns null with <paramref name="refusal"/> set for --wcid + --rank (a bucket has
         /// no rows). <paramref name="create"/> = author (set) vs inspect/clear.</summary>
         private static ZoneVariantProfile StatRowFor(ZoneScalingProfile profile, uint? wcid, ZcRank rank, bool create, out string refusal)
-        {
-            refusal = null;
-            if (wcid.HasValue && rank != ZcRank.None)
-            {
-                refusal = "A monster override has no rank rows - it IS one rank. Drop --rank, or set the rank row on the zone / tier without --wcid.";
-                return null;
-            }
-            var layer = wcid.HasValue ? profile.VariantForWcid(wcid.Value, create) : profile.Minion;
-            return layer?.RankLayer(rank, create);
-        }
+            => ZoneStatEditor.RowFor(profile, wcid, rank, create, out refusal);
+
+        /// <summary>Who the change log credits for a stat edit made by this command.</summary>
+        private static ZoneStatActor EditActor(Session session) => session?.Player != null
+            ? new ZoneStatActor { Name = session.Player.Name, Source = ZoneStatActor.SourceGame }
+            : new ZoneStatActor { Name = "console", Source = ZoneStatActor.SourceConsole };
 
         private static string RankTag(ZcRank rank) => rank == ZcRank.None ? "" : " [" + ZoneRank.Label(rank) + " row]";
 
@@ -4549,9 +4547,7 @@ namespace ACE.Server.Command.Handlers
         /// <summary>The most reward rows a bountytable delete's audit line lists; the rest go to the server log only.</summary>
         private const int MaxAuditRewardRows = 10;
 
-        /// <summary>One reward table row for bountytable's audit lines: "5 x Bag of Rebirth (78780315), weight 10", or "(none)".</summary>
-        private static string RewardRowText(BountyRewardEntry e)
-            => e == null ? "(none)" : $"{e.Amount:N0} x {RoomAssignManager.ItemName(e.Wcid)} ({e.Wcid}), weight {e.Weight:N0}";
+        private static string RewardRowText(BountyRewardEntry e) => BountyEdits.RewardRowText(e);
 
         private static bool TryHex(string s, out int value)
         {
@@ -4564,18 +4560,7 @@ namespace ACE.Server.Command.Handlers
         /// dropped a bag on every kill, a NaN loot_grade_floor forced every grade to 0). Thousands separators are allowed only
         /// as real 3-digit groups after a non-zero lead ("151,200" for odds): "0,5" used to read as 5 (x10 a vuln cap or a DoT
         /// multiplier) and is now refused, like "0,500", currency signs and parentheses (review 2026-10-04).</summary>
-        private static bool TryDouble(string s, out double value)
-        {
-            value = 0;
-            s = s?.Trim();
-            if (string.IsNullOrEmpty(s) || (s.Contains(',') && !ThousandsGroups.IsMatch(s)))
-                return false;
-            return double.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out value)
-                && double.IsFinite(value);
-        }
-
-        private static readonly System.Text.RegularExpressions.Regex ThousandsGroups =
-            new System.Text.RegularExpressions.Regex(@"^[+-]?[1-9]\d{0,2}(,\d{3})+(\.\d*)?([eE][+-]?\d+)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        private static bool TryDouble(string s, out double value) => ZoneStatEditor.TryParseValue(s, out value);
 
         /// <summary>A finite plain number - no thousands separators ("0,1" is refused, never read as 1), no currency or
         /// parentheses. For values where a comma can only be a mistyped decimal point (chances, tier anchors).</summary>
@@ -5506,11 +5491,7 @@ namespace ACE.Server.Command.Handlers
             return dt != DamageType.Undef && Enum.IsDefined(typeof(DamageType), dt) && !dt.IsMultiDamage();
         }
 
-        private static string NormalizeStat(string s)
-        {
-            s = s.Trim().ToLowerInvariant();
-            return ZoneStat.All.FirstOrDefault(k => k.Equals(s, StringComparison.OrdinalIgnoreCase));
-        }
+        private static string NormalizeStat(string s) => ZoneStatEditor.NormalizeStat(s);
 
         /// <summary>Parse a CombatBodyPart by enum name (case-insensitive) or raw int; rejects Undefined.</summary>
         private static bool TryParseBodyPart(string s, out CombatBodyPart part)
@@ -5818,7 +5799,7 @@ namespace ACE.Server.Command.Handlers
             if (verb.Equals("curves", StringComparison.OrdinalIgnoreCase))
             {
                 Msg("Aug ladder - the interpolation basis for --curve augs:");
-                Msg("  tier   creature    item  triune    life   TOTAL   fraction");
+                Msg("  tier   creature    item    life   TOTAL   fraction");
                 var p11 = AugPowerAt(MinBoundedTier);
                 var p25 = AugPowerAt(MaxTunedTier);
                 for (var t = MinBoundedTier; t <= MaxTunedTier; t++)
@@ -5826,10 +5807,10 @@ namespace ACE.Server.Command.Handlers
                     var row = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(t);
                     var pw = AugPowerAt(t);
                     var frac = p25 > p11 ? (pw - p11) / (double)(p25 - p11) : 0.0;
-                    Msg($"  T{t,-4} {row?.MinWieldCreature ?? 0,8} {row?.MinWieldAugs ?? 0,7} {row?.MinWieldTriune ?? 0,7} {LifeAugCap,7} {pw,7}   {frac,7:0.000}");
+                    Msg($"  T{t,-4} {row?.MinWieldCreature ?? 0,8} {row?.MinWieldAugs ?? 0,7} {row?.MinWieldLife ?? 0,7} {pw,7}   {frac,7:0.000}");
                 }
-                Msg($"  Life is a CONSTANT {LifeAugCap} - a real capped player is 6000 + 4000 + 4000 = 14000 augs,");
-                Msg("  then 500 Triune per tier from T16 (owner 2026-09-01). It shifts the curve, not its shape.");
+                Msg("  TOTAL keeps the curve these tiers were tuned on: Creature + Item + a flat 4000 Life, plus ONE 500 per tier past");
+                Msg("  T15 (the old Triune step) - not the three 500s each school now climbs. It shifts the curve, not its shape.");
                 return;
             }
 
@@ -5917,10 +5898,9 @@ namespace ACE.Server.Command.Handlers
         private const int MaxTunedTier = 25;
         private const int MinBoundedTier = ZoneControlManager.MinBoundedVariation;
 
-        /// <summary>Life augs are capped and UNGATED, so every real player at cap carries the same
-        /// 4,000 (owner 2026-09-01: "6k creature, 4k item, 4k life is the max a real player has").
-        /// TierHitGate does not read them - Life cannot distinguish two players, so it is a constant
-        /// offset here rather than a variable.</summary>
+        /// <summary>The Life every player at the luminance cap carries (owner 2026-09-01: "6k creature, 4k item, 4k life is
+        /// the max a real player has"). The basis counts Life as this constant: past the caps the row's Life climbs with
+        /// Creature and Item (one old Triune step), and that step is counted once below.</summary>
         private const int LifeAugCap = 4000;
 
         /// <summary>
@@ -5928,8 +5908,12 @@ namespace ACE.Server.Command.Handlers
         /// (WeaponScalingManager, the same rows TierHitGate gates on, so the tuning basis and the gate
         /// can never drift) plus the flat Life cap.
         ///
+        /// Since the 2026-11-22 Triune retire a T16+ row asks Creature / Item / Life each +N where it used to ask N Triune.
+        /// The basis keeps the OLD numbers (one N, not three) so every curve authored with --curve augs reads the same:
+        /// N = the part of all three above 6,000 / 4,000 / 4,000, and C + I + 4,000 - N = the old C0 + I0 + N + 4,000.
+        ///
         /// The shape this produces is why the default curve is not linear: Creature and Item climb to
-        /// their caps by T15 and then stop, and from T16 every remaining point is Triune. Growth is
+        /// their caps by T15, and from T16 the growth is the one step above the caps (the old Triune). Growth is
         /// therefore about +1,000 per tier to T15 and +500 per tier after it.
         /// </summary>
         private static int AugPowerAt(int tier)
@@ -5937,7 +5921,12 @@ namespace ACE.Server.Command.Handlers
             var row = ACE.Server.Managers.WeaponScaling.WeaponScalingManager.GetTier(tier);
             if (row == null)
                 return LifeAugCap;
-            return row.MinWieldCreature + row.MinWieldAugs + row.MinWieldTriune + LifeAugCap;
+            // the fold's own number when it left one (a custom row below a cap would read short from the gates); else the part
+            // of all three past the caps (the default rows, already on the folded ladder)
+            var pastCaps = row.FoldedTriune > 0
+                ? row.FoldedTriune
+                : Math.Max(0, Math.Min(row.MinWieldCreature - 6000, Math.Min(row.MinWieldAugs - 4000, row.MinWieldLife - 4000)));
+            return row.MinWieldCreature + row.MinWieldAugs - pastCaps + LifeAugCap;
         }
 
         private static void HandleMobCheck(string zoneName, uint mobWcid, Action<string> Msg)

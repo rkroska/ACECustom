@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
-using System.Runtime.CompilerServices;
 
 using log4net;
 
@@ -28,8 +26,10 @@ namespace ACE.Server.Managers.ZoneControl
     /// (LandblockManager.RunOnThreadFor), exactly as BountyManager hands off its credit. No save is forced: the regular character
     /// save stores the properties.
     ///
-    /// FALLOFF (2026-11-01): coins stay as they are up to a pace of zc_pcoin_falloff_kills_per_hour (375) full-value kills an
-    /// hour; every kill past that pace pays zc_pcoin_falloff_mult (0.5) of its coins. See TierRewardScale.Falloff.
+    /// KILL CAP (falloff 2026-11-01; steps per coin hour 2026-11-17): of a character's coin kills in one coin hour (60 minutes
+    /// from their first), kills 1-375 pay in full, then the pay is cut by half every 75 kills (376-450 half, 451-525 a quarter,
+    /// 526-600 an eighth ...), so an hour never pays more than 450 kills' worth (the zc_kill_cap_* settings). See
+    /// TierRewardScale.FalloffKill.
     /// </summary>
     public static class TierRewards
     {
@@ -88,7 +88,7 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!(zoneValue * credit > 0))
                     return;
 
-                // past the hourly pace a kill pays a share of its coins (a kill that pays nothing never reaches the count)
+                // past the coin hour's full-rate kills a kill pays a share of its coins (still counted when it pays nothing)
                 var paid = ApplyFalloff(player, credit, falloff);
                 var earned = zoneValue * paid;
                 if (!(earned > 0))
@@ -104,6 +104,14 @@ namespace ACE.Server.Managers.ZoneControl
                 if (whole <= 0)
                     return;
 
+                // bank lock (/banklock): a locked bank takes nothing in - no coins, and the player is told so where the
+                // "added to your bank" line would be
+                if (player.IsBankLocked)
+                {
+                    player.SendMessage($"Your bank is locked, so {whole:N0} Prestige Coin{(whole == 1 ? " was" : "s were")} not banked.", ChatMessageType.Broadcast);
+                    return;
+                }
+
                 // economy ledger: a labeled faucet (Kill, this creature), never an unexplained bank change
                 using (PyrealLedger.BeginFor(EconomyLedger.SrcKill, victim, player))
                     player.BankedPrestigeCoins = (player.BankedPrestigeCoins ?? 0) + whole;
@@ -116,86 +124,68 @@ namespace ACE.Server.Managers.ZoneControl
             }
         }
 
-        // ---- Prestige Coin falloff (2026-11-01) -----------------------------------------------------------------------------
-
-        /// <summary>Least time between two "past the pace" messages to one character, in seconds, so a player who hovers around
-        /// the pace is not told on every pull.</summary>
-        private const double FalloffNoticeQuietSeconds = 600;
-
-        /// <summary>Least time with no cut kill before a player who was told about the falloff is told they pay in full again, in
-        /// seconds. The real wait is the longer of this and the falloff window (288 s at the defaults), so a player pulling in
-        /// packs above the pace is not told "full again" between every pull.</summary>
-        private const double FalloffFullAgainMinSeconds = 60;
-
-        /// <summary>Per online character, never saved: whether their coin kills are being cut, when the last cut was, and
-        /// whether they were told.</summary>
-        private sealed class FalloffNotice
-        {
-            public bool Cut;
-            public double LastCut;
-            public bool Told;
-            public double QuietUntil;
-        }
-
-        /// <summary>Keyed weakly on the Player object, so a logged-out character's entry goes with it.</summary>
-        private static readonly ConditionalWeakTable<Player, FalloffNotice> falloffNotices = new();
+        // ---- Prestige Coin kill cap (falloff 2026-11-01; steps per coin hour 2026-11-17) ------------------------------------
 
         /// <summary>
-        /// This kill through the falloff, on the player's own thread. Reads and saves how far ahead of the pace they are
-        /// (PropertyFloat.PrestigeCoinPaceDebt / PrestigeCoinPaceDebtTime, in seconds - saved, so relogging never empties it,
-        /// and time offline drains it; see TierRewardScale.FalloffOnDebt). Tells them when their kills start paying less and
-        /// when they pay in full again. Returns the credit to pay coins on (= <paramref name="credit"/> while under the pace).
+        /// This kill through the falloff, on the player's own thread. Reads and saves their coin hour (PropertyFloat.PrestigeCoinHourShare
+        /// / PrestigeCoinHourStart - saved, so relogging never resets it, and an hour that ran out while offline is simply over; see
+        /// TierRewardScale.FalloffHour / FalloffKill). Tells them once as each step starts ("Prestige Coins: 375 kills this hour. Your
+        /// next 75 kills pay 50 pct of their coins (the hour ends in 42 minutes).") down to steps paying 1 pct, always at a hard stop,
+        /// and once when a new hour starts after one that reached a cut step. At most one message per step per hour, so no quiet
+        /// timer is needed. Returns the credit to pay coins on (= <paramref name="credit"/> while in the full-rate band).
         /// </summary>
         private static double ApplyFalloff(Player player, double credit, TierRewardScale.FalloffDials dials)
         {
-            // No falloff where this kill happened: full pay, and the saved count is left exactly as it was. Emptying it here
-            // would let one kill in a no-falloff zone hand back the whole reserve.
-            if (!(dials.KillsPerHour > 0))
+            // the rolling-pace values the first version saved (2026-11-01..17) are never read now: drop them on sight
+            if (player.GetProperty(PropertyFloat.PrestigeCoinPaceDebt).HasValue)
+                player.RemoveProperty(PropertyFloat.PrestigeCoinPaceDebt);
+            if (player.GetProperty(PropertyFloat.PrestigeCoinPaceDebtTime).HasValue)
+                player.RemoveProperty(PropertyFloat.PrestigeCoinPaceDebtTime);
+
+            // No falloff where this kill happened: full pay, and the coin hour is left exactly as it was. Resetting or adding to
+            // it here would let a kill in a no-falloff zone change what the player's kills elsewhere pay.
+            if (!dials.On)
                 return credit;
 
             var now = Time.GetUnixTime();
-            var debt = player.GetProperty(PropertyFloat.PrestigeCoinPaceDebt) ?? 0;
-            var last = player.GetProperty(PropertyFloat.PrestigeCoinPaceDebtTime);
-            var elapsed = last.HasValue ? now - last.Value : 0.0;
+            // the saved hour is a share of the full-rate start; the kill cap works in server kills
+            var savedShare = player.GetProperty(PropertyFloat.PrestigeCoinHourShare);
+            var (share, start, fresh) = TierRewardScale.FalloffHour(savedShare, player.GetProperty(PropertyFloat.PrestigeCoinHourStart), now);
+            var count = TierRewardScale.FalloffCountFromSaved(share, dials);
 
-            var (paid, newDebt, reduced) = TierRewardScale.FalloffOnDebt(debt, elapsed, credit, dials);
+            // the steps, built once for this kill
+            var bands = TierRewardScale.FalloffBands(dials);
 
-            if (newDebt > 0)
+            // a new hour after one that reached a reduced band: say so before this kill's own notice, if any
+            if (fresh && savedShare.HasValue && TierRewardScale.FalloffBandAt(TierRewardScale.FalloffCountFromSaved(savedShare.Value, dials), bands).Rate < 1.0)
+                player.SendMessage("Prestige Coins: a new hour has started, so your kills pay their full coins again.", ChatMessageType.Broadcast);
+
+            var before = TierRewardScale.FalloffBandAt(count, bands).Rate;
+            var (paid, newCount, _) = TierRewardScale.FalloffKill(count, credit, dials, bands);
+
+            player.SetProperty(PropertyFloat.PrestigeCoinHourShare, TierRewardScale.FalloffCountToSaved(newCount, dials));
+            player.SetProperty(PropertyFloat.PrestigeCoinHourStart, start);
+
+            // the next kill starts in a lower band than this one did: tell them what it pays and for how long (not for shares
+            // under 1 pct - with no stop the steps keep falling, and a fast hunter would hear about every one)
+            var (after, from, upTo) = TierRewardScale.FalloffBandAt(newCount, bands);
+            if (TierRewardScale.FalloffNotice(before, after))
             {
-                player.SetProperty(PropertyFloat.PrestigeCoinPaceDebt, newDebt);
-                player.SetProperty(PropertyFloat.PrestigeCoinPaceDebtTime, now);
-            }
-            else
-            {
-                player.RemoveProperty(PropertyFloat.PrestigeCoinPaceDebt);
-                player.RemoveProperty(PropertyFloat.PrestigeCoinPaceDebtTime);
-            }
+                var minutes = (int)Math.Max(1, Math.Ceiling((start + TierRewardScale.CoinHourSeconds - now) / 60.0));
+                var left = $"{minutes} minute{(minutes == 1 ? "" : "s")}";
+                var kills = TierRewardScale.Kills(from * dials.Scale);
+                var pct = TierRewardScale.Pct(after);
 
-            var notice = falloffNotices.GetValue(player, _ => new FalloffNotice());
-            var pace = dials.KillsPerHour.ToString("0.#", CultureInfo.InvariantCulture);
+                // a step that ends: name how many kills it lasts, not the hour (the share falls again after it)
+                string text;
+                if (!(after > 0))
+                    text = $"Prestige Coins: {kills} kills this hour. Kills pay no coins for the next {left}.";
+                else if (double.IsPositiveInfinity(upTo))
+                    text = $"Prestige Coins: {kills} kills this hour. Kills now pay {pct} pct of their coins for the next {left}.";
+                else
+                    text = $"Prestige Coins: {kills} kills this hour. Your next {TierRewardScale.Kills((upTo - newCount) * dials.Scale)} kills pay {pct} pct of their coins (the hour ends in {left}).";
 
-            if (reduced)
-            {
-                notice.Cut = true;
-                notice.LastCut = now;
-
-                // checked on every cut kill, so a message held back by the quiet time still goes out if the cut outlasts it
-                if (!notice.Told && now >= notice.QuietUntil)
-                {
-                    notice.Told = true;
-                    notice.QuietUntil = now + FalloffNoticeQuietSeconds;
-                    var pct = (dials.Mult * 100).ToString("0.#", CultureInfo.InvariantCulture);
-                    player.SendMessage($"You are past {pace} kills an hour: kills past that pace pay {pct} pct of their Prestige Coins until you slow back down.", ChatMessageType.Broadcast);
-                }
-            }
-            else if (notice.Cut && now - notice.LastCut >= Math.Max(FalloffFullAgainMinSeconds, dials.WindowSeconds))
-            {
-                notice.Cut = false;
-                if (notice.Told)
-                {
-                    notice.Told = false;
-                    player.SendMessage($"Your kill pace is back under {pace} an hour: Prestige Coins from your kills pay in full again.", ChatMessageType.Broadcast);
-                }
+                player.SendMessage(text, ChatMessageType.Broadcast);
             }
 
             return paid;

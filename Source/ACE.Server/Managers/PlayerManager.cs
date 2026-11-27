@@ -195,6 +195,23 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// Saves one offline character now (2026-11-20: a staff command changed it - /setproperty, /bankwipe, /banklock). A
+        /// failed save is flagged for the next offline save cycle to retry, as PerformOfflinePlayerSaves does.
+        /// </summary>
+        public static void SaveOfflinePlayerNow(OfflinePlayer player)
+        {
+            player.SaveBiotaToDatabase(true, result =>
+            {
+                if (result)
+                    return;
+
+                playersLock.EnterWriteLock();
+                try { player.ChangesDetected = true; } finally { playersLock.ExitWriteLock(); }
+                log.Error($"[PLAYERMANAGER] Save of offline player {player.Name} (0x{player.Guid.Full:X8}) failed; it will be retried with the next offline save");
+            });
+        }
+
+        /// <summary>
         /// Internal method to actually perform the offline player saves.
         /// This is called by the queue system.
         /// </summary>

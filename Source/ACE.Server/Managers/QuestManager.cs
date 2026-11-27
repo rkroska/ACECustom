@@ -1739,6 +1739,31 @@ namespace ACE.Server.Managers
             SetQuestCompletions(questFormat, questBits);
         }
 
+        /// <summary>
+        /// ILT: the marker that keeps a quest out of the quest bonus (QB). Content uses helper quests for timers, counters and
+        /// flags, and every quest name would otherwise be worth up to 2 QB; starting the quest's `message` in the world
+        /// `quest` table with this marker makes it worth none. See docs/DAILY_QUEST_TOOLKIT.md.
+        /// </summary>
+        public const string NoQbMarker = "[NoQB]";
+
+        /// <summary>True for a message that carries <see cref="NoQbMarker"/> (case-insensitive, leading spaces allowed).</summary>
+        public static bool MessageIsQbExempt(string message)
+            => message != null && message.TrimStart().StartsWith(NoQbMarker, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>True when the quest's world row is marked [NoQB]. A quest with no row, or a world database that can't be
+        /// read, earns QB as before.</summary>
+        public static bool IsQbExempt(string questFormat)
+        {
+            try
+            {
+                return MessageIsQbExempt(DatabaseManager.World.GetCachedQuest(GetQuestName(questFormat))?.Message);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         private static void UpdatePlayerQuestCompletions(Player player, string questName, out bool stampedNew, out bool stampedCompletion, uint solves = 0)
         {
             stampedNew = false;
@@ -1751,7 +1776,8 @@ namespace ACE.Server.Managers
             // Tiered dungeons: nothing stamped inside a tier copy counts toward account quest bonus. The scope check
             // matters as much as the tag check - Update / SetQuestCompletions hand this method the RAW name, so a flag
             // stamped by a tier exit portal arrives here untagged and would otherwise write a retail-named bonus row.
-            if (TieredDungeons.TieredDungeonRegistry.ScopeTier > 0 || TieredDungeons.TieredDungeonRegistry.IsTagged(questName))
+            // ILT: a quest whose world row is marked [NoQB] is bookkeeping (timers, counters, flags) and earns no quest bonus
+            if (TieredDungeons.TieredDungeonRegistry.ScopeTier > 0 || TieredDungeons.TieredDungeonRegistry.IsTagged(questName) || IsQbExempt(questName))
                 return;
 
             var acctId = player.Account.AccountId;
@@ -1829,6 +1855,9 @@ namespace ACE.Server.Managers
             // raw "Foo@bar" here would miss the "Foo" row that exists and insert a duplicate worth double
             // quest bonus. Callers pass the raw list entry, so normalise.
             var name = GetQuestName(questName);
+
+            if (IsQbExempt(name))
+                return false;
 
             // Deliberately NOT short-circuiting on the cached list. UpdatePlayerQuestCompletions
             // updates that cache BEFORE SaveChanges and swallows any failure, so after a failed write

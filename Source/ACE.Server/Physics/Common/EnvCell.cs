@@ -30,7 +30,9 @@ namespace ACE.Server.Physics.Common
         //public List<ushort> LightArray;
         //public int InCellTimestamp;
         public List<ushort> VisibleCellIDs;
-        public ConcurrentDictionary<uint, EnvCell> VisibleCells;
+        // Never null (2026-11-17): a cell can sit cached while LScape's group load gets to it, and GetVisible / the
+        // VisibleCells loops must see "no neighbours yet", not throw.
+        public ConcurrentDictionary<uint, EnvCell> VisibleCells = new();
         //public EnvCellFlags Flags;
         public uint EnvironmentID;
         //public DatLoader.FileTypes.EnvCell _envCell;
@@ -85,12 +87,6 @@ namespace ACE.Server.Physics.Common
             }
 
             //NumSurfaces = envCell.Surfaces.Count;
-        }
-
-        public void PostInit(int? variation)
-        {
-            build_visible_cells();
-            init_static_objects(variation);
         }
 
         public override TransitionState FindEnvCollisions(Transition transition)

@@ -490,7 +490,8 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Your Vassals have produced experience points for you.\nTaking your skills as a leader into account, you gain {AllegianceXPCached:N0} xp.", ChatMessageType.Broadcast));
                     AddAllegianceXP();
                 }
-                if (AllegianceLumCached != 0)
+                // bank lock (/banklock): luminance is banked, so it waits in the cache until the bank is unlocked
+                if (AllegianceLumCached != 0 && !IsBankLocked)
                 {
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Your Vassals have produced luminance points for you.\nTaking your skills as a leader int account, you gain {AllegianceLumCached:N0} luminance.", ChatMessageType.Broadcast));
                     AddAllegianceLum();
@@ -552,7 +553,8 @@ namespace ACE.Server.WorldObjects
 
         public void AddAllegianceLum()
         {
-            if (AllegianceLumCached == 0)
+            // bank lock (/banklock): luminance is banked, and a locked bank takes nothing in - keep it in the cache until unlocked
+            if (AllegianceLumCached == 0 || IsBankLocked)
             {
                 return;
             }

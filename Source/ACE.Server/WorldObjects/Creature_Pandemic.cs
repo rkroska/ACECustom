@@ -288,7 +288,7 @@ namespace ACE.Server.WorldObjects
 
             // the tier hit gate always holds (an under-augmented caster's spells never land on a T11+ monster); the plain
             // magic-defense roll only when the setting asks for it. Quiet: no "resists your spell" for a spread.
-            if (!TierHitGate.CanHit(caster, this, out _))
+            if (!TierHitGate.CanHit(caster, this, out _, TierHitGate.SchoolOf(spell, null)))
                 return;
             if (cs.On("resist"))
             {

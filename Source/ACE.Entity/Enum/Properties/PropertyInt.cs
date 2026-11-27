@@ -964,9 +964,17 @@ namespace ACE.Entity.Enum.Properties
         PortalReqType5 = 50118,
         PortalReqValue5 = 50119,
         PortalReqMaxValue5 = 50120,
+        /// <summary>Server-only (owner 2026-11-19): 1 after the character used a Level Retention Stone. Its next enlightenment
+        /// keeps the level (up to enl_keeps_level_up_to) instead of returning it to 1, and removes the mark. Skills still reset.
+        /// 50605, free in EVERY Property enum.</summary>
+        LevelRetentionPending = 50605,
         /// <summary>School gems past the cap (owner 2026-11-01): the tier an earned school gem dropped in. Its ceiling is
         /// TriuneEarning.GemCeiling(tier). 50651, free in EVERY Property enum.</summary>
         EarnedGemTier = 50651,
+        /// <summary>Server-only (owner 2026-11-21): the skill credits a character has from Skill Credit Gems. Enlightenment
+        /// adds them back when it rebuilds the skill credit pool, so they are the character's for good.
+        /// 50606, free in EVERY Property enum.</summary>
+        SkillCreditsFromGems = 50606,
 
         /// <summary>Gear Essences (2026-10-02): the ZcModifiers record key a Bag of Locking locked on this item
         /// (negative = a weapon card). Other essences skip it. Server-only - not an assessment property.</summary>

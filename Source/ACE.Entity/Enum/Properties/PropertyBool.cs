@@ -409,6 +409,10 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         GeneratorNoCorpse = 50060,
 
+        /// <summary>Player has the Universal Quiver charm active (WCID 78780032): with the ammo slot empty, a bow, crossbow or
+        /// atlatl fires the matching Infinite Deadly Prismatic ammo. See Player_UniversalQuiver.cs.</summary>
+        HasUniversalQuiverCharm = 50061,
+
         /// <summary>Zone Control (owner 2026-10-13): a player's Destructive Curse does NOT cut the damage this creature deals
         /// (it still takes the Curse's own damage). The zone stat immune_curse_cut does the same per zone / tier / rank /
         /// wcid. Server-only. Numbered in this lane's own 512xx block, away from the ids other branches add.</summary>
@@ -488,6 +492,11 @@ namespace ACE.Entity.Enum.Properties
         /// in a Yes/No popup and destroyed on Yes (ParagonCollectorService.HandleGive). 56100, free in EVERY Property enum.
         /// Server-only - not an assessment property.</summary>
         ParagonCollector = 56100,
+
+        /// <summary>Bank lock (2026-11-20): on a CHARACTER, staff locked the bank (/banklock). No banked currency changes - nothing
+        /// in, nothing out, by any path - and the bank reads as empty to the game until /bankunlock (BankLock.cs). 56300, free
+        /// in EVERY Property enum. Server-only - not an assessment property.</summary>
+        BankLocked = 56300,
 
         /// <summary>T11+ Slash Rending (2026-10-28): on a melee weapon whose Slashing/Piercing damage type was rewritten to
         /// Slashing only (ZoneSlashRendDamageType.Normalize). Tells a converted weapon from one that was always Slashing, so

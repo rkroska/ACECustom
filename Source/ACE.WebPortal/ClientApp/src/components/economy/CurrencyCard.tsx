@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import type { CurrencySummary } from '../../types/economy'
 import { Amount, ChangeText, NetAmount, StatusPill } from './EconomyShared'
 import Sparkline from './Sparkline'
-import { basisNote, currencyPath, formatCompact, formatFull, formatPct } from './economyUtils'
+import { activeLabel, basisNote, currencyPath, formatCompact, formatFull, formatPct } from './economyUtils'
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -13,17 +13,19 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
-export default function CurrencyCard({ currency: c, days }: { currency: CurrencySummary; days: number }) {
+export default function CurrencyCard({ currency: c, days, active }: { currency: CurrencySummary; days: number; active: number | null }) {
   const navigate = useNavigate()
   const s = c.supply
+  const a = s.accounts
   const hasFlow = c.flow.days > 0 && (c.flow.faucets > 0 || c.flow.sinks > 0 || c.flow.firstDay !== null)
-  const top1Share = s.total > 0 ? (s.top1PctAmount / s.total) * 100 : null
+  // with per-account data the concentration is among the accounts the filter keeps; without it, the stored character figure
+  const top1Share = a ? (a.total > 0 ? (a.top1PctAmount / a.total) * 100 : null) : s.total > 0 ? (s.top1PctAmount / s.total) * 100 : null
   const hasSnapshot = s.day !== null
 
   return (
     <button
       type="button"
-      onClick={() => navigate(currencyPath(c.key, days))}
+      onClick={() => navigate(currencyPath(c.key, days, active))}
       className="text-left rounded-2xl border border-neutral-800 bg-neutral-900/40 hover:bg-neutral-900/80 hover:border-neutral-700 transition-colors p-4 flex flex-col gap-3 min-w-0"
     >
       <div className="flex items-start justify-between gap-2">
@@ -82,15 +84,30 @@ export default function CurrencyCard({ currency: c, days }: { currency: Currency
             <Row label="In items">
               <Amount value={s.items} />
             </Row>
-            <Row label="Active players">
-              <Amount value={s.activeSupply} />
-            </Row>
-            <Row label="Holders">
-              <span className="tabular-nums" title={`${formatFull(s.holders)} holders, ${formatFull(s.activeHolders)} active`}>
-                {formatCompact(s.holders)} ({formatCompact(s.activeHolders)} active)
-              </span>
-            </Row>
-            <Row label="Held by top 1%">
+            {a ? (
+              <>
+                <Row label={activeLabel(a.activeDays)}>
+                  <span className="tabular-nums" title={`${formatFull(a.total)} held by ${formatFull(a.accounts)} accounts`}>
+                    {formatCompact(a.total)} ({formatCompact(a.accounts)} accts)
+                  </span>
+                </Row>
+                <Row label="Largest account">
+                  <Amount value={a.largestHolder} />
+                </Row>
+              </>
+            ) : (
+              <>
+                <Row label="Active players">
+                  <Amount value={s.activeSupply} />
+                </Row>
+                <Row label="Holders">
+                  <span className="tabular-nums" title={`${formatFull(s.holders)} holders, ${formatFull(s.activeHolders)} active`}>
+                    {formatCompact(s.holders)} ({formatCompact(s.activeHolders)} active)
+                  </span>
+                </Row>
+              </>
+            )}
+            <Row label={a ? 'Top 1% of those' : 'Held by top 1%'}>
               {top1Share === null ? '-' : <span className="tabular-nums" title={formatFull(s.top1PctAmount)}>{top1Share.toFixed(1)}%</span>}
             </Row>
             {s.unexplained !== null && s.unexplained !== undefined && (
