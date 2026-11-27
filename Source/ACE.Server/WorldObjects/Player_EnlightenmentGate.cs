@@ -32,6 +32,17 @@ namespace ACE.Server.WorldObjects
             return total;
         }
 
+        /// <summary>
+        /// Bank lock (/banklock): true when the whole fee can be paid from the pack without the bank - pyreal coins (a trade
+        /// note is never broken, as its change would go to the bank), Enlightened Coins and Prestige Coins.
+        /// </summary>
+        public bool CanPayEnlightenmentGateFeeFromPack(EnlightenmentGate.Fee fee)
+        {
+            return GetNumInventoryItemsOfWCID(coinStackWcid) >= fee.Pyreals
+                && GetNumInventoryItemsOfWCID(ENLIGHTENED_COIN_WCID) >= fee.EnlightenedCoins
+                && GetNumInventoryItemsOfWCID(PRESTIGE_COIN_WCID) >= fee.PrestigeCoins;
+        }
+
         /// <summary>What the player is short of the fee, pack and bank together, e.g. "1,500 Enlightened Coins". Empty when they can pay.</summary>
         public List<string> GetEnlightenmentGateShortfall(EnlightenmentGate.Fee fee)
         {
@@ -56,12 +67,16 @@ namespace ACE.Server.WorldObjects
         /// Takes the whole fee, or nothing when the player is short of any part of it (<paramref name="shortfall"/> says what).
         /// If a pack item fails to leave the pack part way through, everything already taken goes back to the bank
         /// (as banked currency, not as the original items) and false is returned, so the gate is never stamped on a
-        /// partial payment.
+        /// partial payment. A locked bank (/banklock) takes nothing back: then <paramref name="partKept"/> is true, and the
+        /// log says what to credit by hand.
         /// </summary>
-        public bool TryPayEnlightenmentGateFee(EnlightenmentGate.Fee fee, int gateLevel, out List<string> shortfall)
+        public bool TryPayEnlightenmentGateFee(EnlightenmentGate.Fee fee, int gateLevel, out List<string> shortfall, out bool partKept)
         {
             lock (balanceLock)
             {
+                // true only when the payment failed part way and what was taken could not be given back (a locked bank)
+                partKept = false;
+
                 shortfall = GetEnlightenmentGateShortfall(fee);
                 if (shortfall.Count > 0)
                     return false;
@@ -74,6 +89,16 @@ namespace ACE.Server.WorldObjects
 
                 if (pyrealsTaken == fee.Pyreals && enlightenedCoinsTaken == fee.EnlightenedCoins && prestigeCoinsTaken == fee.PrestigeCoins)
                     return true;
+
+                // bank lock (/banklock): a locked player paid from the pack only, and a locked bank takes nothing back - so the log
+                // says what to credit by hand, and the player is told it was not returned
+                if (IsBankLocked)
+                {
+                    log.Error($"[ENL_GATE] {Name}: gate {gateLevel} fee failed part way ({pyrealsTaken:N0}/{fee.Pyreals:N0} pyreals, {enlightenedCoinsTaken:N0}/{fee.EnlightenedCoins:N0} EC, {prestigeCoinsTaken:N0}/{fee.PrestigeCoins:N0} PC); NOT refunded - the bank is locked. Credit it by hand after /bankunlock.");
+                    shortfall.Add("a successful payment (an item could not be taken, and what was taken could not be returned: your bank is locked)");
+                    partKept = true;
+                    return false;
+                }
 
                 // refund what was taken; the pack items are gone, so it is returned to the bank
                 log.Error($"[ENL_GATE] {Name}: gate {gateLevel} fee failed part way ({pyrealsTaken:N0}/{fee.Pyreals:N0} pyreals, {enlightenedCoinsTaken:N0}/{fee.EnlightenedCoins:N0} EC, {prestigeCoinsTaken:N0}/{fee.PrestigeCoins:N0} PC); refunding to the bank.");
@@ -106,7 +131,8 @@ namespace ACE.Server.WorldObjects
             if (taken < fromPack)
                 return taken;
 
-            SetProperty(bankProperty, (GetProperty(bankProperty) ?? 0) - (amount - taken));
+            if (amount > taken)
+                SetProperty(bankProperty, (GetProperty(bankProperty) ?? 0) - (amount - taken));
             return amount;
         }
 

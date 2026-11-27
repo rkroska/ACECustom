@@ -64,6 +64,30 @@ namespace ACE.Server.Network
         /// </summary>
         private readonly ConcurrentDictionary<uint /*seq*/, ServerPacket> cachedPackets = new ConcurrentDictionary<uint /*seq*/, ServerPacket>();
 
+        /// <summary>The last objects this client was told to create (for the [PORTAL STUCK DIAG] report).</summary>
+        public SentObjectLog SentObjects { get; } = new SentObjectLog();
+
+        // written on the receive thread, read on the world thread: plain 64/32-bit fields with atomic access, because a
+        // DateTime? (16 bytes) can be read half-written
+        private long lastAckUtcTicks;   // 0 = never
+        private int lastAckSequence;
+
+        /// <summary>When the client last acknowledged packets (null = never).</summary>
+        public DateTime? LastAckUtc
+        {
+            get
+            {
+                var ticks = System.Threading.Interlocked.Read(ref lastAckUtcTicks);
+                return ticks == 0 ? null : new DateTime(ticks, DateTimeKind.Utc);
+            }
+        }
+
+        /// <summary>Up to which sequence the client last acknowledged.</summary>
+        public uint LastAckSequence => (uint)System.Threading.Volatile.Read(ref lastAckSequence);
+
+        /// <summary>Packets sent and not yet acknowledged by the client.</summary>
+        public int UnacknowledgedPacketCount => cachedPackets.Count;
+
         private static readonly TimeSpan cachedPacketPruneInterval = TimeSpan.FromSeconds(5);
         private DateTime lastCachedPacketPruneTime;
 
@@ -130,6 +154,9 @@ namespace ACE.Server.Network
                     packetLog.DebugFormat("[{0}] Enqueuing Message {1}", session.LoggingIdentifier, message.Opcode);
                     currentBundle.Enqueue(message);
                 }
+
+                if (message is GameMessages.Messages.GameMessageCreateObject createObject)
+                    SentObjects.Add(createObject);
             }
         }
 
@@ -640,6 +667,9 @@ namespace ACE.Server.Network
             // TODO Sending Acks seems to cause some issues.  Needs further research.
             // if (!sendAck)
             //    sendAck = true;
+
+            System.Threading.Interlocked.Exchange(ref lastAckUtcTicks, DateTime.UtcNow.Ticks);
+            System.Threading.Volatile.Write(ref lastAckSequence, unchecked((int)sequence));
 
             var removalList = cachedPackets.Keys.Where(x => x < sequence).ToList();
 

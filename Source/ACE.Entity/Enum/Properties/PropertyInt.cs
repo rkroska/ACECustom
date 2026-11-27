@@ -964,9 +964,17 @@ namespace ACE.Entity.Enum.Properties
         PortalReqType5 = 50118,
         PortalReqValue5 = 50119,
         PortalReqMaxValue5 = 50120,
+        /// <summary>Server-only (owner 2026-11-19): 1 after the character used a Level Retention Stone. Its next enlightenment
+        /// keeps the level (up to enl_keeps_level_up_to) instead of returning it to 1, and removes the mark. Skills still reset.
+        /// 50605, free in EVERY Property enum.</summary>
+        LevelRetentionPending = 50605,
         /// <summary>School gems past the cap (owner 2026-11-01): the tier an earned school gem dropped in. Its ceiling is
         /// TriuneEarning.GemCeiling(tier). 50651, free in EVERY Property enum.</summary>
         EarnedGemTier = 50651,
+        /// <summary>Server-only (owner 2026-11-21): the skill credits a character has from Skill Credit Gems. Enlightenment
+        /// adds them back when it rebuilds the skill credit pool, so they are the character's for good.
+        /// 50606, free in EVERY Property enum.</summary>
+        SkillCreditsFromGems = 50606,
 
         /// <summary>Gear Essences (2026-10-02): the ZcModifiers record key a Bag of Locking locked on this item
         /// (negative = a weapon card). Other essences skip it. Server-only - not an assessment property.</summary>
@@ -1014,26 +1022,95 @@ namespace ACE.Entity.Enum.Properties
         /// family (ForgeDyes.Family; 0 = any).</summary>
         ForgeToolArg = 52005,
 
+        // REFLECTION BOSS ids: 59200+ (moved 2026-11-10 from 58000-58004, which sit in the Zone loot property block 58000-58999,
+        // ZoneLootProps). Weenies set ReflectionLives / Wcid / DamageRatingStep / Pick (int), HealthStep / RewardStep (float)
+        // and NameFormat (string) under these ids; the old 580xx rows do nothing now.
+
         /// <summary>Reflection boss (2026-11-04), on a MONSTER weenie: how many times it comes back after dying, each time
         /// wearing the look of a player who damaged it, as "&lt;Player&gt;'s Reflection". 0 or unset = an ordinary monster.
         /// See Creature.TrySpawnReflection.</summary>
-        ReflectionLives = 58000,
+        ReflectionLives = 59200,
 
         /// <summary>Reflection boss: which life this spawn is (1 = the first Reflection). Set at runtime on the respawn, so a
         /// weenie never carries it; it scales health, damage rating and rewards linearly.</summary>
-        ReflectionLife = 58001,
+        ReflectionLife = 59201,
 
         /// <summary>Reflection boss: the weenie spawned for each Reflection life (its own lines, combat and rewards). Unset or
         /// 0 = the same weenie that died. The lives and step settings are always read from the boss that died first.</summary>
-        ReflectionWcid = 58002,
+        ReflectionWcid = 59202,
 
         /// <summary>Reflection boss: damage rating added per life (life 3 with a step of 10 = +30).</summary>
-        ReflectionDamageRatingStep = 58003,
+        ReflectionDamageRatingStep = 59203,
 
         /// <summary>Reflection boss: who each life copies. 0 or unset = the top damager not yet copied; 1 = a random player
         /// who damaged it and isn't copied yet; 2 = a random player in sight not yet copied, damage or not. Every rule falls
         /// back to a random player in sight not yet copied, then to any player in sight.</summary>
-        ReflectionPick = 58004,
+        ReflectionPick = 59204,
+
+        // Item bounties (2026-11-10, ItemBounties.cs): the terms a bounty item carries. 57700-57711, free in EVERY Property
+        // enum on every branch, and outside Zone Control's loot property block (58000-58999, ZoneLootProps). The player-facing
+        // terms carry [AssessmentProperty], so a loot rule or plugin can read a bounty without parsing its name; the
+        // weenie-only tuning values (57706-57710) do not - a mystery bounty's kill range must never reach appraisal.
+
+        /// <summary>Item bounty: the ONE tier (Zone Control variation, 11-25) whose kills count. Unset on the weenie = the
+        /// bounty takes the tier of the kill it drops from (or the one /bounty make gives it). Ignored for a region bounty
+        /// (PropertyString.ItemBountyRegion).</summary>
+        [AssessmentProperty]
+        ItemBountyTier = 57700,
+
+        /// <summary>Item bounty: what counts. 1 = any kill (Sweep), 2 = one creature type (Species, ItemBountyTarget).</summary>
+        [AssessmentProperty]
+        ItemBountyKind = 57701,
+
+        /// <summary>Item bounty, Species only: the CreatureType whose kills count.</summary>
+        [AssessmentProperty]
+        ItemBountyTarget = 57702,
+
+        /// <summary>Item bounty: kills needed - fixed on the weenie, or rolled onto the item from ItemBountyKillsMin / Max when
+        /// it is made. A mystery kill count (ItemBountyMystery flag 1) is not on the item at all: it is rolled when the bounty
+        /// is applied.</summary>
+        [AssessmentProperty]
+        ItemBountyKills = 57703,
+
+        /// <summary>Item bounty: the reward's WCID, delivered to the pack on completion (held if the pack is full). Not used
+        /// by a mystery reward (ItemBountyMystery flag 2), which is rolled from PropertyString.ItemBountyRewardTable.</summary>
+        [AssessmentProperty]
+        ItemBountyRewardWcid = 57704,
+
+        /// <summary>Item bounty: how many of the reward. Unset = 1.</summary>
+        [AssessmentProperty]
+        ItemBountyRewardAmount = 57705,
+
+        /// <summary>Item bounty, on the WEENIE: the lowest kill count a new bounty can roll (owner 2026-11-10: bounties are
+        /// named for their reward and the task varies - some easy, some to trade away). Rolled once when the item is made
+        /// into ItemBountyKills (ItemBounties.OnNewItem) - unless ItemBountyMystery flag 1, then rolled when the bounty is
+        /// applied, from the weenie's band as it is then. 57706.</summary>
+        ItemBountyKillsMin = 57706,
+
+        /// <summary>Item bounty, on the WEENIE: the highest kill count a new bounty can roll (rolled when ItemBountyKillsMin
+        /// is). 57707.</summary>
+        ItemBountyKillsMax = 57707,
+
+        /// <summary>Item bounty, on the WEENIE: how likely this bounty is, among the bounties that can drop there, when a
+        /// kill's bounty roll hits - a T11+ zone's bounty_odds (ItemBounties.TryRollDrop) or a region's itemodds
+        /// (/zonecontrol regionbounty, ItemBounties.TryRollRegionDrop). Relative: 50 is five times as common as 10.
+        /// Unset or 0 = never drops from monsters (quest / NPC only) unless /zonecontrol bountyweight overrides it; that live
+        /// override replaces this value either way. 57708.</summary>
+        ItemBountyDropWeight = 57708,
+
+        /// <summary>Item bounty, on the WEENIE: the lowest tier this bounty drops in. A bounty with no ItemBountyTier takes the
+        /// tier of the kill it dropped from; one with ItemBountyTier drops only in that tier. Unset = 11. 57709.</summary>
+        ItemBountyDropTierMin = 57709,
+
+        /// <summary>Item bounty, on the WEENIE: the highest tier this bounty drops in. Unset = 25. 57710.</summary>
+        ItemBountyDropTierMax = 57710,
+
+        /// <summary>Item bounty (owner 2026-11-10, MYSTERY bounties): flags. 1 = the kill count is hidden - rolled from the
+        /// weenie's current ItemBountyKillsMin / Max only when the bounty is applied, and shown from then on. 2 = the reward is
+        /// hidden - rolled only when the bounty is done, from the Zone Control reward table PropertyString.ItemBountyRewardTable
+        /// names. The place (tier or region) is never hidden. Unset / 0 = nothing hidden. 57711.</summary>
+        [AssessmentProperty]
+        ItemBountyMystery = 57711,
     }
 
     public static class PropertyIntExtensions

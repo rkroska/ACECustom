@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum.Properties;
+using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Managers
 {
@@ -45,6 +46,25 @@ namespace ACE.Server.Managers
             public long? FlowNet { get; set; }
             /// <summary>Change in supply since the previous snapshot that the recorded flows do not account for.</summary>
             public long? Unexplained { get; set; }
+            /// <summary>
+            /// The same snapshot added up per ACCOUNT for the page's activity filter (economy_holdings_daily); null when
+            /// that day has no per-account rows (snapshots taken before they were saved, or older than their retention).
+            /// </summary>
+            public AccountView Accounts { get; set; }
+        }
+
+        /// <summary>One snapshot's supply per account, limited to accounts active within the filter's window.</summary>
+        public class AccountView
+        {
+            /// <summary>The supply row's save time these holdings were written for (supply taken_utc = holdings snapshot_utc).</summary>
+            public DateTime SnapshotUtc { get; set; }
+            public int ActiveDays { get; set; }
+            public long Banked { get; set; }
+            public long Items { get; set; }
+            public long Total { get; set; }
+            public long Accounts { get; set; }
+            public long Top1PctAmount { get; set; }
+            public long LargestHolder { get; set; }
         }
 
         public class Change
@@ -71,6 +91,8 @@ namespace ACE.Server.Managers
             public long Total { get; set; }
             public long ActiveSupply { get; set; }
             public long? Unexplained { get; set; }
+            /// <summary>Supply held by the accounts the activity filter keeps; null when the day has no per-account rows.</summary>
+            public long? FilteredTotal { get; set; }
         }
 
         public class FlowPoint
@@ -105,6 +127,11 @@ namespace ACE.Server.Managers
             public DateTime? LastSnapshotUtc { get; set; }
             public double TargetMinWeeklyPct { get; set; }
             public double TargetMaxWeeklyPct { get; set; }
+            /// <summary>The activity filter applied to the per-account figures (0 = every account).</summary>
+            public int ActiveDays { get; set; }
+            public List<int> ActiveDayOptions { get; set; } = new();
+            /// <summary>The first snapshot day with per-account rows, or null if there are none yet.</summary>
+            public string AccountsSince { get; set; }
             public List<CurrencySummary> Currencies { get; set; } = new();
         }
 
@@ -146,6 +173,8 @@ namespace ACE.Server.Managers
             public uint AccountId { get; set; }
             public long Banked { get; set; }
             public DateTime? LastLoginUtc { get; set; }
+            /// <summary>The newest game login of any character on the account (what the activity filter uses).</summary>
+            public DateTime? AccountLastLoginUtc { get; set; }
         }
 
         public class SettingRow
@@ -157,6 +186,7 @@ namespace ACE.Server.Managers
 
         public class CurrencyDetail
         {
+            public int ActiveDays { get; set; }
             public CurrencySummary Summary { get; set; }
             public List<SourceRow> Sources { get; set; } = new();
             public List<DetailRow> Faucets { get; set; } = new();
@@ -172,6 +202,7 @@ namespace ACE.Server.Managers
             public string Text { get; set; }
             public string Currency { get; set; }
             public int Days { get; set; }
+            public int ActiveDays { get; set; }
         }
 
         // ---- helpers ---------------------------------------------------------------------------------------------
@@ -385,6 +416,139 @@ namespace ACE.Server.Managers
         internal static long? Unexplained(long previousTotal, long total, long? flowNet) =>
             flowNet.HasValue ? (total - previousTotal) - flowNet.Value : null;
 
+        private static readonly Dictionary<(int days, int activeDays), (DateTime at, Dictionary<string, Dictionary<DateTime, AccountView>> data)> accountCache = new();
+
+        /// <summary>
+        /// Bumped by <see cref="InvalidateCaches"/>. A load that started before a snapshot and finished after it must not
+        /// be cached (it would put the old figures back), so loads compare the generation before storing.
+        /// </summary>
+        private static long cacheGeneration;
+
+        /// <summary>
+        /// Per currency and snapshot day: the supply of accounts active within <paramref name="activeDays"/> days of that
+        /// snapshot (0 = every account), with the richest 1% and largest holder among them. Worked out in MySQL from
+        /// economy_holdings_daily; cached for a minute per window.
+        /// </summary>
+        private static Dictionary<string, Dictionary<DateTime, AccountView>> LoadAccountViews(int days, int activeDays)
+        {
+            for (var attempt = 0; ; attempt++)
+            {
+                long generation;
+                lock (cacheLock)
+                {
+                    if (accountCache.TryGetValue((days, activeDays), out var hit) && (DateTime.UtcNow - hit.at).TotalSeconds < CacheSeconds)
+                        return hit.data;
+                    generation = cacheGeneration;
+                }
+
+                var data = QueryAccountViews(days, activeDays);
+
+                lock (cacheLock)
+                {
+                    if (generation == cacheGeneration)
+                    {
+                        foreach (var stale in accountCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= CacheSeconds).Select(kv => kv.Key).ToList())
+                            accountCache.Remove(stale);
+
+                        accountCache[(days, activeDays)] = (DateTime.UtcNow, data);
+                        return data;
+                    }
+                }
+
+                // a snapshot was saved while this ran: read again once, then answer without caching
+                if (attempt >= 1)
+                    return data;
+            }
+        }
+
+        /// <summary>
+        /// The uncached read behind <see cref="LoadAccountViews"/>. Only holdings stamped with the same save time as the
+        /// day's supply row are used, so rows left from an earlier same-day snapshot never pair with the new supply.
+        /// </summary>
+        private static Dictionary<string, Dictionary<DateTime, AccountView>> QueryAccountViews(int days, int activeDays)
+        {
+            var data = EconomyLedger.Currencies.ToDictionary(c => c.Key, _ => new Dictionary<DateTime, AccountView>(), StringComparer.OrdinalIgnoreCase);
+
+            if (TableExists("economy_holdings_daily"))
+            {
+                var since = DateTime.UtcNow.Date.AddDays(-Math.Max(days, 40));
+                var filter = activeDays > 0 ? " AND h.`idle_seconds` IS NOT NULL AND h.`idle_seconds` <= @idle" : "";
+                const string current = "FROM `economy_holdings_daily` h JOIN `economy_supply_daily` s " +
+                    "ON s.`day_utc` = h.`day_utc` AND s.`currency` = h.`currency` AND s.`taken_utc` = h.`snapshot_utc` WHERE h.`day_utc` >= @since";
+
+                var rows = Query(
+                    "SELECT `currency`, `day_utc`, COUNT(*), SUM(`banked`), SUM(`items`), MAX(`banked` + `items`), " +
+                    "SUM(CASE WHEN rn <= CEIL(cnt / 100) THEN `banked` + `items` ELSE 0 END), MAX(`snapshot_utc`) " +
+                    "FROM (SELECT h.`currency`, h.`day_utc`, h.`banked`, h.`items`, h.`snapshot_utc`, " +
+                    "ROW_NUMBER() OVER (PARTITION BY h.`currency`, h.`day_utc` ORDER BY h.`banked` + h.`items` DESC) AS rn, " +
+                    "COUNT(*) OVER (PARTITION BY h.`currency`, h.`day_utc`) AS cnt " +
+                    $"{current}{filter}) x GROUP BY `currency`, `day_utc`",
+                    c =>
+                    {
+                        Param(c, "@since", since);
+                        if (activeDays > 0)
+                            Param(c, "@idle", (long)activeDays * 86400);
+                    },
+                    r => (currency: S(r, 0), day: Convert.ToDateTime(r.GetValue(1)).Date, view: new AccountView
+                    {
+                        ActiveDays = activeDays, Accounts = L(r, 2), Banked = L(r, 3), Items = L(r, 4), Total = L(r, 3) + L(r, 4),
+                        LargestHolder = L(r, 5), Top1PctAmount = L(r, 6), SnapshotUtc = Convert.ToDateTime(r.GetValue(7)),
+                    }));
+
+                foreach (var (currency, day, view) in rows)
+                    if (data.TryGetValue(currency, out var byDay))
+                        byDay[day] = view;
+
+                // a day where no account passed the filter still has per-account rows: show it as zero, not as missing
+                if (activeDays > 0)
+                {
+                    var stored = Query(
+                        $"SELECT DISTINCT h.`currency`, h.`day_utc`, h.`snapshot_utc` {current}",
+                        c => Param(c, "@since", since),
+                        r => (currency: S(r, 0), day: Convert.ToDateTime(r.GetValue(1)).Date, stamp: Convert.ToDateTime(r.GetValue(2))));
+                    foreach (var (currency, day, stamp) in stored)
+                        if (data.TryGetValue(currency, out var byDay) && !byDay.ContainsKey(day))
+                            byDay[day] = new AccountView { ActiveDays = activeDays, SnapshotUtc = stamp };
+                }
+            }
+
+            return data;
+        }
+
+        /// <summary>
+        /// Kept apart from EconomyReports' own static fields (whose setup reads the world database) so it can be unit tested.
+        /// </summary>
+        internal static class AccountPairing
+        {
+            /// <summary>
+            /// The account view to show with a supply snapshot taken (saved) at <paramref name="supplyTakenUtc"/>: only one
+            /// written for that same snapshot. A view from another snapshot (a cache filled just before a new supply was
+            /// saved, or rows left from an earlier snapshot) gives null, so the page falls back instead of mixing them. Pure.
+            /// </summary>
+            internal static AccountView Match(DateTime supplyTakenUtc, AccountView view) =>
+                view != null && view.SnapshotUtc.Ticks == supplyTakenUtc.Ticks ? view : null;
+        }
+
+        /// <summary>
+        /// Drops the cached per-account views and currency details, so the page never pairs a new supply snapshot with
+        /// the previous snapshot's account figures. Called after each snapshot is saved.
+        /// </summary>
+        public static void InvalidateCaches()
+        {
+            lock (cacheLock)
+            {
+                cacheGeneration++;
+                accountCache.Clear();
+                detailCache.Clear();
+            }
+        }
+
+        /// <summary>The first snapshot day that has per-account rows, or null.</summary>
+        private static string AccountsSince() =>
+            TableExists("economy_holdings_daily")
+                ? Query("SELECT MIN(`day_utc`) FROM `economy_holdings_daily`", null, r => r.IsDBNull(0) ? null : DayText(Convert.ToDateTime(r.GetValue(0)))).FirstOrDefault()
+                : null;
+
         /// <summary>
         /// Percent change per week between two supply totals <paramref name="gapDays"/> apart, or null when it cannot
         /// be worked out. Pure; unit tested.
@@ -420,14 +584,19 @@ namespace ACE.Server.Managers
             return new Change { Amount = amount, Pct = reference.Supply.Total > 0 ? amount * 100.0 / reference.Supply.Total : 0 };
         }
 
-        private static CurrencySummary BuildSummary(EconomyLedger.Currency currency, int days, List<SupplyDay> supply, List<FlowGroup> flows)
+        private static CurrencySummary BuildSummary(EconomyLedger.Currency currency, int days, List<SupplyDay> supply, List<FlowGroup> flows, Dictionary<DateTime, AccountView> accounts)
         {
             var today = DateTime.UtcNow.Date;
             var windowStart = today.AddDays(-(days - 1));
             var summary = new CurrencySummary { Key = currency.Key, Name = currency.Name };
 
+            // the inflation trend and Unexplained stay on the full supply: an account going quiet removes nothing from
+            // the economy, so filtering those would show sinks and faucets that never happened
+            foreach (var day in supply)
+                day.Supply.Accounts = AccountPairing.Match(day.TakenUtc, accounts.TryGetValue(day.Day, out var view) ? view : null);
+
             summary.Series = supply.Where(s => s.Day >= windowStart)
-                .Select(s => new SupplyPoint { Day = s.Supply.Day, Banked = s.Supply.Banked, Items = s.Supply.Items, Total = s.Supply.Total, ActiveSupply = s.Supply.ActiveSupply, Unexplained = s.Supply.Unexplained })
+                .Select(s => new SupplyPoint { Day = s.Supply.Day, Banked = s.Supply.Banked, Items = s.Supply.Items, Total = s.Supply.Total, ActiveSupply = s.Supply.ActiveSupply, Unexplained = s.Supply.Unexplained, FilteredTotal = s.Supply.Accounts?.Total })
                 .ToList();
 
             var latest = supply.LastOrDefault();
@@ -493,11 +662,12 @@ namespace ACE.Server.Managers
 
         // ---- page queries ----------------------------------------------------------------------------------------
 
-        public static Overview GetOverview(int days)
+        public static Overview GetOverview(int days, int activeDays)
         {
             days = ClampDays(days);
             var supply = LoadSupply(days);
             var flows = LoadFlowGroups(days);
+            var accounts = LoadAccountViews(days, activeDays);
 
             return new Overview
             {
@@ -509,14 +679,17 @@ namespace ACE.Server.Managers
                 LastSnapshotUtc = EconomyLedger.LastSnapshotUtc,
                 TargetMinWeeklyPct = ServerConfig.economy_target_weekly_min_pct.Value,
                 TargetMaxWeeklyPct = ServerConfig.economy_target_weekly_max_pct.Value,
-                Currencies = EconomyLedger.Currencies.Select(c => BuildSummary(c, days, supply[c.Key], flows[c.Key])).ToList(),
+                ActiveDays = activeDays,
+                ActiveDayOptions = ActiveWindow.Options(ActiveWindow.EconomyDefault),
+                AccountsSince = AccountsSince(),
+                Currencies = EconomyLedger.Currencies.Select(c => BuildSummary(c, days, supply[c.Key], flows[c.Key], accounts[c.Key])).ToList(),
             };
         }
 
-        private static readonly Dictionary<(string key, int days), (DateTime at, CurrencyDetail data)> detailCache = new();
+        private static readonly Dictionary<(string key, int days, int activeDays), (DateTime at, CurrencyDetail data)> detailCache = new();
 
         /// <summary>Cached for a minute: three grouped queries and a pass over every character, and the prompt asks for all currencies.</summary>
-        public static CurrencyDetail GetCurrency(string key, int days)
+        public static CurrencyDetail GetCurrency(string key, int days, int activeDays)
         {
             var currency = EconomyLedger.Find(key);
             if (currency == null)
@@ -524,29 +697,44 @@ namespace ACE.Server.Managers
 
             days = ClampDays(days);
 
-            lock (cacheLock)
+            for (var attempt = 0; ; attempt++)
             {
-                if (detailCache.TryGetValue((currency.Key, days), out var hit) && (DateTime.UtcNow - hit.at).TotalSeconds < CacheSeconds)
-                    return hit.data;
+                long generation;
+                lock (cacheLock)
+                {
+                    if (detailCache.TryGetValue((currency.Key, days, activeDays), out var hit) && (DateTime.UtcNow - hit.at).TotalSeconds < CacheSeconds)
+                        return hit.data;
+                    generation = cacheGeneration;
+                }
+
+                var detail = BuildCurrency(currency, days, activeDays);
+
+                lock (cacheLock)
+                {
+                    // a snapshot saved while this was built would make it stale: never cache it
+                    if (generation == cacheGeneration)
+                    {
+                        foreach (var stale in detailCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= CacheSeconds).Select(kv => kv.Key).ToList())
+                            detailCache.Remove(stale);
+
+                        detailCache[(currency.Key, days, activeDays)] = (DateTime.UtcNow, detail);
+                        return detail;
+                    }
+                }
+
+                if (attempt >= 1)
+                    return detail;
             }
-
-            var detail = BuildCurrency(currency, days);
-
-            lock (cacheLock)
-            {
-                foreach (var stale in detailCache.Where(kv => (DateTime.UtcNow - kv.Value.at).TotalSeconds >= CacheSeconds).Select(kv => kv.Key).ToList())
-                    detailCache.Remove(stale);
-
-                detailCache[(currency.Key, days)] = (DateTime.UtcNow, detail);
-            }
-
-            return detail;
         }
 
-        private static CurrencyDetail BuildCurrency(EconomyLedger.Currency currency, int days)
+        private static CurrencyDetail BuildCurrency(EconomyLedger.Currency currency, int days, int activeDays)
         {
             var since = DateTime.UtcNow.Date.AddDays(-(days - 1));
-            var detail = new CurrencyDetail { Summary = BuildSummary(currency, days, LoadSupply(days)[currency.Key], LoadFlowGroups(days)[currency.Key]) };
+            var detail = new CurrencyDetail
+            {
+                ActiveDays = activeDays,
+                Summary = BuildSummary(currency, days, LoadSupply(days)[currency.Key], LoadFlowGroups(days)[currency.Key], LoadAccountViews(days, activeDays)[currency.Key]),
+            };
 
             // table, filter and expressions differ between the pyreal ledger and the economy ledger; the shapes do not
             var pyreal = currency.FromPyrealLedger;
@@ -588,18 +776,40 @@ namespace ACE.Server.Managers
                     r => new EarnerRow { CharId = Convert.ToUInt32(r.GetValue(0)), CharName = S(r, 1), AccountId = Convert.ToUInt32(L(r, 2)), AmountIn = L(r, 3), AmountOut = L(r, 4), Net = L(r, 3) - L(r, 4) });
             }
 
-            detail.Holders = GetHolders(currency, 25);
+            detail.Holders = GetHolders(currency, 25, activeDays);
             detail.Settings = SettingsFor(currency);
-            detail.Notes = NotesFor(currency, detail.Summary);
+            detail.Notes = NotesFor(currency, detail.Summary, activeDays);
             return detail;
         }
 
-        /// <summary>Largest banked balances right now, from the characters in memory (staff excluded).</summary>
-        private static List<HolderRow> GetHolders(EconomyLedger.Currency currency, int limit)
+        /// <summary>
+        /// Largest banked balances right now, from the characters in memory (staff excluded), on accounts active within
+        /// <paramref name="activeDays"/> days (0 = every account).
+        /// </summary>
+        private static List<HolderRow> GetHolders(EconomyLedger.Currency currency, int limit, int activeDays)
         {
             var rows = new List<HolderRow>();
+            var players = PlayerManager.GetAllPlayers();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            // the character table's last login, as the leaderboards and the snapshot use (online counts as now)
+            var lastLogins = EconomyLedger.LoadCharacterLogins();
+            double LoginOf(ACE.Server.Entity.IPlayer p) => p is Player ? now : lastLogins.TryGetValue(p.Guid.Full, out var t) ? t : 0;
 
-            foreach (var player in PlayerManager.GetAllPlayers())
+            // account -> newest game login of any of its characters
+            var accountLogin = new Dictionary<uint, double>();
+            foreach (var player in players)
+            {
+                var accountId = player.Account?.AccountId ?? 0;
+                if (accountId == 0)
+                    continue;
+                var login = LoginOf(player);
+                if (!accountLogin.TryGetValue(accountId, out var known) || login > known)
+                    accountLogin[accountId] = login;
+            }
+
+            var cutoff = activeDays > 0 ? now - (long)activeDays * 86400 : double.MinValue;
+
+            foreach (var player in players)
             {
                 if ((player.Account?.AccessLevel ?? 0) > 0)
                     continue;
@@ -611,11 +821,25 @@ namespace ACE.Server.Managers
                 if (banked <= 0)
                     continue;
 
-                var login = player.GetProperty(PropertyFloat.LoginTimestamp);
+                var accountId = player.Account?.AccountId ?? 0;
+                lastLogins.TryGetValue(player.Guid.Full, out var stored);
+                double? login = stored > 0 ? stored : null;
+
+                // a character with no account record has nobody to share activity with: it goes by its own login
+                double accountLast;
+                if (accountId == 0)
+                    accountLast = LoginOf(player);
+                else
+                    accountLogin.TryGetValue(accountId, out accountLast);
+
+                if (accountLast < cutoff)
+                    continue;
+
                 rows.Add(new HolderRow
                 {
-                    CharId = player.Guid.Full, CharName = player.Name, AccountId = player.Account?.AccountId ?? 0, Banked = banked,
+                    CharId = player.Guid.Full, CharName = player.Name, AccountId = accountId, Banked = banked,
                     LastLoginUtc = login.HasValue && login.Value > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)login.Value).UtcDateTime : null,
+                    AccountLastLoginUtc = accountLast > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)accountLast).UtcDateTime : null,
                 });
             }
 
@@ -648,12 +872,14 @@ namespace ACE.Server.Managers
             return rows;
         }
 
-        private static List<string> NotesFor(EconomyLedger.Currency currency, CurrencySummary summary)
+        private static List<string> NotesFor(EconomyLedger.Currency currency, CurrencySummary summary, int activeDays)
         {
             var notes = new List<string>
             {
                 "Supply is one snapshot per day (UTC). It counts banked balances and currency items in character packs; items in housing chests or on the ground are not counted.",
-                $"Staff characters are left out of supply and holders. Active means logged in within the last {EconomyLedger.ActiveDays} days.",
+                $"Staff characters are left out of supply and holders. The stored Active figures mean a character logged in within {EconomyLedger.ActiveDays} days.",
+                $"The per-account figures follow the page's activity filter ({ActiveWindow.Describe(activeDays)}): an account counts when any of its characters logged into the game within that many days of the snapshot. " +
+                "The weekly trend, the 7 and 30 day changes and Unexplained always use the full supply, because a player going quiet does not remove currency.",
                 "Faucets and sinks are net per source and detail. Bank, transfer, trade, give and ground rows only move currency and are listed as internal.",
             };
 
@@ -688,6 +914,9 @@ namespace ACE.Server.Managers
 
         // ---- Claude prompt ---------------------------------------------------------------------------------------
 
+        private static string AccountsLabel(int activeDays) =>
+            activeDays > 0 ? $"Accounts that played in the {activeDays} days before the snapshot" : "All accounts";
+
         private static string N(long value) => value.ToString("N0", CultureInfo.InvariantCulture);
 
         private static string Pct(double? value) => value.HasValue ? value.Value.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%" : "unknown";
@@ -696,7 +925,7 @@ namespace ACE.Server.Managers
         /// A self-contained brief for Claude: the target, the numbers for one currency or all of them, the largest
         /// faucets and sinks with the ids needed to find them in the world database, and what to deliver.
         /// </summary>
-        public static PromptResult GetPrompt(string key, int days)
+        public static PromptResult GetPrompt(string key, int days, int activeDays)
         {
             days = ClampDays(days);
             var all = string.IsNullOrEmpty(key) || string.Equals(key, "all", StringComparison.OrdinalIgnoreCase);
@@ -731,7 +960,7 @@ namespace ACE.Server.Managers
 
             foreach (var currency in currencies)
             {
-                var detail = GetCurrency(currency.Key, days);
+                var detail = GetCurrency(currency.Key, days, activeDays);
                 var s = detail.Summary;
 
                 sb.Append($"## {currency.Name}\n\n");
@@ -741,7 +970,11 @@ namespace ACE.Server.Managers
                 else
                 {
                     sb.Append($"- Supply on {s.Supply.Day}: {N(s.Supply.Total)} total ({N(s.Supply.Banked)} banked, {N(s.Supply.Items)} in items), held by {N(s.Supply.Holders)} characters.\n");
-                    sb.Append($"- Active characters hold {N(s.Supply.ActiveSupply)} across {N(s.Supply.ActiveHolders)} holders. The richest 1% of holders hold {N(s.Supply.Top1PctAmount)}; the largest single holder has {N(s.Supply.LargestHolder)}.\n");
+                    var a = s.Supply.Accounts;
+                    if (a != null)
+                        sb.Append($"- {AccountsLabel(activeDays)}: {N(a.Accounts)} accounts hold {N(a.Total)}. The richest 1% of those accounts hold {N(a.Top1PctAmount)}; the largest single account has {N(a.LargestHolder)}.\n");
+                    else
+                        sb.Append($"- Active characters hold {N(s.Supply.ActiveSupply)} across {N(s.Supply.ActiveHolders)} holders. The richest 1% of holders hold {N(s.Supply.Top1PctAmount)}; the largest single holder has {N(s.Supply.LargestHolder)}.\n");
                 }
 
                 sb.Append($"- Weekly trend: {Pct(s.WeeklyPct)} (basis: {s.WeeklyPctBasis}). Status against the target: {s.Status.ToUpperInvariant()}.\n");
@@ -785,7 +1018,7 @@ namespace ACE.Server.Managers
             sb.Append("5. List what the data cannot tell you and what you would measure next.\n\n");
             sb.Append("Rules: read-only investigation first; do not change code or data without asking. Verify claims against the real database rather than assuming retail values, because this server is heavily customised. Any text shown in the game client must be plain ASCII.\n");
 
-            return new PromptResult { Text = sb.ToString(), Currency = all ? "all" : currencies[0].Key, Days = days };
+            return new PromptResult { Text = sb.ToString(), Currency = all ? "all" : currencies[0].Key, Days = days, ActiveDays = activeDays };
         }
 
         private static void AppendTable(StringBuilder sb, string title, IEnumerable<DetailRow> rows, Func<DetailRow, long> net)

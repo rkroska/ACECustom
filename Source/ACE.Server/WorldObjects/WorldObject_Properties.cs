@@ -190,6 +190,10 @@ namespace ACE.Server.WorldObjects
         }
         public void SetProperty(PropertyInt64 property, long value)
         {
+            // bank lock (/banklock): a locked bank's currencies never change, whatever the code path (BankLock.cs)
+            if (this is Player bankLockPlayer && BankLock.RefusesWrite(bankLockPlayer, property))
+                return;
+
             if (PyrealLedger.Tracks(property))
             {
                 SetTrackedProperty(property, value);
@@ -339,6 +343,10 @@ namespace ACE.Server.WorldObjects
         }
         public void RemoveProperty(PropertyInt64 property)
         {
+            // bank lock (/banklock): a locked bank's currencies never change, whatever the code path (BankLock.cs)
+            if (this is Player bankLockPlayer && BankLock.RefusesWrite(bankLockPlayer, property))
+                return;
+
             if (PyrealLedger.Tracks(property))
             {
                 RemoveTrackedProperty(property);
@@ -654,6 +662,11 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void SetPosition(PositionType positionType, Position position)
         {
+            // Personal Lifestone (2026-11-19): any write of a death point or tie ends its personal-stone record; a personal
+            // stone writes the record again right after its own write
+            if ((positionType == PositionType.Sanctuary || positionType == PositionType.LinkedLifestone) && this is Player player)
+                player.ClearPersonalLifestoneSpot(positionType);
+
             //if (position != null && !position.Rotation.IsRotationValid())
                 //position.AttemptToFixRotation(this, positionType);
 
@@ -679,6 +692,9 @@ namespace ACE.Server.WorldObjects
 
         public void RemovePosition(PositionType positionType)
         {
+            if ((positionType == PositionType.Sanctuary || positionType == PositionType.LinkedLifestone) && this is Player player)
+                player.ClearPersonalLifestoneSpot(positionType);   // Personal Lifestone: see SetPosition
+
             if (EphemeralProperties.PositionTypes.Contains(positionType))
                 ephemeralPositions[positionType] = null;
             else
@@ -3637,6 +3653,13 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyBool.HasUniversalSummoningMastery) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasUniversalSummoningMastery); else SetProperty(PropertyBool.HasUniversalSummoningMastery, value); }
+        }
+
+        /// <summary>Universal Quiver charm: an empty ammo slot fires the matching prismatic ammo for any bow, crossbow or atlatl.</summary>
+        public bool HasUniversalQuiverCharm
+        {
+            get => GetProperty(PropertyBool.HasUniversalQuiverCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasUniversalQuiverCharm); else SetProperty(PropertyBool.HasUniversalQuiverCharm, value); }
         }
 
         /// <summary>True while the Fork Charm is activated — Streak, Arc, and Bolt projectiles fork to nearby enemies on hit.</summary>

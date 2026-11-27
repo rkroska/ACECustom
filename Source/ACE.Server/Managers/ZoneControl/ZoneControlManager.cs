@@ -28,7 +28,7 @@ namespace ACE.Server.Managers.ZoneControl
     /// stat payload; the "default variant" is the profile's minion slot (the boss slot is unused post-decouple).
     /// Consumers call <see cref="ResolveForCreature"/> and get a nullable <see cref="EvaluatedProfile"/>.
     /// </summary>
-    public static class ZoneControlManager
+    public static partial class ZoneControlManager
     {
         private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -217,6 +217,17 @@ namespace ACE.Server.Managers.ZoneControl
             /// Thaelaryn Island (T10) - keyed by BountyRegions' key. Absent = off.</summary>
             public Dictionary<string, BountyConfig> RegionBounties { get; set; } = new();
 
+            /// <summary>ITEM BOUNTY REWARD TABLES (owner 2026-11-10): named, weighted tables MYSTERY bounties roll from when they
+            /// are done (/zonecontrol bountytable). Absent / empty = none (a mystery bounty can't be applied until its table
+            /// exists).</summary>
+            public Dictionary<string, BountyRewardTable> BountyRewardTables { get; set; } = new();
+
+            /// <summary>ITEM BOUNTY DROP WEIGHTS PER PLACE (owner 2026-11-10): per bounty weenie (WCID), its live weight in each
+            /// place's pool and its off switch (/zonecontrol bountyweight) - see <see cref="BountyPlaceWeights"/>. Absent = the
+            /// weenie's own ItemBountyDropWeight in its own places. (An earlier draft's global "BountyDropWeights" key is
+            /// ignored: it was never live.)</summary>
+            public Dictionary<uint, BountyPlaceWeights> BountyPlaceWeights { get; set; } = new();
+
             /// <summary>ALLOWED PROCS (owner 2026-10-06): proc spell ids that T11+ monsters do NOT force-resist even from gear below
             /// T11 (TierHitGate.IsLowTierCast). Edited with /zonecontrol procallow and the plugin. Absent / empty = none allowed.</summary>
             public List<uint> AllowedProcSpells { get; set; } = new();
@@ -276,6 +287,15 @@ namespace ACE.Server.Managers.ZoneControl
         // the region bounties by key. Guarded by _lock; read through the volatile copy (every kill in one of the regions).
         private static readonly Dictionary<string, BountyConfig> _regionBounties = new(StringComparer.OrdinalIgnoreCase);
         private static volatile Dictionary<string, BountyConfig> _regionBountySnapshot = new(StringComparer.OrdinalIgnoreCase);
+
+        // item bounty reward tables by name. Guarded by _lock; read through the volatile copy (a mystery bounty applied or done).
+        private static readonly Dictionary<string, BountyRewardTable> _bountyRewardTables = new(StringComparer.OrdinalIgnoreCase);
+        private static volatile Dictionary<string, BountyRewardTable> _bountyRewardTableSnapshot = new(StringComparer.OrdinalIgnoreCase);
+
+        // item bounty drop weights per place, by bounty WCID. Guarded by _lock; read through the volatile copy of deep copies
+        // (a bounty drop roll), which is never changed once published.
+        private static readonly Dictionary<uint, BountyPlaceWeights> _bountyPlaceWeights = new();
+        private static volatile IReadOnlyDictionary<uint, BountyPlaceWeights> _bountyPlaceWeightSnapshot = new Dictionary<uint, BountyPlaceWeights>();
 
         // allowed proc spell ids. Guarded by _lock; read through the volatile copy (every proc on a T11+ monster from old gear).
         private static readonly HashSet<uint> _procAllow = new();
@@ -423,6 +443,26 @@ namespace ACE.Server.Managers.ZoneControl
                 foreach (var kv in store.RegionBounties)
                     if (kv.Value != null && FindBountyRegion(kv.Key) != null)
                         regionBounties[kv.Key.ToLowerInvariant()] = kv.Value.Clone();
+            var rewardTables = new Dictionary<string, BountyRewardTable>(StringComparer.OrdinalIgnoreCase);
+            if (store.BountyRewardTables != null)
+                foreach (var kv in store.BountyRewardTables)
+                {
+                    // lower-cased BEFORE the check (names are stored lower case; a hand edit with "Mystery" is kept, as "mystery")
+                    var key = (kv.Key ?? "").Trim().ToLowerInvariant();
+                    if (kv.Value != null && IsValidRewardTableName(key))
+                        rewardTables[key] = kv.Value.Clone();
+                    else
+                        log.Warn($"[ZoneControl] bounty reward table '{kv.Key}' has an invalid name or no data - dropped (the next save removes it)");
+                }
+            var placeWeights = new Dictionary<uint, BountyPlaceWeights>();
+            if (store.BountyPlaceWeights != null)
+                foreach (var kv in store.BountyPlaceWeights)
+                {
+                    if (kv.Key == 0 || kv.Value == null) continue;
+                    var entry = kv.Value.Clone();
+                    entry.Sanitize(IsBountyPlaceKey);   // an unknown place (a hand edit) is dropped, weights held to the cap
+                    if (!entry.IsEmpty) placeWeights[kv.Key] = entry;
+                }
             var procAllow = new HashSet<uint>((store.AllowedProcSpells ?? new List<uint>()).Where(id => id != 0));
 
             // ── commit: from here on nothing can throw ──
@@ -445,11 +485,18 @@ namespace ACE.Server.Managers.ZoneControl
             _regionBounties.Clear();
             foreach (var kv in regionBounties) _regionBounties[kv.Key] = kv.Value;
             _regionBountySnapshot = CloneRegionBounties();
+            _bountyRewardTables.Clear();
+            foreach (var kv in rewardTables) _bountyRewardTables[kv.Key] = kv.Value;
+            _bountyRewardTableSnapshot = CloneBountyRewardTables();
+            _bountyPlaceWeights.Clear();
+            foreach (var kv in placeWeights) _bountyPlaceWeights[kv.Key] = kv.Value;
+            _bountyPlaceWeightSnapshot = CloneBountyPlaceWeights();
             _procAllow.Clear();
             foreach (var id in procAllow) _procAllow.Add(id);
             _procAllowSnapshot = new HashSet<uint>(_procAllow);
 
             RebuildIndexes();
+            ResetSavedSections();
         }
 
         /// <summary>One-time carry-over: Phase 1 stamped appearance through the generic prop pipe (PaletteTemplate
@@ -562,6 +609,20 @@ namespace ACE.Server.Managers.ZoneControl
         /// uses; if it fails, the previous store is written back, the previous zones keep running and the error is thrown.</summary>
         public static void ImportStoreJson(string json)
         {
+            // logged like any save: every part the import changed, as one batch (a plain reload would only reset the baseline)
+            lock (_lock)
+            {
+                EnsureInitialized();
+                var before = _savedSections;
+                ImportStoreJsonCore(json);
+                var after = _savedSections;
+                ZoneControlChangeLog.RecordSections(DiffSections(before, after), ZoneControlChangeLog.CurrentActor, null, "settings import");
+            }
+        }
+
+        /// <summary>The import itself, not logged: <see cref="RevertSection"/> logs its own entry around it.</summary>
+        private static void ImportStoreJsonCore(string json)
+        {
             json = UpgradeLegacyStoreKeys(json ?? "");
             var parsed = JsonConvert.DeserializeObject<Store>(json);
             if (parsed == null)
@@ -613,6 +674,8 @@ namespace ACE.Server.Managers.ZoneControl
             GearLockSpots = _gearLock.OrderBy(k => k).Select(k => new GearLockSpot { Landblock = (int)(k & 0xFFFF), Variation = (int)(k >> 16) - 1 }).ToList(),
             ZoneWideBounty = _zoneWideBounty,
             RegionBounties = new Dictionary<string, BountyConfig>(_regionBounties),
+            BountyRewardTables = new Dictionary<string, BountyRewardTable>(_bountyRewardTables),
+            BountyPlaceWeights = _bountyPlaceWeights.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()),
             AllowedProcSpells = _procAllow.OrderBy(x => x).ToList(),
         };
 
@@ -648,6 +711,8 @@ namespace ACE.Server.Managers.ZoneControl
                 log.Error($"[ZoneControl] STORE SAVE FAILED ({bytes:N0} bytes, column capacity {cap:N0}): {ex.GetBaseException().Message}");
                 throw;
             }
+            // logged only once the store is really written; a failed write leaves the baseline alone, so the next good save logs it
+            LogSavedSections(store);
             _evalCache.Clear();
             RebuildIndexes();
         }
@@ -982,14 +1047,19 @@ namespace ACE.Server.Managers.ZoneControl
         /// variation's own Default.
         /// </summary>
         private static ZoneVariantProfile AnchoredDefaultProfileFor(int variation, ZcRank rank = ZcRank.None)
+            => AnchoredDefault(variation, rank, v => DefaultFor(v)?.Profile);
+
+        /// <summary>The body of <see cref="AnchoredDefaultProfileFor"/> with the Default rows supplied by the caller, so the change preview
+        /// can run the exact same stack over an edited copy of one Default (ZoneControlManager.Preview.cs).</summary>
+        private static ZoneVariantProfile AnchoredDefault(int variation, ZcRank rank, Func<int, ZoneVariantProfile> defaults)
         {
             // RANK LAYERS (2026-09-02): each Default is flattened for the rank BEFORE the anchor merge,
             // so the tier's own Default row beats the v11 anchor's rank row (owner D2, applied between
             // tiers exactly as between tier and zone). For rank None this is the pre-existing stack.
-            var own = DefaultFor(variation)?.Profile?.ForRank(rank);
+            var own = defaults(variation)?.ForRank(rank);
             if (variation <= 11)
                 return own;
-            var anchor = DefaultFor(11)?.Profile?.ForRank(rank);
+            var anchor = defaults(11)?.ForRank(rank);
             if (anchor == null)
                 return own;
             if (own == null)
@@ -1245,6 +1315,22 @@ namespace ACE.Server.Managers.ZoneControl
         /// </summary>
         public static EvaluatedProfile ResolveZoneDefaultForPlayer(Player player)
             => GoverningZoneRef(player)?.Default;
+
+        /// <summary>
+        /// The Default row of the zone that governs this creature - the same zone <see cref="ResolveForCreature"/> picks, but the
+        /// zone-level row only: no rank row and no per-WCID bucket. For knobs that are about the KILLER rather than the monster,
+        /// so a Boss row or a wcid bucket can never re-tune them by accident (the Prestige Coin falloff, 2026-11-01). Null when
+        /// the creature is not governed - including a player, a pet or an ExemptFromZoneScaling creature, exactly as
+        /// ResolveForCreature. That is safe for the falloff: TierRewardScale.KillTier is 0 for those same creatures, so their
+        /// kills pay no Prestige Coins and never reach it (CodeRabbit #595). Lock-free snapshot read.
+        /// </summary>
+        public static EvaluatedProfile ResolveZoneDefaultRowForCreature(Creature creature)
+        {
+            if (IsZoneScalingExempt(creature))
+                return null;
+
+            return FindZoneRef(creature)?.Default;
+        }
 
         /// <summary>
         /// The enabled zone that governs where this object stands, at its effective variation: most-specific wins (the zone
@@ -1970,7 +2056,7 @@ namespace ACE.Server.Managers.ZoneControl
 
         /// <summary>Which layer a stat's winning value came from, for provenance readouts:
         /// "wcid" / "zone" / "default vN", or null when nothing authors it. Most specific wins.</summary>
-        public static string ResolveStatSource(string name, uint? wcid, string stat)
+        public static string ResolveStatSource(string name, uint? wcid, string stat, ZcRank zoneRank = ZcRank.None)
         {
             EnsureInitialized();
             lock (_lock)
@@ -1986,7 +2072,8 @@ namespace ACE.Server.Managers.ZoneControl
 
                 // RANK LAYERS (2026-09-02): the WCID's rank row on a layer sits ABOVE that layer's
                 // Default row and BELOW the next more-local layer (owner D2). Same order as ForRank+Merge.
-                var rank = wcid.HasValue ? ResolveRankForWcid(area, wcid.Value).Rank : ZcRank.None;
+                // zoneRank: the rank row being viewed when there is no monster to take a rank from (the portal's rank tabs)
+                var rank = wcid.HasValue ? ResolveRankForWcid(area, wcid.Value).Rank : zoneRank;
                 var rankKey = ZoneRank.Key(rank);
                 static bool Authors(ZoneVariantProfile p, string s) => p?.Stats != null && p.Stats.ContainsKey(s);
                 static bool AuthorsRank(ZoneVariantProfile p, string key, string s)
@@ -2015,6 +2102,73 @@ namespace ACE.Server.Managers.ZoneControl
 
                 return null;
             }
+        }
+
+        /// <summary>The Default-layer twin of <see cref="ResolveStatSource"/>: which row of a variation's Default stack a stat's
+        /// value comes from, or null when nothing authors it.</summary>
+        public static string ResolveDefaultStatSource(int variation, ZcRank rank, string stat)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var rankKey = ZoneRank.Key(rank);
+                static bool Authors(ZoneVariantProfile p, string s) => p?.Stats != null && p.Stats.ContainsKey(s);
+                static bool AuthorsRank(ZoneVariantProfile p, string key, string s)
+                    => p?.Ranks != null && p.Ranks.TryGetValue(key, out var r) && Authors(r, s);
+
+                var own = DefaultFor(variation)?.Profile;
+                if (rank != ZcRank.None && AuthorsRank(own, rankKey, stat))
+                    return "default v" + variation + " " + rankKey;
+                if (Authors(own, stat))
+                    return "default v" + variation;
+
+                if (variation > 11)
+                {
+                    var anchor = DefaultFor(11)?.Profile;
+                    if (rank != ZcRank.None && AuthorsRank(anchor, rankKey, stat))
+                        return "default v11 (anchor) " + rankKey;
+                    if (Authors(anchor, stat))
+                        return "default v11 (anchor)";
+                }
+                return null;
+            }
+        }
+
+        /// <summary>A stat's whole stack for a zone (optionally one monster's bucket) or a tier Default: every row that could set it,
+        /// what each one holds, and which wins. Null when the zone does not exist. Built under the lock, so the rows cannot move
+        /// while it reads them; the result holds copies only. Same row order as <see cref="ResolveStatSource"/> and the merge.</summary>
+        public static ZoneStatLadder BuildStatLadder(ZoneStatTarget target, string stat)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                if (target.IsDefault)
+                {
+                    var anchorDefault = target.Variation > 11 ? DefaultFor(11)?.Profile : null;
+                    var stack = ZoneStatLadderBuilder.TierStack(target.Variation, target.Rank, anchorDefault, DefaultFor(target.Variation)?.Profile);
+                    return ZoneStatLadderBuilder.Build(stat, stack);
+                }
+
+                var area = FindArea(target.Zone);
+                if (area == null)
+                    return null;
+                var rank = target.Wcid.HasValue ? ResolveRankForWcid(area, target.Wcid.Value).Rank : target.Rank;
+                ZoneVariantProfile bucket = null;
+                if (target.Wcid.HasValue)
+                    area.Profile.WcidOverrides.TryGetValue(target.Wcid.Value, out bucket);
+                var zoneStack = ZoneStatLadderBuilder.ZoneStack(area.Name, area.Variation, rank, target.Wcid,
+                    area.Variation > 11 ? DefaultFor(11)?.Profile : null, DefaultFor(area.Variation)?.Profile, area.Profile.Minion, bucket);
+                return ZoneStatLadderBuilder.Build(stat, zoneStack);
+            }
+        }
+
+        /// <summary>A variation's Default stack (v11 anchor under it, flattened for the rank, toggles applied) evaluated for display.
+        /// Unlike <see cref="EvaluateTierDefault"/> this takes a rank and covers variations outside the endgame band.</summary>
+        public static EvaluatedProfile EvaluateDefaultForDisplay(int variation, ZcRank rank)
+        {
+            EnsureInitialized();
+            lock (_lock)
+                return EvaluateVariant($"T{variation} Default", AnchoredDefaultProfileFor(variation, rank));
         }
 
         /// <summary>Evaluate a zone's profile for display/inspection, ignoring the enabled flag. Null if no such zone.</summary>
@@ -2102,6 +2256,11 @@ namespace ACE.Server.Managers.ZoneControl
         /// calls). Returns false if the zone doesn't exist.
         /// </summary>
         public static bool MutateArea(string name, Action<ControlledArea> mutate)
+            => MutateAreaIf(name, a => { mutate(a); return true; });
+
+        /// <summary>As <see cref="MutateArea"/>, but only saves when <paramref name="mutate"/> returns true, so a refused edit
+        /// does not rewrite the store. Returns false if the zone doesn't exist.</summary>
+        public static bool MutateAreaIf(string name, Func<ControlledArea, bool> mutate)
         {
             EnsureInitialized();
             lock (_lock)
@@ -2112,10 +2271,39 @@ namespace ACE.Server.Managers.ZoneControl
                 a.Landblocks ??= new HashSet<ushort>();
                 a.Profile ??= new ZoneScalingProfile();
                 a.Effects ??= new ZoneEffects();
-                mutate(a);
-                Save();
+                if (mutate(a))
+                    Save();
                 return true;
             }
+        }
+
+        /// <summary>Runs <paramref name="read"/> on the live zone under the manager lock and returns what it built, for callers off the
+        /// game thread that walk a zone's dictionaries. The callback must copy what it keeps. Null if the zone doesn't exist.</summary>
+        public static T ReadArea<T>(string name, Func<ControlledArea, T> read) where T : class
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var a = FindArea(name);
+                return a == null ? null : read(a);
+            }
+        }
+
+        /// <summary>Runs <paramref name="read"/> over every live zone under the manager lock. The callback must copy what it keeps.</summary>
+        public static T ReadAreas<T>(Func<IEnumerable<ControlledArea>, T> read)
+        {
+            EnsureInitialized();
+            lock (_lock)
+                return read(_areas.Values);
+        }
+
+        /// <summary>Runs <paramref name="read"/> on a variation's live Default (null when none is authored) under the manager lock.
+        /// The callback must copy what it keeps.</summary>
+        public static T ReadVariationDefault<T>(int variation, Func<VariationDefault, T> read)
+        {
+            EnsureInitialized();
+            lock (_lock)
+                return read(DefaultFor(variation));
         }
 
         // ── per-variation Defaults (2026-07-30) ──
@@ -2379,23 +2567,32 @@ namespace ACE.Server.Managers.ZoneControl
         /// <see cref="MutateArea"/>. Prunes the entry again if the mutation left it empty.
         /// </summary>
         public static void MutateVariationDefault(int variation, Action<VariationDefault> mutate)
+            => MutateVariationDefaultIf(variation, d => { mutate(d); return true; });
+
+        /// <summary>As <see cref="MutateVariationDefault"/>, but only saves when <paramref name="mutate"/> returns true, so a refused
+        /// edit does not rewrite the store. A Default this call had to create is dropped again if it stays empty.</summary>
+        public static void MutateVariationDefaultIf(int variation, Func<VariationDefault, bool> mutate)
         {
             EnsureInitialized();
             lock (_lock)
             {
-                if (!_variationDefaults.TryGetValue(variation, out var def) || def == null)
+                var created = !_variationDefaults.TryGetValue(variation, out var def) || def == null;
+                if (created)
                     _variationDefaults[variation] = def = new VariationDefault();
 
                 def.Profile ??= new ZoneVariantProfile();
                 def.Effects ??= new ZoneEffects();
                 def.Appearance ??= new ZoneAppearance();
 
-                mutate(def);
+                var changed = mutate(def);
 
-                if (def.IsEmpty && string.IsNullOrWhiteSpace(def.Notes))
+                // an empty Default goes after an edit that left it empty, or when this call made it; a refused edit leaves a stored
+                // (even empty) Default alone, as the shard still holds it (review 2026-11-19)
+                if ((changed || created) && def.IsEmpty && string.IsNullOrWhiteSpace(def.Notes))
                     _variationDefaults.Remove(variation);
 
-                Save();
+                if (changed)
+                    Save();
             }
         }
 
@@ -2503,7 +2700,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// writes back an old copy over the other. <paramref name="edit"/> returns why it refused (nothing is saved then), or
         /// null. Returns the settings as they now are (null for no such zone), and the refusal.
         /// </summary>
-        public static BountyConfig EditBounty(string name, Func<BountyConfig, string> edit, out string refused)
+        public static BountyConfig EditBounty(string name, Func<BountyConfig, string> edit, out string refused, int minVariation = 0)
         {
             refused = null;
             EnsureInitialized();
@@ -2511,6 +2708,12 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 var a = FindArea(name);
                 if (a == null) return null;
+                // checked here, under the lock that commits the edit: a variation change can't slip in between (review 2026-11-19)
+                if (a.Variation < minVariation)
+                {
+                    refused = $"Bounty needs variation {minVariation}+ - '{a.Name}' is on v{a.Variation}, a retail layer. Nothing changed.";
+                    return (a.Bounty ?? new BountyConfig()).Clone();
+                }
                 var cfg = (a.Bounty ?? new BountyConfig()).Clone();
                 refused = edit(cfg);
                 if (refused != null)
@@ -2617,6 +2820,191 @@ namespace ACE.Server.Managers.ZoneControl
                 if (string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase))
                     return r;
             return null;
+        }
+
+        /// <summary>
+        /// ITEM BOUNTIES (owner 2026-11-10): the BountyRegions key ("vod", "t10") of the region this object stands in, below
+        /// T11 only - the same area ResolveRegionBounty uses - whether or not that region's own bounty is on. Null elsewhere,
+        /// and everywhere while Zone Control is off (zonecontrol_enabled, as ResolveRegionBounty): region item bounties then
+        /// neither drop nor count, and applied ones wait. The cheap landblock test runs first: most deaths are nowhere near.
+        /// </summary>
+        public static string BountyRegionAt(WorldObject wo)
+        {
+            if (wo?.Location == null || !ServerConfig.zonecontrol_enabled.Value)
+                return null;
+            var landblock = (ushort)wo.Location.Landblock;
+            foreach (var r in BountyRegions)
+                if (r.Landblocks.Contains(landblock))
+                    return GetEffectiveVariation(wo) >= VariationManager.EndgameMinVariation ? null : r.Key;
+            return null;
+        }
+
+        /// <summary>ITEM BOUNTIES: a region's item bounty drop odds (1 in N kills; 0 = none drop), from the snapshot.</summary>
+        public static int RegionItemBountyOdds(string key)
+            => key != null && _regionBountySnapshot.TryGetValue(key, out var cfg) ? cfg.ItemBountyOdds : 0;
+
+        // ── Item bounty reward tables (owner 2026-11-10: mystery rewards live in Zone Control, not in the weenie) ──
+
+        // \z, not $: "$" would also accept a name ending in a newline
+        private static readonly System.Text.RegularExpressions.Regex RewardTableNameRegex =
+            new(@"^[a-z0-9_-]{1,32}(\.[a-z0-9_-]{1,8})?\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// A reward table name: 1-32 of a-z, 0-9, '_' and '-' (lower case), optionally followed by ".place" - a tier t11-t25
+        /// ("t15") or a bounty region key ("vod") - for the table that overrides the base one at that place. Any other
+        /// suffix is refused: a typo ("mystery.t51") would make a table no bounty ever reads.
+        /// </summary>
+        public static bool IsValidRewardTableName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || !RewardTableNameRegex.IsMatch(name))
+                return false;
+            var dot = name.IndexOf('.');
+            return dot < 0 || IsBountyPlaceKey(name[(dot + 1)..]);
+        }
+
+        /// <summary>A place an item bounty counts in: "t11".."t25" or a BountyRegions key ("vod", "t10").</summary>
+        internal static bool IsBountyPlaceKey(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+            if (FindBountyRegion(key) != null) return true;
+            return key.Length == 3 && key[0] == 't' && int.TryParse(key.AsSpan(1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var tier)
+                && tier >= 11 && tier <= 25;
+        }
+
+        /// <summary>
+        /// The table a bounty naming <paramref name="name"/> rolls from at <paramref name="placeKey"/> ("t15", "vod"):
+        /// "name.place" when it has an entry that can be chosen, else "name" when it has one, else null. With
+        /// <paramref name="payable"/>, an entry counts only if it passes (an item that can be made), so a place table with
+        /// nothing payable never hides a good base table. Pure, for tests.
+        /// </summary>
+        internal static (string Name, BountyRewardTable Table)? ResolveRewardTable(IReadOnlyDictionary<string, BountyRewardTable> tables, string name, string placeKey,
+            Func<BountyRewardEntry, bool> payable = null)
+        {
+            if (tables == null || string.IsNullOrEmpty(name))
+                return null;
+            bool Usable(BountyRewardTable t) => t != null && t.Valid.Any(e => payable == null || payable(e));
+            if (!string.IsNullOrEmpty(placeKey) && tables.TryGetValue(name + "." + placeKey, out var placed) && Usable(placed))
+                return (name + "." + placeKey, placed);
+            return tables.TryGetValue(name, out var table) && Usable(table) ? (name, table) : null;
+        }
+
+        /// <summary>
+        /// ITEM BOUNTIES: the live reward table (a copy) a mystery bounty naming <paramref name="name"/> rolls from at
+        /// <paramref name="placeKey"/>, or null when there is none with an entry that can be chosen (and passes
+        /// <paramref name="payable"/>, when given). Lock-free snapshot read.
+        /// </summary>
+        public static (string Name, BountyRewardTable Table)? ResolveBountyRewardTable(string name, string placeKey, Func<BountyRewardEntry, bool> payable = null)
+        {
+            var found = ResolveRewardTable(_bountyRewardTableSnapshot, (name ?? "").Trim().ToLowerInvariant(), (placeKey ?? "").Trim().ToLowerInvariant(), payable);
+            return found.HasValue ? (found.Value.Name, found.Value.Table.Clone()) : null;
+        }
+
+        /// <summary>Every reward table's name and a copy, ordered by name (for /zonecontrol bountytable list).</summary>
+        public static List<(string Name, BountyRewardTable Table)> ListBountyRewardTables()
+        {
+            EnsureInitialized();
+            return _bountyRewardTableSnapshot.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => (kv.Key, kv.Value.Clone())).ToList();
+        }
+
+        /// <summary>A copy of one reward table, or null when there is none by that name.</summary>
+        public static BountyRewardTable GetBountyRewardTable(string name)
+        {
+            EnsureInitialized();
+            return _bountyRewardTableSnapshot.TryGetValue((name ?? "").Trim(), out var table) ? table.Clone() : null;
+        }
+
+        /// <summary>
+        /// One locked read-change-write of a reward table, made when it doesn't exist yet (the same shape as
+        /// EditRegionBounty): <paramref name="edit"/> returns null to keep its change, or the refusal shown to the admin.
+        /// Saves the store. Returns a copy of the table as it is now (null when refused before it existed).
+        /// </summary>
+        public static BountyRewardTable EditBountyRewardTable(string name, Func<BountyRewardTable, string> edit, out string refused)
+        {
+            refused = null;
+            EnsureInitialized();
+            name = (name ?? "").Trim().ToLowerInvariant();
+            if (!IsValidRewardTableName(name))
+            {
+                refused = $"'{name}' isn't a table name: a-z, 0-9, _ and - (up to 32), optionally .t15 or .vod for one place.";
+                return null;
+            }
+            lock (_lock)
+            {
+                var table = _bountyRewardTables.TryGetValue(name, out var current) ? current.Clone() : new BountyRewardTable();
+                refused = edit(table);
+                if (refused != null)
+                    return current?.Clone();
+                table.Sanitize();
+                _bountyRewardTables[name] = table;
+                _bountyRewardTableSnapshot = CloneBountyRewardTables();
+                Save();
+                return table.Clone();
+            }
+        }
+
+        /// <summary>Deletes a whole reward table; false when there was none by that name. Saves the store.</summary>
+        public static bool DeleteBountyRewardTable(string name)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                if (!_bountyRewardTables.Remove((name ?? "").Trim().ToLowerInvariant()))
+                    return false;
+                _bountyRewardTableSnapshot = CloneBountyRewardTables();
+                Save();
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// ITEM BOUNTIES: every bounty's per-place drop weights and off switch, as last saved - a snapshot of deep copies that
+        /// is never changed once published (treat it as read-only). Lock-free (a bounty drop roll reads it).
+        /// </summary>
+        public static IReadOnlyDictionary<uint, BountyPlaceWeights> BountyPlaceWeightSnapshot()
+        {
+            EnsureInitialized();
+            return _bountyPlaceWeightSnapshot;
+        }
+
+        /// <summary>
+        /// One locked read-change-write of a bounty's per-place weights (the same shape as EditBountyRewardTable):
+        /// <paramref name="edit"/> changes a copy and returns null to keep it, or the refusal shown to the admin.
+        /// <paramref name="before"/> is a copy of the weights before the edit. An entry left with nothing set is removed.
+        /// Saves the store. Returns a copy of the weights as they are now (empty when nothing is set).
+        /// </summary>
+        public static BountyPlaceWeights EditBountyPlaceWeights(uint wcid, Func<BountyPlaceWeights, string> edit, out BountyPlaceWeights before, out string refused)
+        {
+            EnsureInitialized();
+            lock (_lock)
+            {
+                var current = _bountyPlaceWeights.TryGetValue(wcid, out var have) ? have.Clone() : new BountyPlaceWeights();
+                before = current.Clone();
+                refused = edit(current);
+                if (refused != null)
+                    return before;
+
+                current.Sanitize(IsBountyPlaceKey);
+                if (current.IsEmpty)
+                    _bountyPlaceWeights.Remove(wcid);
+                else
+                    _bountyPlaceWeights[wcid] = current;
+                _bountyPlaceWeightSnapshot = CloneBountyPlaceWeights();
+                Save();
+                return current.Clone();
+            }
+        }
+
+        /// <summary>A deep copy of the per-place weights for the volatile snapshot. Call under _lock (or while loading).</summary>
+        private static IReadOnlyDictionary<uint, BountyPlaceWeights> CloneBountyPlaceWeights()
+            => _bountyPlaceWeights.ToDictionary(kv => kv.Key, kv => kv.Value.Clone());
+
+        /// <summary>A deep copy of the reward tables for the volatile snapshot. Call under _lock (or while loading).</summary>
+        private static Dictionary<string, BountyRewardTable> CloneBountyRewardTables()
+        {
+            var copy = new Dictionary<string, BountyRewardTable>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _bountyRewardTables)
+                copy[kv.Key] = kv.Value.Clone();
+            return copy;
         }
 
         /// <summary>
@@ -2838,9 +3226,9 @@ namespace ACE.Server.Managers.ZoneControl
             return flags;
         }
 
-        /// <summary>Force a reload from the shard store (e.g. after out-of-band edits).</summary>
-        /// <summary>Re-reads the store from the shard. Load is build-then-commit, so on a failure the previous zones keep
-        /// running - and the error is thrown, so the caller never reports a reload that did not happen.</summary>
+        /// <summary>Re-reads the store from the shard (e.g. after out-of-band edits). Load is build-then-commit, so on a failure
+        /// the previous zones keep running - and the error is thrown, so the caller never reports a reload that did not happen.
+        /// Also makes the item bounty drop table re-read on its next roll.</summary>
         public static void Reload()
         {
             lock (_lock)
@@ -2849,6 +3237,9 @@ namespace ACE.Server.Managers.ZoneControl
                 Load();
                 _initialized = true;
             }
+            // /zonecontrol reload and /settings import come through here: a bounty the newly loaded per-place weights give a
+            // weight joins the item bounty drop table on the next roll, not at the 5-minute refresh
+            ItemBounties.InvalidateDropTable();
         }
 
         // ── Quest registry (plugin "Quests" tab) ──

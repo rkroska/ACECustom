@@ -178,12 +178,53 @@ namespace ACE.Entity.Enum.Properties
         /// marks the name as player-chosen, so nothing rewrites it (an element change keeps it). Shown in the appraisal.</summary>
         OriginalItemName = 60000,
 
+        // REFLECTION BOSS ids: 59200+ (moved 2026-11-10 from 58000-58001 here and 58000-58004 in PropertyInt, which sit in
+        // the Zone loot property block 58000-58999, ZoneLootProps). Weenies set ReflectionLives / Wcid / DamageRatingStep /
+        // Pick (int), HealthStep / RewardStep (float) and NameFormat (string) under these ids; the old 580xx rows do nothing now.
+
         /// <summary>Reflection boss (2026-11-04): the player GUIDs already copied by this chain of lives, comma-separated
         /// hex. Set at runtime and carried from life to life, so no player is copied twice.</summary>
-        ReflectionCopied = 58000,
+        ReflectionCopied = 59200,
 
         /// <summary>Reflection boss, on a MONSTER weenie: the respawn's name, with %s for the player's name. Unset =
         /// "%s's Reflection".</summary>
-        ReflectionNameFormat = 58001,
+        ReflectionNameFormat = 59201,
+
+        /// <summary>Item bounties (2026-11-10), on the CHARACTER: the bounties going, slots #1-#4 (keys "1".."8"; R1, R2, B1,
+        /// B2 before the 2026-11-12 Bounty Ledger rework, still read as #1-#4), one entry per filled slot (ItemBounties.cs owns
+        /// the format). 57700, free in EVERY Property enum.</summary>
+        ItemBountySlots = 57700,
+
+        /// <summary>Item bounties, on a bounty ITEM (Species): the target's display name in the plural, e.g. "Banderlings".
+        /// Unset = the CreatureType's name plus "s". 57701, free in EVERY Property enum.</summary>
+        ItemBountyTargetName = 57701,
+
+        /// <summary>Item bounties, on the CHARACTER: what the Bounty Tracker UB script draws - every slot with its progress,
+        /// reward name and icon ids (ItemBounties.BuildDisplay owns the format). Sent to the owner's client whenever it
+        /// changes and at login, so the window updates without a single chat line; /bounty stays the text view. 57702.</summary>
+        [SendOnLogin]
+        ItemBountyDisplay = 57702,
+
+        /// <summary>Item bounties, on a bounty ITEM (owner 2026-11-10): a REGION below T11 instead of a tier - "vod" (Valley of
+        /// Death) or "t10" (Thaelaryn Island), the keys of ZoneControlManager.BountyRegions. Only kills there count (any layer
+        /// below T11, every kill in full), it drops only there, and ItemBountyTier is ignored. Unset = a T11+ tier bounty. 57703.</summary>
+        [AssessmentProperty]
+        ItemBountyRegion = 57703,
+
+        /// <summary>Item bounties, on a MYSTERY bounty weenie (ItemBountyMystery flag 2; owner 2026-11-10): the NAME of the Zone
+        /// Control reward table its reward is rolled from when the bounty is done, e.g. "mystery" ("mystery.t15" / "mystery.vod"
+        /// override it at that place). The rewards and weights live in Zone Control (/zonecontrol bountytable), never on the
+        /// weenie, so the admins can change them live for every mystery bounty already out there. 57704.</summary>
+        ItemBountyRewardTable = 57704,
+
+        /// <summary>Personal Lifestone (2026-11-14), server-only: the exact spot a personal stone set this character's death
+        /// point to ("CELL x y z variation"). The death point counts as personal only while it still matches.</summary>
+        PersonalLifestoneAttuneSpot = 59100,
+        /// <summary>Personal Lifestone (2026-11-14), server-only: the spot a personal stone set this character's Lifestone Tie to.</summary>
+        PersonalLifestoneTieSpot = 59101,
+        /// <summary>Triune retire (owner 2026-11-22), on a CHARACTER: what the one-time login move added onto the augmentation
+        /// counts and which old counters it removed (AugMove owns the format). Its presence = moved; gates that still name a
+        /// retired counter read its old value. Server-only. 50667 (PropertyString ids are their own table: PropertyInt64 50667 = AugRollTier is a different property).</summary>
+        TriuneMoveRecord = 50667,
     }
 }

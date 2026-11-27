@@ -113,6 +113,11 @@ namespace ACE.Server.Managers
             return seen.Where(s => (GetRooms(s.Wcid)?.Count ?? 0) > 0).OrderBy(s => s.Variation ?? 0).ThenBy(s => s.Wcid).ToList();
         }
 
+        /// <summary>Auto Fellow (2026-11-05): every Vaulted Dungeon copy - its name, landing landblock and layer - so each one
+        /// has an Auto Fellow area (ZoneFellowshipManager.EnsureDungeonAreas).</summary>
+        public static List<(string Name, ushort Landblock, int Variation)> KnownDungeonsForAutoFellow()
+            => BuilderKnownDungeons().Select(d => (DungeonName(d.Wcid), (ushort)(GetRooms(d.Wcid)[0].LandingCell >> 16), d.Variation ?? 0)).ToList();
+
         private static bool BuilderHasPick(Player player)
         {
             if (player == null) return false;

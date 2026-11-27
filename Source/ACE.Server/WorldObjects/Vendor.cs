@@ -380,6 +380,10 @@ namespace ACE.Server.WorldObjects
             {
                 var wo = WorldObjectFactory.CreateNewWorldObject(itemProfile.WeenieClassId);
 
+                // item bounties: the bounty bought asks the kill count the one on display shows (each copy rolls its own)
+                if (DefaultItemsForSale.TryGetValue(new ObjectGuid(itemProfile.ObjectGuid), out var shown))
+                    ItemBounties.CopyRolledTerms(shown, wo);
+
                 if (itemProfile.Palette != null)
                     wo.PaletteTemplate = itemProfile.Palette;
 
@@ -557,6 +561,11 @@ namespace ACE.Server.WorldObjects
             // verify player has enough currency
             if (AlternateCurrency == null)
             {
+                // bank lock (/banklock): CoinValue is a cached total that counts banked pyreals, and it can predate the lock -
+                // a locked buyer is measured again, against the coins they carry, before anything is sold to them
+                if (player.IsBankLocked)
+                    player.RefreshCoinValueAfterBankChange();
+
                 if (player.CoinValue < totalPrice)
                 {
                     CleanupCreatedItems(defaultItems);

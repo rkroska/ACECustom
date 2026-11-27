@@ -101,7 +101,7 @@ namespace ACE.Server.WorldObjects
             var damageRatingMod = AdditiveCombine(GetPositiveRatingMod(caster.GetDamageRating()), heritageMod);
             var critDamageRatingMod = GetPositiveRatingMod(caster.GetCritDamageRating());
 
-            // Deeds T13 (review 2026-10-24): the separate x1.10 every other attack style gets against monsters. The ticks use
+            // Deeds damage steps (review 2026-10-24, steps 2026-11-10): the separate x1.02-x1.10 every other attack style gets against monsters. The ticks use
             // this snapshot instead of the enchantment's value, which is where the old DoT path applied it.
             var deedsMod = Player.GetDeedsDamageMod(caster, this);
 

@@ -102,6 +102,56 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void CleaveRoles_DefaultsChangeNothing()
+        {
+            // owner 2026-11-09: both new settings start at today's behaviour - cleaved hits keep the full shield bonus, no 2H extra
+            Assert.AreEqual(1.0, CharmSettingsManager.ShieldArc.At("cleaveshare", 1), 1e-9);
+            Assert.AreEqual(1.0, CharmSettingsManager.ShieldArc.At("cleaveshare", 100), 1e-9);
+            Assert.AreEqual(0.0, CharmSettingsManager.ImprovedCleave.At("cleavebonus", 1), 1e-9);
+            Assert.AreEqual(0.0, CharmSettingsManager.ImprovedCleave.At("cleavebonus", 100), 1e-9);
+            Assert.AreEqual(1.5f, Creature.ShieldArcHitMod(0.5f, 1f, cleavedHit: true), 1e-6f);
+            Assert.AreEqual(1.15f, Creature.ImprovedCleaveHitMod(0.15f, 0f, cleavedHit: true), 1e-6f);
+        }
+
+        [TestMethod]
+        public void ShieldArc_CleaveShare_OnlyCleavedHitsLoseBonus_NeverBelowNormal()
+        {
+            Assert.AreEqual(1.6f, Creature.ShieldArcHitMod(0.6f, 0f, cleavedHit: false), 1e-6f, "main target keeps the full bonus");
+            Assert.AreEqual(1.0f, Creature.ShieldArcHitMod(0.6f, 0f, cleavedHit: true), 1e-6f, "share 0 = a normal hit, never less");
+            Assert.AreEqual(1.3f, Creature.ShieldArcHitMod(0.6f, 0.5f, cleavedHit: true), 1e-6f);
+            Assert.AreEqual(1.6f, Creature.ShieldArcHitMod(0.6f, 7f, cleavedHit: true), 1e-6f, "share held to 1");
+            Assert.AreEqual(1.0f, Creature.ShieldArcHitMod(0.6f, -1f, cleavedHit: true), 1e-6f, "share held to 0");
+            Assert.AreEqual(1.6f, Creature.ShieldArcHitMod(0.6f, float.NaN, cleavedHit: true), 1e-6f, "a bad share keeps today's rule");
+            Assert.AreEqual(1.0f, Creature.ShieldArcHitMod(float.NaN, 1f, cleavedHit: false), 1e-6f);
+        }
+
+        [TestMethod]
+        public void ImprovedCleave_CleaveBonus_OnlyOnCleavedHits()
+        {
+            Assert.AreEqual(1.15f, Creature.ImprovedCleaveHitMod(0.15f, 0.4f, cleavedHit: false), 1e-6f, "main target: bonus only");
+            Assert.AreEqual(1.55f, Creature.ImprovedCleaveHitMod(0.15f, 0.4f, cleavedHit: true), 1e-6f, "cleaved: bonus + cleavebonus");
+            Assert.AreEqual(6.15f, Creature.ImprovedCleaveHitMod(0.15f, 9f, cleavedHit: true), 1e-6f, "cleavebonus held to 5");
+            Assert.AreEqual(1.15f, Creature.ImprovedCleaveHitMod(0.15f, float.NaN, cleavedHit: true), 1e-6f);
+            Assert.AreEqual(1.4f, Creature.ImprovedCleaveHitMod(float.NaN, 0.4f, cleavedHit: true), 1e-6f, "a bad bonus counts as 0");
+        }
+
+        [TestMethod]
+        public void CleaveRoles_PlayerText_IsAsciiAndMentionsTheSplit()
+        {
+            var shield = CharmSettingsManager.ShieldArc;
+            var cleave = CharmSettingsManager.ImprovedCleave;
+            Assert.IsFalse(shield.PlayerText(1).Contains("cleave"), "today's text unchanged at the default share");
+            StringAssert.StartsWith(shield.TrySet("cleaveshare", "0"), "shieldarc.cleaveshare");
+            StringAssert.Contains(shield.PlayerText(1), "not on monsters you cleave");
+            shield.TrySet("cleaveshare", "0.5");
+            StringAssert.Contains(shield.PlayerText(1), "on monsters you cleave");
+            cleave.TrySet("cleavebonus", "0.4");
+            StringAssert.Contains(cleave.PlayerText(1), "Monsters you cleave take");
+            foreach (var text in new[] { shield.PlayerText(1), shield.PlayerText(100), cleave.PlayerText(1), cleave.PlayerText(100) })
+                Assert.IsTrue(text.All(c => c < 128), $"non-ASCII in: {text}");
+        }
+
+        [TestMethod]
         public void NewCharms_AreWiredLikeTheOthers()
         {
             Assert.AreEqual(CharmAbilityRegistry.ArmorBreakerAbilityId, CharmSettingsManager.LeveledAbilityId("armorbreaker"));
@@ -117,26 +167,31 @@ namespace ACE.Server.Tests
         [TestMethod]
         public void Preset_EntryAugs_AreTheTiersWieldRequirements()
         {
-            // T16 as the weapon scaling defaults build it: item 4000 (frozen at the buy cap), creature 6000, life 4000,
-            // Triune + skill charms 500 each
+            // T16 as the weapon scaling defaults build it since the 2026-11-22 Triune retire (one stat): item 4500, creature 6500,
+            // life 4500, attack schools 4500
             var row = new ACE.Server.Managers.WeaponScaling.WeaponScalingTier
             {
-                Tier = 16, MinWieldAugs = 4000, MinWieldCreature = 6000, MinWieldLife = 4000, MinWieldTriune = 500, MinWieldSkillCharm = 500,
+                Tier = 16, MinWieldAugs = 4500, MinWieldCreature = 6500, MinWieldLife = 4500, MinWieldSkillCharm = 4500,
             };
-            var (augs, charms) = ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(16, row, max: false);
+            var augs = ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(16, row, max: false);
             // creature,item,life,war,void,duration,specialize,summon,melee,missile
-            Assert.AreEqual("6000,4000,4000,4000,4000,4000,0,0,4000,4000", augs);
-            // weave,wrath,nether,steel,trueshot
-            Assert.AreEqual("500,500,500,500,500", charms);
+            Assert.AreEqual("6500,4500,4500,4500,4500,4500,0,0,4500,4500", augs);
 
-            // T12: item 2500, creature 4500, life 2500, no Triune / skill charms yet
+            // T12: item 2500, creature 4500, life 2500, attack schools 2500 (the uniform gate, 2026-11-22)
             var t12 = new ACE.Server.Managers.WeaponScaling.WeaponScalingTier
             {
-                Tier = 12, MinWieldAugs = 2500, MinWieldCreature = 4500, MinWieldLife = 2500,
+                Tier = 12, MinWieldAugs = 2500, MinWieldCreature = 4500, MinWieldLife = 2500, MinWieldSkillCharm = 2500,
             };
-            var (augs12, charms12) = ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(12, t12, max: false);
+            var augs12 = ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(12, t12, max: false);
             Assert.AreEqual("4500,2500,2500,2500,2500,2500,0,0,2500,2500", augs12);
-            Assert.AreEqual("0,0,0,0,0", charms12);
+
+            // CodeRabbit #620: a row with minwield 0 stamps the suit at the 2,000 Item floor - the preset must hold that, not 0
+            var zeroItem = new ACE.Server.Managers.WeaponScaling.WeaponScalingTier
+            {
+                Tier = 16, MinWieldAugs = 0, MinWieldCreature = 6500, MinWieldLife = 4500, MinWieldSkillCharm = 4500,
+            };
+            Assert.AreEqual(ACE.Server.Factories.LootGenerationFactory.ZoneLootSetWieldItemAugs, ACE.Server.Factories.LootGenerationFactory.WieldItemAugs(zeroItem));
+            Assert.AreEqual("6500,2000,4500,4500,4500,4500,0,0,4500,4500", ACE.Server.Command.Handlers.TestCharacterCommands.PresetAugs(16, zeroItem, max: false));
         }
 
         [TestMethod]

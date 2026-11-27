@@ -128,6 +128,15 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // bank lock (/banklock): a sale is paid into the bank, which takes nothing in while locked - so nothing is sold
+            if (IsBankLocked)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Vendors pay into your bank, and your bank is locked.", ChatMessageType.Broadcast));
+                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, Guid.Full));
+                SendUseDoneEvent();
+                return;
+            }
+
             var vendor = CurrentLandblock?.GetObject(vendorGuid) as Vendor;
 
             if (vendor == null)

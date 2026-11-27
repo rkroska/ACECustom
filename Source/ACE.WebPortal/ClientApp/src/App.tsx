@@ -10,6 +10,8 @@ import LookupTables from './components/LookupTables'
 
 import ServerParams from './components/ServerParams'
 
+import ZoneControl from './components/ZoneControl'
+
 import ServerEvents from './components/ServerEvents'
 
 import ItemSearch from './components/ItemSearch'
@@ -312,6 +314,18 @@ function App() {
           <ProtectedRoute pageKey="params">
 
             <ServerParams />
+
+          </ProtectedRoute>
+
+        } />
+
+
+
+        <Route path="/zone-control" element={
+
+          <ProtectedRoute pageKey="zone-control">
+
+            <ZoneControl />
 
           </ProtectedRoute>
 

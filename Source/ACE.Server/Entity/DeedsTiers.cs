@@ -24,11 +24,61 @@ namespace ACE.Server.Entity
         public const int BaneFloorTier   = 9;    // Legendary banes + Legendary Impenetrability as a floor in the armor math
         public const int RebuffTier      = 10;   // the /rebuff command and the Deedkeeper's Writ (/deeds item)
         public const int BreathTier      = 12;   // Breath of Renewal, ServerConfig.deeds_breath_chance on each attack
-        public const int DamageTier      = 13;   // x DamageMultiplier, every attack style
+        public const int CheatDeathTier  = 13;   // Cheat Death: a monster's killing blow leaves 1 HP + the immunity window (the boots special's code)
         public const int CritTier        = 14;   // + the BASE crit chance again (base 10 pct -> 20 pct, Biting Strike 25 -> 35)
         public const int LootLuckTier    = 15;   // every loot quality / grade roll of a kill rolled twice, the better kept
 
-        public const float DamageMultiplier = 1.10f;
+        /// <summary>
+        /// The damage steps (owner 2026-11-10, replaces the old T13 x1.10 all at once): each of these tiers adds DamageStep, so
+        /// at the default 0.02: 3k = x1.02, 6k = x1.04, 9k = x1.06, 12k = x1.08, 15k = x1.10. Every attack style, monsters only,
+        /// its own multiplier (on top of Blood Drinker / Spirit Drinker and every other damage term).
+        /// </summary>
+        public static readonly IReadOnlyList<int> DamageStepTiers = new[] { 3, 6, 9, 12, 15 };
+
+        /// <summary>The damage per step, LIVE (ServerConfig.deeds_damage_step, /modifydouble), clamped to 0..1 IN DOUBLE before the
+        /// float cast (review 11-10: a finite 1e39 casts to float +Infinity).</summary>
+        public static float DamageStep => (float)Math.Clamp(ACE.Server.Managers.ServerConfig.deeds_damage_step.Value, 0.0, 1.0);
+
+        /// <summary>The Deeds damage multiplier at a tier: 1.0 below 3k QB, + DamageStep per step tier reached. Called on every
+        /// player hit against a monster, so no LINQ / closure.</summary>
+        public static float DamageMultiplierFor(int tier)
+        {
+            var steps = 0;
+            for (var i = 0; i < DamageStepTiers.Count; i++)
+                if (tier >= DamageStepTiers[i])
+                    steps++;
+            return steps == 0 ? 1.0f : 1.0f + DamageStep * steps;
+        }
+
+        /// <summary>The /deeds list line of a damage step tier (built live by Player.BuildDeedsList): its step and the running total.</summary>
+        public static string DamageStepLine(int tier)
+            => $"+{DamageStep * 100:0.#} percent damage with every attack, {(DamageMultiplierFor(tier) - 1.0f) * 100:0.#} percent in all: melee, missile, war and void (stacks with Blood Drinker and Spirit Drinker)";
+
+        /// <summary>The /deeds list line of T13 (built live by Player.BuildDeedsList from the two Cheat Death settings).</summary>
+        public static string CheatDeathLine()
+        {
+            if (!CheatDeathEnabled)
+                return "Cheat Death: switched off on this server right now";
+            var immunity = CheatDeathImmunity;
+            var cooldown = CheatDeathCooldown;
+            var cd = cooldown >= 60 && cooldown % 60 == 0 ? $"{cooldown / 60:0} minute" : $"{cooldown:0.#} second";
+            return $"Cheat Death: a monster's killing blow leaves you at 1 health and immune to all damage for {immunity:0.#} seconds ({cd} cooldown, shared with Cheat Death boots)";
+        }
+
+        /// <summary>T13 Cheat Death immunity seconds, LIVE (deeds_cheatdeath_immunity), never below 0.</summary>
+        public static double CheatDeathImmunity => Math.Max(0.0, ACE.Server.Managers.ServerConfig.deeds_cheatdeath_immunity.Value);
+
+        /// <summary>T13 Cheat Death cooldown seconds, LIVE (deeds_cheatdeath_cooldown), never below 0. Counted from the save.</summary>
+        public static double CheatDeathCooldown => Math.Max(0.0, ACE.Server.Managers.ServerConfig.deeds_cheatdeath_cooldown.Value);
+
+        /// <summary>
+        /// T13 Cheat Death is ON only while the cooldown is LONGER than the immunity window (owner 2026-11-10). The cooldown counts
+        /// from the save, so one at or below the window re-arms the save the moment the window closes and a player at 1 HP could
+        /// never be killed by a monster (review 11-10). At or below = the Deeds save is OFF - so deeds_cheatdeath_cooldown 0 is the
+        /// live off switch. Cheat Death boots are not affected.
+        /// </summary>
+        public static bool CheatDeathEnabled => CheatDeathCooldown > CheatDeathImmunity;
+
         public const uint BreathOfRenewalSpellId = 4100;
 
         /// <summary>The Deedkeeper's Writ weenie (Database/Updates/World/2026-10-24-00-Deedkeepers-Writ.sql): using it runs /rebuff.</summary>
@@ -138,16 +188,24 @@ namespace ACE.Server.Entity
                 3690, 3729, 3687, 3680, 3702, 3692, 3719,           // Prodigal protections
                 4767, 4783, 4787, 4779, 4763, 4771, 4775,           // Masterwork resistances
             } },
-            // the chance line is added live by Player.BuildDeedsList (ServerConfig.deeds_breath_chance)
+            // live lines (added by Player.BuildDeedsList): the damage step on 3 / 6 / 9 / 12 / 15 (deeds_damage_step), the
+            // Breath chance on 12 (deeds_breath_chance), Cheat Death on 13 (deeds_cheatdeath_immunity / _cooldown)
             new Tier { Number = 12,
                 ListedSpells = new uint[] { BreathOfRenewalSpellId } },
-            new Tier { Number = 13, Lines = new[] { "+10 percent damage with every attack: melee, missile, war and void" } },
+            // the Cheat Death line is added live by Player.BuildDeedsList (deeds_cheatdeath_immunity / _cooldown)
+            new Tier { Number = 13 },
             new Tier { Number = 14, Lines = new[] { "+100 percent of your BASE critical chance (10 percent becomes 20)" } },
             new Tier { Number = 15, Lines = new[] { "Loot luck: the quality of every item you loot is rolled twice, the better kept" } },
         };
 
         /// <summary>The tier a QB reaches: 0 below 1,000, capped at MaxTier.</summary>
         public static int TierFor(long qb) => (int)Math.Clamp(qb / QbPerTier, 0, MaxTier);
+
+        /// <summary>The server-wide tier cap, LIVE (ServerConfig.deeds_max_tier, /modifylong): 0..MaxTier.</summary>
+        public static int ServerCap => (int)Math.Clamp(ACE.Server.Managers.ServerConfig.deeds_max_tier.Value, 0, MaxTier);
+
+        /// <summary>The tier a QB gives under the server cap - what the player actually gets (TierFor alone = what the QB reaches).</summary>
+        public static int CappedTierFor(long qb) => Math.Min(TierFor(qb), ServerCap);
 
         /// <summary>Every buff spell of every tier, with the tier that grants it (a spell listed twice: its LOWEST tier).</summary>
         public static readonly IReadOnlyDictionary<uint, int> SpellTier =

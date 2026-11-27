@@ -4,6 +4,7 @@ using System.Linq;
 
 using log4net;
 
+using ACE.Common;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
@@ -20,9 +21,15 @@ namespace ACE.Server.Managers.ZoneControl
     /// kill are untouched: a kill only pays when Zone Control governs the creature at T11 or higher. Bounties are separate
     /// and pay no coins from here.
     ///
-    /// The victim's thread only reads the kill (tier, top damager). Everything about the player - their own tier, the
-    /// fraction, the bank - is read and written on the player's own thread (LandblockManager.RunOnThreadFor), exactly as
-    /// BountyManager hands off its credit. No save is forced: the regular character save stores both properties.
+    /// The victim's thread only reads the kill (tier, top damager, the falloff numbers of the zone it died in). Everything about
+    /// the player - their own tier, the falloff count, the fraction, the bank - is read and written on the player's own thread
+    /// (LandblockManager.RunOnThreadFor), exactly as BountyManager hands off its credit. No save is forced: the regular character
+    /// save stores the properties.
+    ///
+    /// KILL CAP (falloff 2026-11-01; steps per coin hour 2026-11-17): of a character's coin kills in one coin hour (60 minutes
+    /// from their first), kills 1-375 pay in full, then the pay is cut by half every 75 kills (376-450 half, 451-525 a quarter,
+    /// 526-600 an eighth ...), so an hour never pays more than 450 kills' worth (the zc_kill_cap_* settings). See
+    /// TierRewardScale.FalloffKill.
     /// </summary>
     public static class TierRewards
     {
@@ -49,6 +56,9 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!(zoneValue > 0))
                     return;
 
+                // the falloff numbers of the zone the kill happened in (its Default row, never a rank row or wcid bucket)
+                var falloff = TierRewardScale.FalloffFor(ZoneControlManager.ResolveZoneDefaultRowForCreature(victim));
+
                 // The ONLINE player, never the object the damage history remembers (a weak reference that can outlive a logout).
                 // Mules and Olthoi earn nothing here, as with bounties: they get no kill XP and Zone Share leaves them out too.
                 var attacker = victim.DamageHistory.TopDamager?.TryGetPetOwnerOrAttacker() as Player;
@@ -56,7 +66,7 @@ namespace ACE.Server.Managers.ZoneControl
                 if (player == null || !ReferenceEquals(player, attacker) || player.IsLoggingOut || player.IsMule || player.IsOlthoiPlayer)
                     return;
 
-                LandblockManager.RunOnThreadFor(player, ActionType.TierRewards_PrestigeCoins, () => CreditCoins(player, victim, killTier, zoneValue));
+                LandblockManager.RunOnThreadFor(player, ActionType.TierRewards_PrestigeCoins, () => CreditCoins(player, victim, killTier, zoneValue, falloff));
             }
             catch (Exception ex)
             {
@@ -64,8 +74,8 @@ namespace ACE.Server.Managers.ZoneControl
             }
         }
 
-        /// <summary>The player-thread half: apply the dip, carry the fraction, bank the whole coins.</summary>
-        private static void CreditCoins(Player player, Creature victim, int killTier, double zoneValue)
+        /// <summary>The player-thread half: apply the dip, run the falloff, carry the fraction, bank the whole coins.</summary>
+        private static void CreditCoins(Player player, Creature victim, int killTier, double zoneValue, TierRewardScale.FalloffDials falloff)
         {
             try
             {
@@ -75,7 +85,12 @@ namespace ACE.Server.Managers.ZoneControl
                     return;
 
                 var credit = TierRewardScale.CreditFor(player, killTier);
-                var earned = zoneValue * credit;
+                if (!(zoneValue * credit > 0))
+                    return;
+
+                // past the coin hour's full-rate kills a kill pays a share of its coins (still counted when it pays nothing)
+                var paid = ApplyFalloff(player, credit, falloff);
+                var earned = zoneValue * paid;
                 if (!(earned > 0))
                     return;
 
@@ -89,6 +104,14 @@ namespace ACE.Server.Managers.ZoneControl
                 if (whole <= 0)
                     return;
 
+                // bank lock (/banklock): a locked bank takes nothing in - no coins, and the player is told so where the
+                // "added to your bank" line would be
+                if (player.IsBankLocked)
+                {
+                    player.SendMessage($"Your bank is locked, so {whole:N0} Prestige Coin{(whole == 1 ? " was" : "s were")} not banked.", ChatMessageType.Broadcast);
+                    return;
+                }
+
                 // economy ledger: a labeled faucet (Kill, this creature), never an unexplained bank change
                 using (PyrealLedger.BeginFor(EconomyLedger.SrcKill, victim, player))
                     player.BankedPrestigeCoins = (player.BankedPrestigeCoins ?? 0) + whole;
@@ -99,6 +122,73 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 log.Error($"[TierRewards] CreditCoins for {player?.Name}: {ex}");
             }
+        }
+
+        // ---- Prestige Coin kill cap (falloff 2026-11-01; steps per coin hour 2026-11-17) ------------------------------------
+
+        /// <summary>
+        /// This kill through the falloff, on the player's own thread. Reads and saves their coin hour (PropertyFloat.PrestigeCoinHourShare
+        /// / PrestigeCoinHourStart - saved, so relogging never resets it, and an hour that ran out while offline is simply over; see
+        /// TierRewardScale.FalloffHour / FalloffKill). Tells them once as each step starts ("Prestige Coins: 375 kills this hour. Your
+        /// next 75 kills pay 50 pct of their coins (the hour ends in 42 minutes).") down to steps paying 1 pct, always at a hard stop,
+        /// and once when a new hour starts after one that reached a cut step. At most one message per step per hour, so no quiet
+        /// timer is needed. Returns the credit to pay coins on (= <paramref name="credit"/> while in the full-rate band).
+        /// </summary>
+        private static double ApplyFalloff(Player player, double credit, TierRewardScale.FalloffDials dials)
+        {
+            // the rolling-pace values the first version saved (2026-11-01..17) are never read now: drop them on sight
+            if (player.GetProperty(PropertyFloat.PrestigeCoinPaceDebt).HasValue)
+                player.RemoveProperty(PropertyFloat.PrestigeCoinPaceDebt);
+            if (player.GetProperty(PropertyFloat.PrestigeCoinPaceDebtTime).HasValue)
+                player.RemoveProperty(PropertyFloat.PrestigeCoinPaceDebtTime);
+
+            // No falloff where this kill happened: full pay, and the coin hour is left exactly as it was. Resetting or adding to
+            // it here would let a kill in a no-falloff zone change what the player's kills elsewhere pay.
+            if (!dials.On)
+                return credit;
+
+            var now = Time.GetUnixTime();
+            // the saved hour is a share of the full-rate start; the kill cap works in server kills
+            var savedShare = player.GetProperty(PropertyFloat.PrestigeCoinHourShare);
+            var (share, start, fresh) = TierRewardScale.FalloffHour(savedShare, player.GetProperty(PropertyFloat.PrestigeCoinHourStart), now);
+            var count = TierRewardScale.FalloffCountFromSaved(share, dials);
+
+            // the steps, built once for this kill
+            var bands = TierRewardScale.FalloffBands(dials);
+
+            // a new hour after one that reached a reduced band: say so before this kill's own notice, if any
+            if (fresh && savedShare.HasValue && TierRewardScale.FalloffBandAt(TierRewardScale.FalloffCountFromSaved(savedShare.Value, dials), bands).Rate < 1.0)
+                player.SendMessage("Prestige Coins: a new hour has started, so your kills pay their full coins again.", ChatMessageType.Broadcast);
+
+            var before = TierRewardScale.FalloffBandAt(count, bands).Rate;
+            var (paid, newCount, _) = TierRewardScale.FalloffKill(count, credit, dials, bands);
+
+            player.SetProperty(PropertyFloat.PrestigeCoinHourShare, TierRewardScale.FalloffCountToSaved(newCount, dials));
+            player.SetProperty(PropertyFloat.PrestigeCoinHourStart, start);
+
+            // the next kill starts in a lower band than this one did: tell them what it pays and for how long (not for shares
+            // under 1 pct - with no stop the steps keep falling, and a fast hunter would hear about every one)
+            var (after, from, upTo) = TierRewardScale.FalloffBandAt(newCount, bands);
+            if (TierRewardScale.FalloffNotice(before, after))
+            {
+                var minutes = (int)Math.Max(1, Math.Ceiling((start + TierRewardScale.CoinHourSeconds - now) / 60.0));
+                var left = $"{minutes} minute{(minutes == 1 ? "" : "s")}";
+                var kills = TierRewardScale.Kills(from * dials.Scale);
+                var pct = TierRewardScale.Pct(after);
+
+                // a step that ends: name how many kills it lasts, not the hour (the share falls again after it)
+                string text;
+                if (!(after > 0))
+                    text = $"Prestige Coins: {kills} kills this hour. Kills pay no coins for the next {left}.";
+                else if (double.IsPositiveInfinity(upTo))
+                    text = $"Prestige Coins: {kills} kills this hour. Kills now pay {pct} pct of their coins for the next {left}.";
+                else
+                    text = $"Prestige Coins: {kills} kills this hour. Your next {TierRewardScale.Kills((upTo - newCount) * dials.Scale)} kills pay {pct} pct of their coins (the hour ends in {left}).";
+
+                player.SendMessage(text, ChatMessageType.Broadcast);
+            }
+
+            return paid;
         }
 
         // ---- kill-task credit (T11+ Zone Control kills only) ---------------------------------------------------------------

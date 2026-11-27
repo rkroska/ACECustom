@@ -1,20 +1,26 @@
+using System;
 using System.Globalization;
 
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Managers;
 using ACE.Server.Managers.ZoneControl;
 using ACE.Server.Network;
+using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Command.Handlers
 {
     /// <summary>
     /// /tierdip (owner 2026-10-24): any player's view of the tier dip where they stand - their own tier, the tier of the
-    /// zone they are in, and the share of a kill's credit they keep here. See TierRewardScale.
+    /// zone they are in, and the share of a kill's credit they keep here. See TierRewardScale. Since 2026-11-01 it also shows
+    /// the Prestige Coin falloff in force here, and since 2026-11-17 where the player is in their coin hour.
     /// </summary>
     public static class TierDipCommands
     {
+        /// <summary>/tierdip: the player's own tier, the zone's tier, the credit a kill here gives them, and the Prestige Coin
+        /// falloff in force here.</summary>
         [CommandHandler("tierdip", AccessLevel.Player, CommandHandlerFlag.RequiresWorld,
-            "Shows your own tier, the tier of the zone you stand in, and how much credit a kill here gives you.",
+            "Shows your own tier, the tier of the zone you stand in, how much credit a kill here gives you, and your Prestige Coin falloff.",
             "/tierdip")]
         public static void HandleTierDip(Session session, params string[] parameters)
         {
@@ -27,10 +33,16 @@ namespace ACE.Server.Command.Handlers
             void Msg(string line) => CommandHandlerHelper.WriteOutputInfo(session, line);
 
             var playerTier = TierHitGate.PlayerTier(player);
+            var rewardTier = TierHitGate.RewardTier(player);
             var ownTier = TierRewardScale.OwnTier(player);
 
             Msg($"Your tier: {TierText(playerTier)} (the highest tier whose monsters you can hit).");
-            if (ownTier != playerTier)
+            // 2026-11-17: rewards count you no higher than the highest tier gem you own
+            if (rewardTier < playerTier)
+                Msg(player.OwnedGemTier >= TierHitGate.MinGatedVariation
+                    ? $"Rewards count you at {TierText(rewardTier)}: the highest tier gem you own."
+                    : $"Rewards count you at {TierText(rewardTier)}: you own no tier gem, and T11 needs none.");
+            if (ownTier != rewardTier)
                 Msg($"Your own tier for rewards: {TierText(ownTier)} (the highest tier at or below yours that has a zone).");
 
             var here = ZoneControlManager.GetEffectiveVariation(player);
@@ -44,11 +56,16 @@ namespace ACE.Server.Command.Handlers
             Msg($"This zone: T{here}.");
 
             if (!ServerConfig.zc_tier_dip_enabled.Value)
-            {
                 Msg("The tier dip is off: every kill gives full credit.");
-                return;
-            }
+            else
+                ShowTierDip(ownTier, here, Msg);
 
+            ShowFalloff(player, here, Msg);
+        }
+
+        /// <summary>The share of a kill's credit kept here, and which rewards the dip reaches.</summary>
+        private static void ShowTierDip(int ownTier, int here, Action<string> Msg)
+        {
             var credit = TierRewardScale.Credit(ownTier, here);
             var pct = (credit * 100).ToString("0.#", CultureInfo.InvariantCulture);
 
@@ -81,6 +98,44 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        /// <summary>
+        /// The Prestige Coin falloff where the player stands (2026-11-01; bands per coin hour 2026-11-17): the schedule in force
+        /// here, with this zone's limits, and where they are in their coin hour. Read only - nothing is written.
+        /// </summary>
+        private static void ShowFalloff(Player player, int here, Action<string> Msg)
+        {
+            if (!(ServerConfig.zc_pcoin_kill_base.Value > 0))
+                return;   // no coins per kill at all
+
+            var dials = TierRewardScale.FalloffFor(ZoneControlManager.ResolveZoneDefaultForPlayer(player));
+            if (!dials.On || TierRewardScale.FalloffBands(dials).Count == 1)   // off, or every kill pays in full anyway
+            {
+                Msg("Prestige Coins from kills here have no hourly falloff.");
+                return;
+            }
+
+            Msg($"Prestige Coins from kills here, per coin hour: {TierRewardScale.DescribeFalloff(dials)}.");
+
+            var now = ACE.Common.Time.GetUnixTime();
+            var (share, start, fresh) = TierRewardScale.FalloffHour(
+                player.GetProperty(PropertyFloat.PrestigeCoinHourShare), player.GetProperty(PropertyFloat.PrestigeCoinHourStart), now);
+            var count = TierRewardScale.FalloffCountFromSaved(share, dials);
+
+            if (fresh)
+            {
+                Msg("Your next coin kill starts a new coin hour (60 minutes).");
+                return;
+            }
+
+            var minutes = (int)Math.Max(1, Math.Ceiling((start + TierRewardScale.CoinHourSeconds - now) / 60.0));
+            // what the next kill here actually pays, at the player's tier-dip credit for this zone (a kill that straddles a step
+            // pays a blend), not just the share of the step it starts in
+            var nextShare = TierRewardScale.FalloffNextShare(count, TierRewardScale.CreditFor(player, here), dials);
+            // in this zone's kills: a zone with its own start counts the same hour against its stretched schedule
+            Msg($"Your coin hour so far counts as {TierRewardScale.Kills(count * dials.Scale)} kills here and ends in {minutes} minute{(minutes == 1 ? "" : "s")}: your next kill here pays {TierRewardScale.Pct(nextShare)} pct of its coins.");
+        }
+
+        /// <summary>"T15", or "below T11" for a tier under the endgame.</summary>
         private static string TierText(int tier) => tier >= TierRewardScale.MinTier ? "T" + tier : "below T11";
     }
 }

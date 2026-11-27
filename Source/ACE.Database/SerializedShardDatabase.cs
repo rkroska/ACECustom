@@ -223,7 +223,20 @@ namespace ACE.Database
         {
             _uniqueQueue.Enqueue(new Task((x) =>
             {
-                var result = BaseDatabase.SaveBiota(biota, rwLock);
+                // A save that throws still reports failure: callers clear their save-in-progress state and retry in the
+                // callback (OfflinePlayer, PlayerManager.SaveOfflinePlayerNow), so skipping it would leave the character
+                // marked as saving and never saved again.
+                bool result;
+                try
+                {
+                    result = BaseDatabase.SaveBiota(biota, rwLock);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[DATABASE] SaveBiota failed for biota 0x{biota.Id:X8}: {ex}");
+                    result = false;
+                }
+
                 callback?.Invoke(result);
             }, "SaveBiota: " + biota.Id));
         }

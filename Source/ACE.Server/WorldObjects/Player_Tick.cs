@@ -74,6 +74,9 @@ namespace ACE.Server.WorldObjects
             // regardless of the 5s heartbeat.
             ACE.Server.Managers.ZoneControl.ZoneEffectManager.Tick(this, currentUnixTime);
 
+            // Auto fellowship (2026-11-05): join / leave the zone fellowship of the Zone Share area we stand in (self-timed, 2 s)
+            ZoneFellowshipManager.Tick(this, currentUnixTime);
+
             var recoverySecs = ServerConfig.PortalStuckRecoverySecondsEffective;
             if (Teleporting && PortalSpaceEnteredUtc.HasValue && recoverySecs > 0)
             {
@@ -105,8 +108,8 @@ namespace ACE.Server.WorldObjects
 
             if (FellowVitalUpdate && Fellowship != null)
             {
-                Fellowship.OnVitalUpdate(this);
-                FellowVitalUpdate = false;
+                if (Fellowship.OnVitalUpdate(this))   // held back by an area fellowship's once-a-second limit: stays pending
+                    FellowVitalUpdate = false;
             }
 
             if (House != null && ServerConfig.house_rent_enabled.Value)
@@ -198,11 +201,24 @@ namespace ACE.Server.WorldObjects
 
             ZoneLockMaxHealthTick();
 
+            // reward tier (2026-11-17): the highest tier gem in the pack, read here on the player's own thread
+            RefreshOwnedGemTier();
+
             // T11+ gear lines on the character panel: catches what no equip event marks - the zone lock flipping at a
             // border, a gear-lock spot, a zone with another line cap, a ladder re-resolve. Sends nothing when nothing changed.
             SyncZcGearDisplay();
 
             ManaConsumersTick();
+
+            // QB Deeds: a live server cap change (deeds_max_tier) or a QB move moves the player's tier + buffs (every 5 s)
+            try
+            {
+                DeedsHeartbeatTick(currentUnixTime);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[Deeds] {Name} (0x{Guid}): heartbeat tier check failed", ex);
+            }
 
             HandleTargetVitals();
 
@@ -433,6 +449,9 @@ namespace ACE.Server.WorldObjects
                 {
                     landblockUpdate = UpdatePosition(RequestedLocation);
                     RequestedLocation = null;
+
+                    // NPK windup move cap, checked at every accepted position (see WindupMoveCap)
+                    CheckWindupMoveDuringCast();
                 }
 
                 if (FastTick && PhysicsObj.IsMovingOrAnimating || PhysicsObj.Velocity != Vector3.Zero)
@@ -546,6 +565,15 @@ namespace ACE.Server.WorldObjects
 
             if (!Teleporting && Location.Landblock != newPosition.Cell >> 16)
             {
+                // The position comes from the client unchecked. A landblock that isn't in the cell dat can't be
+                // loaded (building it throws on the world thread), and both the dungeon check below and
+                // UpdatePosition's get_landcell would load it. Refuse the move before anything does.
+                if (IsMoveIntoMissingLandblock(newPosition))
+                {
+                    RefuseMoveIntoMissingLandblock(newPosition.Cell);
+                    return false;
+                }
+
                 // ObjCellID >> 16 is not a reliable "same chunk" test for dungeons: adjacent rooms often
                 // differ there while PhysicsObj.GetBlockDist (landblock X/Y from the cell id) is still 1.
                 var blockDist = PhysicsObj != null
@@ -566,6 +594,53 @@ namespace ACE.Server.WorldObjects
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// True when a move leaves the current landblock for one that isn't in the cell dat.
+        /// UpdatePosition uses the same test to leave the logging of these refusals to RefuseMoveIntoMissingLandblock.
+        /// </summary>
+        public bool IsMoveIntoMissingLandblock(ACE.Entity.Position newPosition)
+        {
+            return !Teleporting && Location.Landblock != newPosition.Cell >> 16 && !CellDatIndex.LandblockExists(newPosition.Cell);
+        }
+
+        private const double BadPositionSnapBackInterval = 1.0;
+        private const double BadPositionLogInterval = 10.0;
+
+        private double _lastBadPositionSnapBack;
+        private double _lastBadPositionLog;
+        private int _badPositionsSinceLog;
+
+        /// <summary>
+        /// Puts the client back where the server has the player, and names who sent the position.
+        /// Runs on the player's physics tick only, so these fields are never touched from two threads.
+        /// </summary>
+        private void RefuseMoveIntoMissingLandblock(uint cellId)
+        {
+            var now = Time.GetUnixTime();
+
+            // Force the server position on the player's own client, as the trespass wall does: it ignores an update for
+            // itself unless this sequence moves on. A glitched client is corrected at once; once a second is enough for a
+            // client that keeps sending, and stops a flood of packets turning into a flood of broadcasts.
+            if (now - _lastBadPositionSnapBack >= BadPositionSnapBackInterval)
+            {
+                _lastBadPositionSnapBack = now;
+                Sequences.GetNextSequence(SequenceType.ObjectForcePosition);
+                SendUpdatePosition();
+            }
+
+            // one line per player every 10 seconds, counting the refusals in between, so a repeating client can't
+            // flood the log (or roll the line naming it out of the rolling log files)
+            _badPositionsSinceLog++;
+            if (now - _lastBadPositionLog < BadPositionLogInterval)
+                return;
+            _lastBadPositionLog = now;
+
+            var refused = _badPositionsSinceLog;
+            _badPositionsSinceLog = 0;
+
+            log.Warn($"[BAD POSITION] {Name} (account {Account?.AccountName ?? "?"}) claimed a position in landblock {cellId >> 16:X4} (cell 0x{cellId:X8}), which is not in the cell dat. Move refused and the client sent back to {Location}. Refusals since this player's last such line: {refused}.");
         }
 
         private double _lastPrestigeBoundaryCheck;

@@ -403,6 +403,10 @@ namespace ACE.Server.Managers.ZoneScaling
         // special_odds and per rank through the Ranks rows. Unset = bags never drop. On a hit the weights pick which bag (the four
         // core weights default to 1, so they are equally likely until tuned). Read by Creature_Death -> GearEssences.TryRollDrop.
         public const string BagOdds = "bag_odds";
+        // Item bounties (owner 2026-11-10): ONE roll per KILL inside a zone, 1-in-odds per rank through the Ranks rows, like bag_odds.
+        // Unset = bounties never drop. On a hit the kill tier's pool picks which bounty (ItemBounties.TryRollDrop -> PoolAt: each
+        // weenie's own ItemBountyDropWeight in its own tiers, replaced, extended or switched off per place by /zonecontrol bountyweight).
+        public const string BountyOdds = "bounty_odds";
         public const string BagWeightForgetfulness = "bag_weight_forgetfulness";
         public const string BagWeightMemory = "bag_weight_memory";
         public const string BagWeightSecondThoughts = "bag_weight_second_thoughts";
@@ -603,6 +607,15 @@ namespace ACE.Server.Managers.ZoneScaling
         // use it. Deliberately not weapon_*_chance: that shape makes a stat a weapon card (BuildWeaponCardChances).
         public const string SlayerPoolShare = "slayer_pool_share";
 
+        // PRESTIGE COIN KILL CAP (falloff 2026-11-01; steps 2026-11-17): per zone / tier re-tunes of zc_kill_cap_start and
+        // zc_kill_cap_reduction. Read where the KILL happens: the governing zone's Default row (its own stats over the tier Default),
+        // per stat; unset = the server setting. The coin hour is one count per character across every zone (TierRewardScale.FalloffKill).
+        // pcoin_falloff_kills_per_hour is the zone's start and stretches the interval and max with it (500 against the server's
+        // 375 = full to 500, steps of 100); 0 = no kill cap here. pcoin_falloff_mult is the share each step keeps there
+        // (1 - reduction: 0.5 = halve). The names stay as #595 shipped them (APPEND-ONLY list, mirrored by the plugin).
+        public const string PcoinFalloffKillsPerHour = "pcoin_falloff_kills_per_hour";   // the zone's kill cap start (server 375)
+        public const string PcoinFalloffMult = "pcoin_falloff_mult";                       // share each step keeps of the one before, 0..1 (server 0.5)
+
         // C5. ARMOR BASE VALUES (owner 2026-08-24, Armor_Base_Values_Plan_2026-08-24.md sections 2.1-2.3).
         // The three numbers a T11+ armour piece was built on that had no authoring surface at all.
         //
@@ -801,6 +814,10 @@ namespace ACE.Server.Managers.ZoneScaling
             LootWeightMelee1H, LootWeightMelee2H, LootWeightMissile, LootWeightWar, LootWeightVoid,
             // zone Slayer pool (2026-10-30) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
             SlayerPoolShare,
+            // Prestige Coin falloff (2026-11-01) - APPEND-ONLY, name-matched wire; the plugin's Stats list mirrors this tail.
+            PcoinFalloffKillsPerHour, PcoinFalloffMult,
+            // item bounty drops (2026-11-10) - APPEND-ONLY
+            BountyOdds,
         };
 
         /// <summary>

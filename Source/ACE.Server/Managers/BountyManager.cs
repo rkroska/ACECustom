@@ -661,6 +661,35 @@ namespace ACE.Server.Managers
             Tell(player, NextBountyLine(reward, awardedUnix));
         }
 
+        /// <summary>
+        /// Item bounties (ItemBounties, 2026-11-10): pays a completed item bounty exactly as a zone bounty is paid - into the
+        /// pack, and whatever does not go in is HELD on the character (BountyOwed) and delivered by the heartbeat, never lost.
+        /// On the player's own thread. <paramref name="completeLine"/> opens the chat line ("R1 bounty complete! (...)").
+        /// </summary>
+        public static void PayItemBounty(Player player, uint wcid, int amount, string completeLine)
+        {
+            var given = 0;
+            var names = new ItemNames(wcid);
+            var result = DeliverResult.Broken;
+
+            try
+            {
+                result = Deliver(player, wcid, amount, ref given, names);
+            }
+            finally
+            {
+                var left = amount - given;
+                if (left > 0)
+                    AddOwed(player, wcid, left);
+            }
+
+            Tell(player, given > 0 ? $"{completeLine} +{given:N0} {names.For(given)} gained." : completeLine);
+
+            var held = amount - given;
+            if (held > 0)
+                Tell(player, HeldLine(player, wcid, held, names, result));
+        }
+
         /// <summary>The held line, with the real reason (review 2026-09-24: "inventory is full" was said for every failure).</summary>
         private static string HeldLine(Player player, uint wcid, int held, ItemNames names, DeliverResult why)
         {
