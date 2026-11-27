@@ -108,6 +108,26 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
+        /// Returns the item the player last selected in their own pack or equipment, or null.
+        /// Unlike GetSelected, this ignores the health target: it stays on the last creature clicked
+        /// (a monster, pet or player) while the player clicks through their pack, so it would hide the item.
+        /// </summary>
+        public static WorldObject GetSelectedOwnedItem(Session session)
+        {
+            var player = session.Player;
+            var locations = Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems;
+
+            // RequestedAppraisalTarget is set on every click, so it is the most recent selection.
+            foreach (var targetID in new[] { player.RequestedAppraisalTarget, player.CurrentAppraisalTarget, player.ManaQueryTarget })
+            {
+                if (targetID == null) continue;
+                var item = player.FindObject(targetID.Value, locations);
+                if (item != null) return item;
+            }
+            return null;
+        }
+
+        /// <summary>
         /// Gets the player to be used as the command target based on the current selection or a specified player name.
         ///
         /// If no player is found, a system chat message is sent to the session indicating the reason. The caller need not send any additional messages.

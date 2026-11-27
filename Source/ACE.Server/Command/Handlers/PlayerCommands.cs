@@ -1915,9 +1915,8 @@ namespace ACE.Server.Command.Handlers
                 petDevice = activePet.TryGetSummoningDevice()
                     ?? player.FindObject(activePet.SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
             }
-            else if (CommandHandlerHelper.GetSelected(session) is PetDevice selectedDevice &&
-                     selectedDevice.IsCombatPetDevice() &&
-                     player.GetAllPossessions().Any(item => item.Guid.Full == selectedDevice.Guid.Full))
+            else if (CommandHandlerHelper.GetSelectedOwnedItem(session) is PetDevice selectedDevice &&
+                     selectedDevice.IsCombatPetDevice())
             {
                 petDevice = selectedDevice;
             }
@@ -2120,8 +2119,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var selected = CommandHandlerHelper.GetSelected(session);
-            var item = selected == null ? null : player.FindObject(selected.Guid.Full, Player.SearchLocations.MyInventory | Player.SearchLocations.MyEquippedItems);
+            var item = CommandHandlerHelper.GetSelectedOwnedItem(session);
             if (item == null)
             {
                 Reply("Select the weapon or caster you want to rename. It must be in your pack or wielded.");
