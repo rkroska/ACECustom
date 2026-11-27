@@ -496,6 +496,7 @@ namespace ACE.Server.Entity.Actions
         TriuneEarning_Credit,               // Triune earning: an own-tier T15+ kill's Triune share handed to the top damager's own thread
         ItemBounty_Credit,                  // item bounties: a kill's credit toward the top damager's active bounty slots, on their own thread
         ItemBounty_Command,                 // item bounties: /bounty reading or changing a character's slots, on that character's thread
+        TierRewards_KillRateOwnTier,        // staff kill rates: a character's own tier looked up on their own thread, once per clock hour
     }
     public static class ActionTypeConverter
     {

@@ -35,7 +35,11 @@ namespace ACE.Server.Managers.ZoneControl
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        /// <summary>Called once per creature death (Creature.OnDeath), on the victim's thread.</summary>
+        /// <summary>
+        /// Called once per creature death (Creature.OnDeath), on the victim's thread. For a T11+ zone kill that pays kill XP or
+        /// luminance it resolves the online top damager, counts the kill for staff kill rates (KillRateTracker - before, and
+        /// independent of, the coin checks), then hands the Prestige Coin credit to the player's thread when the zone pays coins.
+        /// </summary>
         public static void OnCreatureKilled(Creature victim)
         {
             try
@@ -51,6 +55,19 @@ namespace ACE.Server.Managers.ZoneControl
                 if (!BountyManager.PaysBounty(victim))
                     return;
 
+                // The ONLINE player, never the object the damage history remembers (a weak reference that can outlive a logout).
+                // Mules and Olthoi earn nothing here, as with bounties: they get no kill XP and Zone Share leaves them out too.
+                var top = victim.DamageHistory.TopDamager;
+                var attacker = top?.TryGetPetOwnerOrAttacker() as Player;
+                var player = attacker != null ? PlayerManager.GetOnlinePlayer(attacker.Guid) : null;
+                if (player == null || !ReferenceEquals(player, attacker) || player.IsLoggingOut || player.IsMule || player.IsOlthoiPlayer)
+                    return;
+
+                // staff kill rates (2026-11-26): every coin kill is counted, whether or not this zone pays coins or the falloff cuts them.
+                // The style is two plain field reads on the killer (stance, last cast school): no inventory, no thread hop.
+                var style = KillRateTracker.StyleOf(top.PetOwner != null, player.CombatMode, player.LastSuccessCast_School);
+                KillRateTracker.Record(player, killTier, style);
+
                 // read once here so a value changed mid-kill cannot disagree with itself; the dip is applied on the player's thread
                 var zoneValue = TierRewardScale.ZoneValue(killTier);
                 if (!(zoneValue > 0))
@@ -58,13 +75,6 @@ namespace ACE.Server.Managers.ZoneControl
 
                 // the falloff numbers of the zone the kill happened in (its Default row, never a rank row or wcid bucket)
                 var falloff = TierRewardScale.FalloffFor(ZoneControlManager.ResolveZoneDefaultRowForCreature(victim));
-
-                // The ONLINE player, never the object the damage history remembers (a weak reference that can outlive a logout).
-                // Mules and Olthoi earn nothing here, as with bounties: they get no kill XP and Zone Share leaves them out too.
-                var attacker = victim.DamageHistory.TopDamager?.TryGetPetOwnerOrAttacker() as Player;
-                var player = attacker != null ? PlayerManager.GetOnlinePlayer(attacker.Guid) : null;
-                if (player == null || !ReferenceEquals(player, attacker) || player.IsLoggingOut || player.IsMule || player.IsOlthoiPlayer)
-                    return;
 
                 LandblockManager.RunOnThreadFor(player, ActionType.TierRewards_PrestigeCoins, () => CreditCoins(player, victim, killTier, zoneValue, falloff));
             }
