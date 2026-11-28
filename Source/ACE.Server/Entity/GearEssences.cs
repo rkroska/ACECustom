@@ -1057,6 +1057,15 @@ namespace ACE.Server.Entity
                 .ToList();
         }
 
+        /// <summary>The Madness prompt's two lists as one string (what it can touch; what the removal can take), kept in the
+        /// prompt's state: a Bandit Hilt applied while the prompt is open shrinks the removable list, and the bag must then
+        /// refuse instead of removing from a set the player never saw (CodeRabbit #629).</summary>
+        internal static string MadnessPromptKeys(WorldObject wo)
+        {
+            var (eligible, removable) = MadnessKeys(wo);
+            return $"touch {string.Join(",", eligible)}|remove {string.Join(",", removable)}";
+        }
+
         /// <summary>The record keys a Bag of Madness may change on <paramref name="wo"/> now, and the ones it may remove.</summary>
         internal static (List<int> Eligible, List<int> Removable) MadnessKeys(WorldObject wo)
             => (MadnessUnits(wo).Select(u => u.Key).ToList(), MadnessRemovableUnits(wo).Select(u => u.Key).ToList());
@@ -1761,7 +1770,7 @@ namespace ACE.Server.Entity
             if (kind == EssenceKind.Chaos)
             {
                 var m = MadnessSettingsFrom(TierDefaultProfile(tier), tier);
-                return FormattableString.Invariant($"{state}|madness {m.Nothing:R} {m.OverMax:R} {m.Shift:R} {m.Remove:R} {m.OverMaxMin:R} {m.OverMaxMax:R} {m.ShiftRange:R}");
+                return FormattableString.Invariant($"{state}|madness {m.Nothing:R} {m.OverMax:R} {m.Shift:R} {m.Remove:R} {m.OverMaxMin:R} {m.OverMaxMax:R} {m.ShiftRange:R}|{MadnessPromptKeys(target)}");
             }
             if (kind == EssenceKind.Edge)
             {

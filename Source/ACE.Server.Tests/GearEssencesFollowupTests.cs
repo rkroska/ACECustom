@@ -467,6 +467,22 @@ namespace ACE.Server.Tests
             CollectionAssert.AreEquivalent(new[] { ZoneStatResolver.WeaponSlayerKey }, removable);
         }
 
+        [TestMethod]
+        public void Madness_PromptKeysChangeWhenABanditHiltLands()
+        {
+            // CodeRabbit #629: a hilt applied while the Madness prompt is open shrinks the removable list; the prompt state
+            // (MadnessPromptKeys is part of it) must differ, so the use is refused rather than applied to an unseen set
+            var sword = CreateWeapon("-11:500;-14:500;-16:500");
+            var before = GearEssences.MadnessPromptKeys(sword);
+            sword.SetProperty(PropertyFloat.ManaStoneDestroyChance, 0.01);
+            sword.SetProperty(PropertyBool.Ivoryable, true);
+            sword.SetProperty(PropertyInt.WieldSkillType2, 46);
+            sword.SetProperty(PropertyInt.WieldRequirements2, 8);
+            Assert.IsTrue(ZoneLootMutator.HasBanditHilt(sword));
+            Assert.AreNotEqual(before, GearEssences.MadnessPromptKeys(sword));
+            Assert.AreEqual(GearEssences.MadnessPromptKeys(sword), GearEssences.MadnessPromptKeys(sword));   // stable while nothing changes
+        }
+
         // ---- over-max grades: honoured only where intended ----
 
         [TestMethod]
