@@ -15,7 +15,10 @@ and run them for the release; nobody has to write them, and a server that isn't 
   bags first, updates them in one transaction, and checks afterwards that no old text is left. An online player's bags
   are saved from memory, so with the server running they would write the old text back.
 
-Skipping either script changes only the wording: the behaviour and the confirm prompts are code, so they are right either way.
+The world script is **required** for the four new bags: without their weenies, a drop weight set for one of them
+(`bag_weight_genesis` / `_augmentation` / `_alteration` / `_reforging`, 0 by default) only logs a warning and drops no bag.
+The Use text updates are wording only: skipping them (the world script's text for Second Thoughts, Tempering and Madness,
+or the shard script) leaves the old description, while the behaviour and the confirm prompts are code and right either way.
 
 | WCID | Name | What it does |
 |------|------|--------------|
