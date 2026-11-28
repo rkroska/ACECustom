@@ -25,18 +25,24 @@ namespace ACE.Server.Entity
     /// consumables a player uses on a T11+ Zone Control item to change its properties, in the spirit of Path of Exile
     /// currency but kept deliberately simple. Player names (owner 2026-10-04):
     ///
-    ///   Core:   Bag of Forgetfulness (remove one), Bag of Memory (add one), Bag of Second Thoughts (reroll one),
-    ///           Bag of Tempering (reroll Weapon Grade)
+    ///   Core:   Bag of Forgetfulness (remove one), Bag of Memory (add one), Bag of Second Thoughts (reroll the LOWEST one,
+    ///           owner 2026-11-26), Bag of Tempering (Weapon Grade one sub-grade up or down, owner 2026-11-26)
     ///   Extras: Bag of Fortune (reroll one, keep the better), Bag of Rebirth (reroll all), Bag of Locking (lock one at random),
     ///           Bag of Vengeance (set a weapon's Slayer to the monster type that dropped the bag),
-    ///           Bag of Madness (50/50: all to the top third + one more, or all unlocked ones removed; the item is then Tainted -
-    ///           REDESIGN pending),
+    ///           Bag of Madness (owner 2026-11-26, a Vaal orb: 30% nothing, 30% one property SET past its max, 30% every property
+    ///           SHIFTED +-15% of its range from where it is, 10% one property removed - only the Madness list, never a locked
+    ///           one; the item is Tainted every time),
     ///           Bag of Transmutation (a weapon's damage type becomes a random NEW one of the eight - Nether, Fire, Cold,
     ///           Lightning, Acid, Slash, Pierce, Bludgeon; its rending, Cast on Strike spells, tint and a leading
     ///           type word in its name follow),
     ///           Bag of Emptiness (remove all), Bag of Exchange (remove one and add one)
+    ///   Crafting steps (owner 2026-11-26, Path of Exile's transmute / augment / alteration / chaos):
+    ///           Bag of Genesis (add one to an item with no properties), Bag of Augmentation (add one to an item with
+    ///           exactly one), Bag of Alteration (an item with one or two properties ends up with ONE new random one),
+    ///           Bag of Reforging (replace every property, same count). The counts are the ones the appraisal's
+    ///           "Properties: N of cap" line shows; Alteration and Reforging keep a locked line and a Slayer.
     ///   The code's EssenceKind names are the original ones: Loss, Gain, Change, Edge, Fortune, Renewal, Keeping, Hunt,
-    ///   Chaos, Transmutation, Emptiness, Trade.
+    ///   Chaos, Transmutation, Emptiness, Trade (the 2026-11-26 four use their player names).
     ///
     /// "Property" means an armour modifier LINE (a ZcModifiers catalog key) on armour, shields, jewelry,
     /// clothing and cloaks, and a graded weapon CARD (record keys -11..-16 and -19) on weapons. The player never
@@ -45,11 +51,13 @@ namespace ACE.Server.Entity
     /// Owner rules:
     ///   - The Always Rolled resists (50-53), the legacy core four, Reinforced (49) and the slot specials
     ///     are PROTECTED: never removed, rerolled or added. A line locked by a Bag of Locking is protected too.
-    ///   - Loss never takes an item's last property - a locked line counts as one (Emptiness and a Chaos wipe do clear
-    ///     everything they can, on purpose).
+    ///   - Loss never takes an item's last property - a locked line counts as one (Emptiness does clear everything it can,
+    ///     on purpose, and a Bag of Madness may remove an item's only Madness property).
     ///   - The item must be in the player's pack, not worn or wielded (no equip-cache refresh needed).
-    ///   - Gain picks with each line's own loot chance, so chase lines stay as rare as they drop.
-    ///   - Every refusal happens BEFORE the essence is consumed; only Chaos has a bad outcome.
+    ///   - Gain picks with each line's own loot chance, so chase lines stay rare (a pick is weighted among what is left, so a
+    ///     chase line's share grows as the ordinary lines run out; none is ever forced).
+    ///   - Every refusal happens BEFORE the essence is consumed. Every refusal depends only on the item, never on a roll, so
+    ///     retrying can't fish for an outcome.
     ///   - A Tainted item (Madness) takes no more bags of any kind.
     ///
     /// Bags drop only inside Zone Control zones: see Creature_Death (bag_odds).
@@ -58,8 +66,8 @@ namespace ACE.Server.Entity
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        // 78780310-78780329: Gear Essences block (docs/WCID_ALLOCATION_7878.md). 320-322 and 325-329 are free (the
-        // single-type elementals 320-322 and physicals 325-327 were folded into Transmutation at 319, owner 2026-10-04).
+        // 78780310-78780329: Gear Essences block (docs/WCID_ALLOCATION_7878.md). 310-325 are all bags since 2026-11-26
+        // (320-322 and 325 held the single-type bags folded into Transmutation on 2026-10-04, never live); 326-329 are free.
         public const uint LossWcid = 78780310;
         public const uint GainWcid = 78780311;
         public const uint ChangeWcid = 78780312;
@@ -70,12 +78,16 @@ namespace ACE.Server.Entity
         public const uint HuntWcid = 78780317;
         public const uint ChaosWcid = 78780318;
         public const uint TransmutationWcid = 78780319;
+        public const uint GenesisWcid = 78780320;
+        public const uint AugmentationWcid = 78780321;
+        public const uint AlterationWcid = 78780322;
         public const uint EmptinessWcid = 78780323;
         public const uint TradeWcid = 78780324;
+        public const uint ReforgingWcid = 78780325;
 
-        public static bool IsGearEssence(uint wcid) => wcid >= LossWcid && wcid <= TradeWcid && (wcid <= TransmutationWcid || wcid >= EmptinessWcid);
+        public static bool IsGearEssence(uint wcid) => wcid >= LossWcid && wcid <= ReforgingWcid;
 
-        internal enum EssenceKind { Loss, Gain, Change, Edge, Fortune, Renewal, Keeping, Hunt, Chaos, Transmutation, Emptiness, Trade }
+        internal enum EssenceKind { Loss, Gain, Change, Edge, Fortune, Renewal, Keeping, Hunt, Chaos, Transmutation, Emptiness, Trade, Genesis, Augmentation, Alteration, Reforging }
 
         internal static EssenceKind KindOf(uint wcid) => wcid switch
         {
@@ -91,6 +103,10 @@ namespace ACE.Server.Entity
             EmptinessWcid => EssenceKind.Emptiness,
             TradeWcid => EssenceKind.Trade,
             TransmutationWcid => EssenceKind.Transmutation,
+            GenesisWcid => EssenceKind.Genesis,
+            AugmentationWcid => EssenceKind.Augmentation,
+            AlterationWcid => EssenceKind.Alteration,
+            ReforgingWcid => EssenceKind.Reforging,
             _ => throw new ArgumentOutOfRangeException(nameof(wcid), wcid, "not a Salvage Bag"),
         };
 
@@ -121,8 +137,12 @@ namespace ACE.Server.Entity
             ImbuedEffectType.AcidRending | ImbuedEffectType.ColdRending | ImbuedEffectType.ElectricRending |
             ImbuedEffectType.FireRending | ImbuedEffectType.NetherRending;
 
-        /// <summary>The top third of the grade range (RollGrade's high third) - Chaos' good outcome.</summary>
-        private const int TopThirdMin = ZoneStatResolver.GradeMax * 2 / 3 + 1;   // 667 of 1000
+        /// <summary>True when any bit of <paramref name="mask"/> sits in ImbuedEffect2-5, where a bag's removal (it clears
+        /// ImbuedEffect) can't reach it - also when the same bit is in ImbuedEffect too (CodeRabbit #629 2026-11-27: comparing
+        /// the union with ImbuedEffect missed a bit held in both).</summary>
+        internal static bool ImbueOutsideFirstSlot(WorldObject wo, ImbuedEffectType mask)
+            => ((ImbuedEffectType)((wo.GetProperty(PropertyInt.ImbuedEffect2) ?? 0) | (wo.GetProperty(PropertyInt.ImbuedEffect3) ?? 0)
+                | (wo.GetProperty(PropertyInt.ImbuedEffect4) ?? 0) | (wo.GetProperty(PropertyInt.ImbuedEffect5) ?? 0)) & mask) != 0;
 
         // -- item state shared with the appraisal ------------------------------------------------
 
@@ -239,6 +259,8 @@ namespace ACE.Server.Entity
         /// sets the grades in <paramref name="regrade"/> on record lines it already carries. <paramref name="target"/> is a
         /// forged item that starts as a copy of the main item; <paramref name="donor"/> is the second item, the source of
         /// anything a gained property needs beyond its grade (a Slayer's creature type).
+        /// Every grade the forge writes is clamped at 1000 (SetGradeInPlace / AddLine / StampGraded): a Bag of Madness over-max
+        /// grade on either item does NOT survive forging - the forge never produces a grade past a band's max.
         /// </summary>
         internal static void ForgeApplyProperties(WorldObject target, IReadOnlyDictionary<int, int> want, IReadOnlyDictionary<int, int> regrade, WorldObject donor)
         {
@@ -330,6 +352,7 @@ namespace ACE.Server.Entity
             public string Text;                             // filled while applying: what the player is told
             public string Before;                           // Regrade: the property before, for the chat line
             public bool NoLower;                            // Fortune: never below the value the item holds (under no-nerf)
+            public bool OverMax;                            // Madness Regrade: the grade may pass 1000 (ZoneStatResolver.GradeCap)
             public EvaluatedProfile Profile;                // Add of key 54 (jewelry Cast on Strike): the zone stats for the proc rate
         }
 
@@ -338,11 +361,12 @@ namespace ACE.Server.Entity
         {
             public EssenceKind Kind;
             public List<Op> Ops = new();
-            public int Quality;                             // Edge: new Weapon Grade quality
+            public int Quality;                             // Edge: new Weapon Grade quality (unchanged on a "no change" roll)
+            public TemperStep Step;                         // Edge: the step rolled
             public int LockKey;                             // Keeping: the key to lock
             public CreatureType Species;                    // Hunt: the Slayer type
             public DamageType Element;                      // Transmutation: the new damage type (rolled while planning)
-            public bool ChaosBoost;                         // Chaos: true = the good outcome
+            public MadnessOutcome Madness;                  // Chaos: the outcome rolled
             public bool FortuneKept;                        // Fortune: the old roll was better and stays
         }
 
@@ -387,6 +411,10 @@ namespace ACE.Server.Entity
                 (TransmutationWcid, zoneLoot.Get(ZoneStat.BagWeightTransmutation, 0.0)),
                 (EmptinessWcid, zoneLoot.Get(ZoneStat.BagWeightEmptiness, 0.0)),
                 (TradeWcid, zoneLoot.Get(ZoneStat.BagWeightExchange, 0.0)),
+                (GenesisWcid, zoneLoot.Get(ZoneStat.BagWeightGenesis, 0.0)),
+                (AugmentationWcid, zoneLoot.Get(ZoneStat.BagWeightAugmentation, 0.0)),
+                (AlterationWcid, zoneLoot.Get(ZoneStat.BagWeightAlteration, 0.0)),
+                (ReforgingWcid, zoneLoot.Get(ZoneStat.BagWeightReforging, 0.0)),
             };
             var weights = table.Select(t => double.IsFinite(t.Weight) ? Math.Max(0.0, t.Weight) : 0.0).ToList();
             if (weights.Sum() <= 0.0)
@@ -444,10 +472,11 @@ namespace ACE.Server.Entity
 
                 var essenceGuid = essence.Guid.Full;
                 var targetGuid = target.Guid.Full;
+                var promptedState = PromptState(essence, target);   // what the player said yes to (review 2026-11-26)
                 void OnResponse(bool response, bool _)
                 {
                     if (response)
-                        Apply(player, essenceGuid, targetGuid);
+                        Apply(player, essenceGuid, targetGuid, promptedState);
                 }
 
                 if (!player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, OnResponse), ConfirmText(essence, target)))
@@ -471,18 +500,22 @@ namespace ACE.Server.Entity
             {
                 EssenceKind.Loss => "One random property will be removed.",
                 EssenceKind.Gain => "One random property will be added.",
-                EssenceKind.Change => "One random property will be rerolled. It can go up or down.",
-                EssenceKind.Edge => "Its Weapon Grade will be rerolled. It can go up or down.",
+                EssenceKind.Change => SecondThoughtsConfirmText(target),
+                EssenceKind.Edge => TemperingConfirmText(target),
                 EssenceKind.Fortune => "One random property will be rerolled. If the new roll is no better, the old one stays.",
                 EssenceKind.Renewal => "Every property will be rerolled (a locked one stays). Each can go up or down.",
                 EssenceKind.Keeping => LockedKey(target) != null
                     ? "One random property will be locked. Other bags will not change it. The lock it already has moves to the new one."
                     : "One random property will be locked. Other bags will not change it.",
                 EssenceKind.Hunt => $"Its Slayer will become {HuntSpeciesText(essence)}.",
-                EssenceKind.Chaos => "Half the time every property rolls high and one more is added (if the tier has room). Half the time every property is removed (a locked one stays). Either way, no bag will work on it again.",
+                EssenceKind.Chaos => MadnessConfirmText(target),
                 EssenceKind.Transmutation => "Its damage type will change to a random new one (Nether, Fire, Frost, Lightning, Acid, Slashing, Piercing or Bludgeoning). Any rending, Cast on Strike, and a damage-type word at the start of its name change to match.",
                 EssenceKind.Emptiness => "Every property that bags can change will be removed.",
                 EssenceKind.Trade => "One random property will be removed and another added.",
+                EssenceKind.Genesis => "One random property will be added. This bag only works on an item with no properties.",
+                EssenceKind.Augmentation => "One random property will be added. This bag only works on an item with exactly one property.",
+                EssenceKind.Alteration => ReplaceConfirmText(EssenceKind.Alteration, target),
+                EssenceKind.Reforging => ReplaceConfirmText(EssenceKind.Reforging, target),
                 _ => throw new ArgumentOutOfRangeException(nameof(essence), essence.WeenieClassId, "no confirm text"),
             };
             return $"Use the {essence.Name} on your {target.Name}?\n\n{what}";
@@ -616,6 +649,38 @@ namespace ACE.Server.Entity
             return units;
         }
 
+        /// <summary>Alteration and Reforging: the bags that replace properties rather than add or remove them.</summary>
+        internal static bool IsReplaceKind(EssenceKind kind) => kind == EssenceKind.Alteration || kind == EssenceKind.Reforging;
+
+        /// <summary>What Alteration and Reforging replace: RemovableUnits minus the Slayer. Only a Bag of Vengeance gives a
+        /// Slayer, so a replacing bag must never take one (owner 2026-11-26).</summary>
+        private static List<Unit> ReplaceUnits(WorldObject wo)
+        {
+            var units = RemovableUnits(wo);
+            units.RemoveAll(u => u.Card == ZoneStatResolver.SpecSlayer);
+            return units;
+        }
+
+        /// <summary>
+        /// The property-count rules of the crafting-step bags (owner 2026-11-26), on the count the appraisal's
+        /// "Properties: N of cap" line shows (<see cref="PropertiesCount"/>): Genesis needs 0, Augmentation exactly 1,
+        /// Alteration 1 or 2. Null = the bag may be used; every other kind has no count rule here.
+        /// </summary>
+        internal static string CountRefusal(EssenceKind kind, int count, string itemName)
+        {
+            string Has() => count == 1 ? "1 property" : $"{count} properties";
+            return kind switch
+            {
+                EssenceKind.Genesis when count != 0 => $"A Bag of Genesis only works on an item with no properties. Your {itemName} has {Has()}.",
+                EssenceKind.Augmentation when count != 1 => $"A Bag of Augmentation only works on an item with exactly one property. Your {itemName} has {Has()}.",
+                EssenceKind.Alteration when count < 1 || count > 2 => $"A Bag of Alteration only works on an item with one or two properties. Your {itemName} has {Has()}.",
+                _ => null,
+            };
+        }
+
+        /// <summary>The count the appraisal shows and the bags enforce: cards on a weapon, slot-using lines on anything else.</summary>
+        private static int ShownCount(WorldObject wo) => IsWeapon(wo) ? CardCount(wo) : LineCount(wo);
+
         private static int GradeOf(WorldObject wo, int key)
             => ZoneStatResolver.Read(wo).Where(l => l.Key == key).Select(l => (int?)l.Grade).FirstOrDefault() ?? 0;
 
@@ -635,8 +700,17 @@ namespace ACE.Server.Entity
             switch (kind)
             {
                 case EssenceKind.Edge:
-                    plan.Quality = WeaponScalingManager.RollQuality();
+                {
+                    // one sub-grade step (owner 2026-11-26): 60 up / 30 none / 10 down by default, never past the tier's top, never S
+                    var quality = target.GetProperty(PropertyInt.WeaponAugScaleQuality) ?? 0;
+                    var (up, down, top) = TemperingSettings(TierDefaultProfile(tier), tier);
+                    var temperRefusal = TemperingRefusal(quality, top, target.Name);
+                    if (temperRefusal != null)
+                        return Refuse(out refusal, temperRefusal);
+                    plan.Step = RollTemperStep(ThreadSafeRandom.Next(0.0f, 1.0f), up, down);
+                    plan.Quality = TemperedQuality(quality, plan.Step, top);
                     return plan;
+                }
 
                 case EssenceKind.Loss:
                 {
@@ -653,6 +727,15 @@ namespace ACE.Server.Entity
                 }
 
                 case EssenceKind.Change:
+                {
+                    // the LOWEST-graded changeable property (owner 2026-11-26), at the tier's normal odds: up or down
+                    var free = FreeUnits(target);
+                    if (free.Count == 0)
+                        return Refuse(out refusal, NothingToChange(target));
+                    plan.Ops.Add(RegradeOp(LowestUnit(target, free), ZoneStatResolver.RollGrade(tier)));
+                    return plan;
+                }
+
                 case EssenceKind.Fortune:
                 {
                     var free = FreeUnits(target);
@@ -698,33 +781,33 @@ namespace ACE.Server.Entity
 
                 case EssenceKind.Chaos:
                 {
-                    var free = FreeUnits(target);
-                    if (free.Count == 0 || RemovableUnits(target).Count == 0)
-                        return Refuse(out refusal, NothingToChange(target));
-                    plan.ChaosBoost = ThreadSafeRandom.Next(0, 1) == 0;   // Next(min, max) is max-INCLUSIVE: 0 or 1, 50/50
-                    if (plan.ChaosBoost)
-                    {
-                        foreach (var u in free)
-                            plan.Ops.Add(RegradeOp(u, ThreadSafeRandom.Next(TopThirdMin, ZoneStatResolver.GradeMax)));
-                        // one more property, also in the top third - only if the tier has room for it
-                        var add = PlanAdd(target, tier, 0, out _);
-                        if (add != null)
+                    // the Bag of Madness redesign (owner 2026-11-26): only the Madness list, never a locked property
+                    var eligible = MadnessUnits(target);
+                    if (eligible.Count == 0)
+                        return Refuse(out refusal, MadnessNothingToChange(target));
+                    var removable = MadnessRemovableUnits(target);
+                    var record = ZoneStatResolver.Read(target);
+                    var roll = RollMadness(
+                        eligible.Select(u => (u.Key, record.Where(l => l.Key == u.Key).Select(l => l.Grade).FirstOrDefault())).ToList(),
+                        removable.Select(u => u.Key).ToList(),
+                        MadnessSettingsFrom(TierDefaultProfile(tier), tier),
+                        ThreadSafeRandom.Next, () => ThreadSafeRandom.Next(0.0f, 1.0f));
+                    plan.Madness = roll.Outcome;
+                    foreach (var u in eligible)
+                        if (roll.Grades.TryGetValue(u.Key, out var grade))
                         {
-                            add.Grade = ThreadSafeRandom.Next(TopThirdMin, ZoneStatResolver.GradeMax);
-                            plan.Ops.Add(add);
+                            var op = RegradeOp(u, grade);
+                            op.OverMax = true;
+                            plan.Ops.Add(op);
                         }
-                    }
-                    else
-                    {
-                        foreach (var u in RemovableUnits(target))
-                            plan.Ops.Add(RemoveOp(u));
-                    }
+                    if (roll.RemovedKey is int gone)
+                        plan.Ops.Add(RemoveOp(removable.First(u => u.Key == gone)));
                     return plan;
                 }
 
                 case EssenceKind.Transmutation:
                 {
-                    if ((target.GetImbuedEffects() & DamageRends) != (target.ImbuedEffect & DamageRends))
+                    if (ImbueOutsideFirstSlot(target, DamageRends))
                         return Refuse(out refusal, $"The rending on your {target.Name} can't be changed by a bag.");
                     if (LockedKey(target) == ZoneStatResolver.WeaponRendPowerKey && (target.GetImbuedEffects() & DamageRends) != 0)
                         return Refuse(out refusal, $"The Rending on your {target.Name} is locked, so its damage type can't be changed.");
@@ -768,9 +851,357 @@ namespace ACE.Server.Entity
                     return plan;
                 }
 
+                case EssenceKind.Genesis:
+                case EssenceKind.Augmentation:
+                {
+                    var countRefusal = CountRefusal(kind, ShownCount(target), target.Name);
+                    if (countRefusal != null)
+                        return Refuse(out refusal, countRefusal);
+                    var add = PlanAdd(target, tier, 0, out refusal);
+                    if (add == null)
+                        return null;
+                    plan.Ops.Add(add);
+                    return plan;
+                }
+
+                case EssenceKind.Alteration:
+                case EssenceKind.Reforging:
+                {
+                    var countRefusal = CountRefusal(kind, ShownCount(target), target.Name);
+                    if (countRefusal != null)
+                        return Refuse(out refusal, countRefusal);
+                    var replace = ReplaceUnits(target);
+                    if (replace.Count == 0)
+                        return Refuse(out refusal, NothingToChange(target));
+                    // the rending bits must all sit where a removal clears them (ImbuedEffect), as Transmutation checks - for a
+                    // damage Rending and for Armor Rending alike (lab retest 2026-11-26: an Armor Rending bit in ImbuedEffect2
+                    // survived a Reforging with no card behind it)
+                    if (replace.Any(u => u.Card == ZoneStatResolver.SpecRendPower)
+                        && ImbueOutsideFirstSlot(target, DamageRends))
+                        return Refuse(out refusal, $"The rending on your {target.Name} can't be changed by a bag.");
+                    if (replace.Any(u => u.Card == ZoneStatResolver.SpecArmorRend)
+                        && ImbueOutsideFirstSlot(target, ImbuedEffectType.ArmorRending))
+                        return Refuse(out refusal, $"The Armor Rending on your {target.Name} can't be changed by a bag.");
+                    var addCount = ReplacementCountFor(target, kind, tier, replace.Count);
+                    if (addCount < 1)
+                        return Refuse(out refusal, $"Your {target.Name} already has as many properties a bag can't change as its tier allows.");
+                    var adds = PlanReplacements(target, tier, replace, addCount, out refusal);
+                    if (adds == null)
+                        return null;
+                    plan.Ops.AddRange(replace.Select(RemoveOp));
+                    plan.Ops.AddRange(adds);
+                    return plan;
+                }
+
                 default:
                     throw new ArgumentOutOfRangeException(nameof(essence), essence.WeenieClassId, "no planner for this bag");
             }
+        }
+
+        // -- Bag of Madness (owner 2026-11-26 redesign) ---------------------------------------------
+        // A Vaal orb: the only way past a perfect drop, and a one-use last step. Every outcome touches only the Madness list
+        // (ZoneStatResolver.CanGoOverMax) and never a locked property; the item is Tainted every time, "nothing" included.
+        // There is no full wipe. "% of range" is in grade points: 10% of the range = 100 grade points, the ceiling is 1250.
+
+        /// <summary>The four Madness outcomes.</summary>
+        internal enum MadnessOutcome { Nothing, OverMax, Shift, Remove }
+
+        /// <summary>The Madness knobs: the four outcome weights and the over-max / shift ranges as fractions of a property's range.</summary>
+        internal readonly record struct MadnessSettings(double Nothing, double OverMax, double Shift, double Remove,
+            double OverMaxMin, double OverMaxMax, double ShiftRange);
+
+        /// <summary>The owner's numbers (2026-11-26): 30 / 30 / 30 / 10, over max by 10-25% of the range, shift +-15%.</summary>
+        internal static readonly MadnessSettings MadnessDefaults = new(0.30, 0.30, 0.30, 0.10, 0.10, 0.25, 0.15);
+
+        /// <summary>The most a Madness over-max may reach above max, as a fraction of the range: the 1250 grade ceiling.</summary>
+        internal const double MadnessOverMaxCap = (ZoneStatResolver.GradeOverMaxCeiling - ZoneStatResolver.GradeMax) / (double)ZoneStatResolver.GradeMax;
+
+        /// <summary>
+        /// The Madness knobs from the item's tier Default (<paramref name="p"/>, null = none). Unset or not a real number = the
+        /// default. The four chances are WEIGHTS (each outcome's chance is its value over the four's total; the defaults add to 1);
+        /// a negative weight is 0, and four zero weights mean the defaults. The over-max range is held to 0..0.25 (the 1250
+        /// ceiling) and put in order; the shift is held to 0..1.
+        /// </summary>
+        internal static MadnessSettings MadnessSettingsFrom(EvaluatedProfile p, int tier)
+        {
+            double Read(string stat, double fallback)
+            {
+                var v = p?.GetT(stat, fallback, tier) ?? fallback;
+                return double.IsFinite(v) ? v : fallback;
+            }
+            var d = MadnessDefaults;
+            var nothing = Math.Max(0.0, Read(ZoneStat.BagMadnessNothingChance, d.Nothing));
+            var overMax = Math.Max(0.0, Read(ZoneStat.BagMadnessOverMaxChance, d.OverMax));
+            var shift = Math.Max(0.0, Read(ZoneStat.BagMadnessShiftChance, d.Shift));
+            var remove = Math.Max(0.0, Read(ZoneStat.BagMadnessRemoveChance, d.Remove));
+            if (nothing + overMax + shift + remove <= 0.0)
+                (nothing, overMax, shift, remove) = (d.Nothing, d.OverMax, d.Shift, d.Remove);
+            var lo = Math.Clamp(Read(ZoneStat.BagMadnessOverMaxMin, d.OverMaxMin), 0.0, MadnessOverMaxCap);
+            var hi = Math.Clamp(Read(ZoneStat.BagMadnessOverMaxMax, d.OverMaxMax), 0.0, MadnessOverMaxCap);
+            if (lo > hi) (lo, hi) = (hi, lo);
+            var range = Math.Clamp(Read(ZoneStat.BagMadnessShift, d.ShiftRange), 0.0, 1.0);
+            return new MadnessSettings(nothing, overMax, shift, remove, lo, hi, range);
+        }
+
+        /// <summary>The outcome a roll in [0, 1) lands on, the four weights laid end to end in the order nothing, over max, shift,
+        /// remove.</summary>
+        internal static MadnessOutcome PickMadnessOutcome(double roll, MadnessSettings s)
+        {
+            s = MadnessScaled(s);
+            var total = s.Nothing + s.OverMax + s.Shift + s.Remove;
+            var x = roll * total;
+            if (x < s.Nothing) return MadnessOutcome.Nothing;
+            if (x < s.Nothing + s.OverMax) return MadnessOutcome.OverMax;
+            if (x < s.Nothing + s.OverMax + s.Shift) return MadnessOutcome.Shift;
+            return s.Remove > 0.0 ? MadnessOutcome.Remove
+                 : s.Shift > 0.0 ? MadnessOutcome.Shift : s.OverMax > 0.0 ? MadnessOutcome.OverMax : MadnessOutcome.Nothing;   // float tail
+        }
+
+        /// <summary>The four outcome weights divided by the largest, so a huge finite weight can't make their sum infinite
+        /// (CodeRabbit 2026-11-26). Same odds; the prompt and the roll both use it.</summary>
+        internal static MadnessSettings MadnessScaled(MadnessSettings s)
+        {
+            var largest = Math.Max(Math.Max(s.Nothing, s.OverMax), Math.Max(s.Shift, s.Remove));
+            return largest <= 0.0 ? s : s with { Nothing = s.Nothing / largest, OverMax = s.OverMax / largest, Shift = s.Shift / largest, Remove = s.Remove / largest };
+        }
+
+        /// <summary>A fraction of the range as grade points (10% = 100).</summary>
+        internal static int GradePoints(double fraction) => (int)Math.Round(fraction * ZoneStatResolver.GradeMax, MidpointRounding.AwayFromZero);
+
+        /// <summary>The over-max outcome's grade range: max + OverMaxMin .. max + OverMaxMax, in grade points (default 1100..1250).</summary>
+        internal static (int Lo, int Hi) MadnessOverMaxGrades(MadnessSettings s)
+            => (ZoneStatResolver.GradeMax + GradePoints(s.OverMaxMin), Math.Min(ZoneStatResolver.GradeOverMaxCeiling, ZoneStatResolver.GradeMax + GradePoints(s.OverMaxMax)));
+
+        /// <summary>A shift outcome's new grade: <paramref name="current"/> moved by <paramref name="delta"/> grade points, held to
+        /// 0..1250 - it may pass the max.</summary>
+        /// <summary>The confirm prompt's words for the over-max outcome, from the grade points the roll really uses
+        /// (MadnessOverMaxGrades), not the raw settings: an end of 0, or one so small it rounds to 0 points (0.0001), lands on
+        /// the maximum itself, so the prompt says "set to its maximum" there (CodeRabbit #629).</summary>
+        internal static string MadnessOverMaxText(MadnessSettings s)
+        {
+            var (lo, hi) = MadnessOverMaxGrades(s);
+            string Pct(int grade) => FormattableString.Invariant($"{(grade - ZoneStatResolver.GradeMax) * 100.0 / ZoneStatResolver.GradeMax:0.#}%");
+            if (hi <= ZoneStatResolver.GradeMax) return "set to its maximum";
+            if (lo <= ZoneStatResolver.GradeMax) return $"set to its maximum or past it, by up to {Pct(hi)} of its range";
+            return $"set past its maximum, by {Pct(lo)} to {Pct(hi)} of its range";
+        }
+
+        internal static int MadnessShifted(int current, int delta) => Math.Clamp(current + delta, 0, ZoneStatResolver.GradeOverMaxCeiling);
+
+        /// <summary>One Madness result, decided before anything is used: the outcome, the new grade per record key (over max: one
+        /// key; shift: every eligible key), and the key removed (null when the removal found nothing it may take).</summary>
+        internal sealed class MadnessRoll
+        {
+            public MadnessOutcome Outcome;
+            public Dictionary<int, int> Grades = new();
+            public int? RemovedKey;
+        }
+
+        /// <summary>
+        /// Roll a Bag of Madness on <paramref name="eligible"/> (record key, current grade: the Madness list minus a locked
+        /// property). <paramref name="removable"/> is the part of it outcome 4 may take (a Bandit Hilt keeps Biting Strike and
+        /// Crushing Blow). <paramref name="nextInt"/> is max-INCLUSIVE like ThreadSafeRandom.Next(int, int); <paramref name="nextDouble"/>
+        /// returns [0, 1). Pure, so the bounds can be tested.
+        ///   Nothing  - no grade changes.
+        ///   OverMax  - one random eligible property is SET to max + OverMaxMin..OverMaxMax of its range, whatever it was.
+        ///   Shift    - every eligible property moves from its CURRENT grade by -ShiftRange..+ShiftRange of its range (each its own
+        ///              roll), held to 0..1250, so it may pass the max or fall.
+        ///   Remove   - one random removable property is removed.
+        /// </summary>
+        internal static MadnessRoll RollMadness(IReadOnlyList<(int Key, int Grade)> eligible, IReadOnlyList<int> removable,
+            MadnessSettings s, Func<int, int, int> nextInt, Func<double> nextDouble)
+        {
+            var roll = new MadnessRoll { Outcome = PickMadnessOutcome(nextDouble(), s) };
+            switch (roll.Outcome)
+            {
+                case MadnessOutcome.OverMax when eligible.Count > 0:
+                {
+                    var (lo, hi) = MadnessOverMaxGrades(s);
+                    var pick = eligible[nextInt(0, eligible.Count - 1)];
+                    roll.Grades[pick.Key] = nextInt(lo, hi);
+                    break;
+                }
+                case MadnessOutcome.Shift:
+                {
+                    var d = GradePoints(s.ShiftRange);
+                    // an unchanged grade gets no op: a regrade re-resolves the card against the tier Default and skips the
+                    // no-nerf guard, which would overwrite a zone-stamped value for nothing (CodeRabbit 2026-11-26). If nothing
+                    // moved, the plan is empty and the bag takes the Taint-only path.
+                    foreach (var (key, grade) in eligible)
+                    {
+                        var shifted = MadnessShifted(grade, nextInt(-d, d));
+                        if (shifted != grade)
+                            roll.Grades[key] = shifted;
+                    }
+                    break;
+                }
+                case MadnessOutcome.Remove when removable.Count > 0:
+                    roll.RemovedKey = removable[nextInt(0, removable.Count - 1)];
+                    break;
+            }
+            return roll;
+        }
+
+        /// <summary>The properties a Bag of Madness may change: FreeUnits (so never a locked one) on the Madness list.</summary>
+        private static List<Unit> MadnessUnits(WorldObject wo)
+            => FreeUnits(wo).Where(u => ZoneStatResolver.CanGoOverMax(u.Key)).ToList();
+
+        /// <summary>The Madness properties outcome 4 may remove: RemovableUnits (a Bandit Hilt keeps Biting Strike and Crushing
+        /// Blow) on the Madness list, and a Rending only when its rend bits sit where a removal clears them (as Transmutation and
+        /// the replacing bags check).</summary>
+        private static List<Unit> MadnessRemovableUnits(WorldObject wo)
+        {
+            var rendClearable = !ImbueOutsideFirstSlot(wo, DamageRends);
+            return RemovableUnits(wo)
+                .Where(u => ZoneStatResolver.CanGoOverMax(u.Key) && (u.Card != ZoneStatResolver.SpecRendPower || rendClearable))
+                .ToList();
+        }
+
+        /// <summary>The Madness prompt's two lists as one string (what it can touch; what the removal can take), kept in the
+        /// prompt's state: a Bandit Hilt applied while the prompt is open shrinks the removable list, and the bag must then
+        /// refuse instead of removing from a set the player never saw (CodeRabbit #629).</summary>
+        internal static string MadnessPromptKeys(WorldObject wo)
+        {
+            var (eligible, removable) = MadnessKeys(wo);
+            return $"touch {string.Join(",", eligible)}|remove {string.Join(",", removable)}";
+        }
+
+        /// <summary>The record keys a Bag of Madness may change on <paramref name="wo"/> now, and the ones it may remove.</summary>
+        internal static (List<int> Eligible, List<int> Removable) MadnessKeys(WorldObject wo)
+            => (MadnessUnits(wo).Select(u => u.Key).ToList(), MadnessRemovableUnits(wo).Select(u => u.Key).ToList());
+
+        private const string MadnessListText =
+            "Max Health, Damage Rating, Crit Damage Rating, Healing Boost, All Attributes and Armor Level, and on weapons Biting Strike, "
+            + "Crushing Blow, Rending and Slayer";
+
+        private static string MadnessNothingToChange(WorldObject target)
+            => $"Your {target.Name} has no property a Bag of Madness can change. It only changes {MadnessListText}, and never a locked property.";
+
+        /// <summary>The confirm text of Madness: the four outcomes with the live chances, and what on this item it can touch.</summary>
+        private static string MadnessConfirmText(WorldObject target)
+        {
+            var tier = ZoneStatResolver.TierOf(target);
+            var s = MadnessScaled(MadnessSettingsFrom(TierDefaultProfile(tier), tier));
+            var total = s.Nothing + s.OverMax + s.Shift + s.Remove;
+            string Pct(double w) => FormattableString.Invariant($"{w / total * 100:0.#}%");
+            string RangePct(double f) => FormattableString.Invariant($"{f * 100:0.#}%");
+            var units = MadnessUnits(target);
+            var names = string.Join(", ", units.Select(u => UnitName(target, u)));
+            // the removal can only take what MadnessRemovableUnits allows (lab retest 2026-11-26: under a Bandit Hilt, Biting
+            // Strike and Crushing Blow stay, so a hilted weapon's removal can come up empty - say so before the bag is used)
+            var removable = MadnessRemovableUnits(target);
+            var removeLine = removable.Count == 0
+                ? $"{Pct(s.Remove)}: a property would be removed, but none of these can be, so nothing changes.\n"
+                : removable.Count < units.Count
+                    ? $"{Pct(s.Remove)}: one of these is removed at random: {string.Join(", ", removable.Select(u => UnitName(target, u)))}.\n"
+                    : $"{Pct(s.Remove)}: one random property below is removed.\n";
+            var overMaxText = MadnessOverMaxText(s);
+            return $"One of these happens, and then the item is Tainted: no bag will work on it again.\n"
+                + $"{Pct(s.Nothing)}: nothing changes.\n"
+                + $"{Pct(s.OverMax)}: one random property below is {overMaxText}.\n"
+                + $"{Pct(s.Shift)}: every property below moves up to {RangePct(s.ShiftRange)} of its range up or down from where it is, and may pass its maximum.\n"
+                + removeLine
+                + $"It can touch: {names}. A locked property is left alone.";
+        }
+
+        // -- Bag of Tempering (owner 2026-11-26) ---------------------------------------------------
+
+        /// <summary>One Tempering roll: up one sub-grade, no change, or down one.</summary>
+        internal enum TemperStep { None, Up, Down }
+
+        /// <summary>The defaults when the tier Default sets nothing (owner 2026-11-26): 60% up, 10% down, 30% no change.</summary>
+        internal const double TemperingUpDefault = 0.60, TemperingDownDefault = 0.10;
+
+        /// <summary>The top rung by default: rung 14 = A+ (rungs count up from F- = 0; S would be 15 and is never reached).</summary>
+        internal const int TemperingMaxRungDefault = 14;
+
+        /// <summary>The highest rung <c>bag_tempering_max_subgrade</c> may name: A+. S stays a drop-only chase.</summary>
+        internal const int TemperingMaxRung = 14;
+
+        /// <summary>A rung (0 = F- .. 14 = A+) as an index into <see cref="WeaponScalingManager.SubGradeBands"/> (0 = S .. 15 = F-).</summary>
+        internal static int SubGradeIndexOfRung(int rung)
+            => WeaponScalingManager.SubGradeBands.Length - 1 - Math.Clamp(rung, 0, TemperingMaxRung);
+
+        /// <summary>Where <paramref name="quality"/> sits in <see cref="WeaponScalingManager.SubGradeBands"/> (0 = S .. 15 = F-).</summary>
+        internal static int SubGradeIndex(int quality)
+            => Array.IndexOf(WeaponScalingManager.SubGradeBands, WeaponScalingManager.GetSubGradeBand(quality));
+
+        /// <summary>
+        /// The Tempering knobs from the item's tier Default (<paramref name="p"/>, null = none): the up and down chances and the top
+        /// sub-grade as a <see cref="WeaponScalingManager.SubGradeBands"/> index. Unset or not a real number = the defaults. Up is
+        /// held to 0..1 and down to 0..(1 - up), so the two never add past 1; the top is rounded and held to F-..A+.
+        /// </summary>
+        internal static (double Up, double Down, int TopIndex) TemperingSettings(EvaluatedProfile p, int tier)
+        {
+            double Read(string stat, double fallback)
+            {
+                var v = p?.GetT(stat, fallback, tier) ?? fallback;
+                return double.IsFinite(v) ? v : fallback;
+            }
+            var up = Math.Clamp(Read(ZoneStat.BagTemperingUpChance, TemperingUpDefault), 0.0, 1.0);
+            var down = Math.Clamp(Read(ZoneStat.BagTemperingDownChance, TemperingDownDefault), 0.0, 1.0 - up);
+            var rung = (int)Math.Round(Math.Clamp(Read(ZoneStat.BagTemperingMaxSubgrade, TemperingMaxRungDefault), 0.0, TemperingMaxRung),
+                MidpointRounding.AwayFromZero);
+            return (up, down, SubGradeIndexOfRung(rung));
+        }
+
+        /// <summary>The step a roll in [0, 1) lands on: below <paramref name="up"/> = up, then <paramref name="down"/> more = down,
+        /// the rest = no change.</summary>
+        internal static TemperStep RollTemperStep(double roll, double up, double down)
+            => roll < up ? TemperStep.Up : roll < up + down ? TemperStep.Down : TemperStep.None;
+
+        /// <summary>
+        /// The Weapon Grade quality after a Tempering <paramref name="step"/>. Up and down move ONE sub-grade
+        /// (<see cref="WeaponScalingManager.SubGradeBands"/>: F- -> F -> F+ -> D- ... -> A+) and LAND ON THE NEW SUB-GRADE'S
+        /// MIDPOINT (QMid) - the point the weapon ladder prices each sub-grade at (ResolveScriptK is exact at the midpoints), so
+        /// a tempered C+ deals what the ladder says a C+ deals, not the bottom of its band. Never above <paramref name="topIndex"/>,
+        /// never below F-, and an S weapon is never touched. "No change", and a step the bounds stop, keep the quality exactly
+        /// as it was.
+        /// </summary>
+        internal static int TemperedQuality(int quality, TemperStep step, int topIndex)
+        {
+            var bands = WeaponScalingManager.SubGradeBands;
+            var last = bands.Length - 1;
+            var i = SubGradeIndex(quality);
+            if (i <= 0)
+                return quality;                       // S: never touched (refused before the bag is used)
+            topIndex = Math.Clamp(topIndex, 1, last); // never S
+            var next = step switch { TemperStep.Up => i - 1, TemperStep.Down => i + 1, _ => i };
+            if (next < topIndex)
+                next = i;                             // never above the top (an item already above it does not move up)
+            if (next > last)
+                next = last;                          // never below F-
+            return next == i ? quality : bands[next].QMid;
+        }
+
+        /// <summary>Why Tempering refuses this Weapon Grade before anything is used, or null: an S weapon is never changed, and a
+        /// weapon at or above the top can only stay or go down, so the bag would be a pure loss.</summary>
+        internal static string TemperingRefusal(int quality, int topIndex, string itemName)
+        {
+            var bands = WeaponScalingManager.SubGradeBands;
+            var i = SubGradeIndex(quality);
+            if (i <= 0)
+                return $"Your {itemName} has an S Weapon Grade. A Bag of Tempering never changes an S weapon.";
+            var top = Math.Clamp(topIndex, 1, bands.Length - 1);
+            if (i <= top)
+                return $"Your {itemName} is already at {bands[i].Grade}. A Bag of Tempering raises a Weapon Grade only up to {bands[top].Grade}.";
+            return null;
+        }
+
+        /// <summary>The confirm text of Tempering: the step's outcomes for this weapon, with the live chances.</summary>
+        private static string TemperingConfirmText(WorldObject target)
+        {
+            var quality = target.GetProperty(PropertyInt.WeaponAugScaleQuality) ?? 0;
+            var tier = ZoneStatResolver.TierOf(target);
+            var (up, down, top) = TemperingSettings(TierDefaultProfile(tier), tier);
+            var bands = WeaponScalingManager.SubGradeBands;
+            var i = Math.Clamp(SubGradeIndex(quality), 1, bands.Length - 1);
+            static string Pct(double x) => FormattableString.Invariant($"{x * 100:0.#}%");
+            var now = bands[i].Grade;
+            var upTo = bands[i - 1].Grade;
+            if (i >= bands.Length - 1)   // F-: there is no lower step, so a "down" roll changes nothing
+                return $"Its Weapon Grade ({now}) moves one step: {Pct(up)} up to {upTo}, otherwise no change (it is already the lowest). A Bag of Tempering never goes above {bands[top].Grade}.";
+            return $"Its Weapon Grade ({now}) moves one step: {Pct(up)} up to {upTo}, {Pct(1.0 - up - down)} no change, {Pct(down)} down to {bands[i + 1].Grade}. A Bag of Tempering never goes above {bands[top].Grade}.";
         }
 
         private static Plan Refuse(out string refusal, string text)
@@ -784,6 +1215,46 @@ namespace ACE.Server.Entity
         private static string AtCap(WorldObject target, int cap) => $"Your {target.Name} already has as many properties as its tier allows ({cap}).";
 
         private static Unit Pick(List<Unit> units) => units[ThreadSafeRandom.Next(0, units.Count - 1)];
+
+        /// <summary>
+        /// Second Thoughts' pick (owner 2026-11-26): the index of the LOWEST grade in <paramref name="grades"/>. TIE RULE: the
+        /// first of the equally low ones, in the order given - the item's record order, which is the order the armour appraisal
+        /// lists its lines (and the order they were stamped). Deterministic, so the confirm prompt can name the property the
+        /// bag will reroll and the bag rerolls exactly that one. -1 when empty. Weapons compare their cards' grades the same way.
+        /// </summary>
+        internal static int LowestIndex(IReadOnlyList<int> grades)
+        {
+            var best = -1;
+            for (var i = 0; i < grades.Count; i++)
+                if (best < 0 || grades[i] < grades[best])   // strictly lower: an equal grade later on never wins the tie
+                    best = i;
+            return best;
+        }
+
+        /// <summary>The unit Second Thoughts rerolls: the lowest-graded of <paramref name="free"/> (record order), see <see cref="LowestIndex"/>.</summary>
+        private static Unit LowestUnit(WorldObject target, List<Unit> free)
+        {
+            var record = ZoneStatResolver.Read(target);
+            var grades = free.Select(u => record.Where(l => l.Key == u.Key).Select(l => l.Grade).FirstOrDefault()).ToList();
+            return free[LowestIndex(grades)];
+        }
+
+        /// <summary>The record key Second Thoughts would reroll on <paramref name="target"/> now, or null when nothing can change.</summary>
+        internal static int? SecondThoughtsKey(WorldObject target)
+        {
+            var free = FreeUnits(target);
+            return free.Count == 0 ? null : LowestUnit(target, free).Key;
+        }
+
+        /// <summary>The confirm text of Second Thoughts: names the property it will reroll, with its value now.</summary>
+        private static string SecondThoughtsConfirmText(WorldObject target)
+        {
+            var free = FreeUnits(target);
+            if (free.Count == 0)
+                return "Its lowest property will be rerolled at the tier's normal odds. It can go up or down.";
+            var u = LowestUnit(target, free);
+            return $"Its lowest property, {Describe(target, u.Key, u.Def, u.Card, GradeOf(target, u.Key))}, will be rerolled at the tier's normal odds. It can go up or down. A locked property is never picked.";
+        }
 
         /// <summary>The tier Default flattened to an EvaluatedProfile - the same table the drop path and
         /// /wsforge read chances, caps and bands from. Like WeaponScalingCommands.TierDefaultProfile, plus the
@@ -826,40 +1297,177 @@ namespace ACE.Server.Entity
         /// <summary>Plan adding one property (Gain, Trade, Chaos' bonus). <paramref name="removingKey"/> is a key
         /// the same use removes first: it frees a cap slot and is never added back. 0 = none.</summary>
         private static Op PlanAdd(WorldObject target, int tier, int removingKey, out string refusal)
+            => PlanAdd(target, TierDefaultProfile(tier), tier, AddState.Of(target, skipCap: removingKey != 0), out refusal);
+
+        private static Op PlanAdd(WorldObject target, EvaluatedProfile p, int tier, AddState state, out string refusal)
+            => IsWeapon(target) ? PlanAddCard(target, p, tier, state, out refusal) : PlanAddLine(target, p, tier, state, out refusal);
+
+        /// <summary>
+        /// What the item will carry when the next planned add lands: its record keys, imbue bits and proc slot, after the
+        /// removals and adds planned before it in the same use. A single add (Gain, Exchange, Chaos) plans from the item as
+        /// it is - Exchange's removed key stays in Present, so it is never added back. Alteration and Reforging plan several
+        /// adds after removing what they replace (<see cref="PlanReplacements"/>), so a replaced property may come back and
+        /// a replaced rend frees the rend slot. SkipCap: the use never grows the count (Exchange, the replacing bags).
+        /// </summary>
+        private sealed class AddState
         {
-            var p = TierDefaultProfile(tier);
-            return IsWeapon(target) ? PlanAddCard(target, p, tier, removingKey, out refusal) : PlanAddLine(target, p, tier, removingKey, out refusal);
+            public HashSet<int> Present;
+            public ImbuedEffectType Imbues;
+            public bool ProcSlotTaken;
+            public bool SkipCap;
+
+            public static AddState Of(WorldObject target, bool skipCap) => new AddState
+            {
+                Present = ZoneStatResolver.Read(target).Select(r => r.Key).ToHashSet(),
+                Imbues = target.GetImbuedEffects(),
+                ProcSlotTaken = target.ProcSpell != null,
+                ProcIsLines = target.ProcSpell != null && ZoneLootMutator.IsJewelProcSpell(target.ProcSpell.Value),
+                SkipCap = skipCap,
+            };
+
+            /// <summary>The proc on the item is the Cast on Strike line's own (removing the line clears it); a retail or
+            /// crafted proc is not, and stays taken (review 2026-11-26).</summary>
+            public bool ProcIsLines;
+
+            /// <summary>A planned removal: the key, and the imbue bits or proc slot its card or line holds.</summary>
+            public void Remove(Unit u)
+            {
+                Present.Remove(u.Key);
+                if (u.Card == ZoneStatResolver.SpecRendPower)
+                    Imbues &= ~DamageRends;
+                else if (u.Card == ZoneStatResolver.SpecArmorRend)
+                    Imbues &= ~ImbuedEffectType.ArmorRending;
+                else if (u.Card == null && u.Key == ZoneModifiers.JewelProcKey && ProcIsLines)
+                    ProcSlotTaken = false;
+            }
+
+            /// <summary>A planned add, so the next pick sees it (never the same key twice, never a second rend).</summary>
+            public void Add(Op op)
+            {
+                Present.Add(op.Key);
+                if (op.Card == ZoneStatResolver.SpecRendPower)
+                    Imbues |= op.Rend;
+                else if (op.Card == ZoneStatResolver.SpecArmorRend)
+                    Imbues |= ImbuedEffectType.ArmorRending;
+                else if (op.Card == null && op.Key == ZoneModifiers.JewelProcKey)
+                    ProcSlotTaken = true;
+            }
         }
 
-        private static Op PlanAddLine(WorldObject target, EvaluatedProfile p, int tier, int removingKey, out string refusal)
+        /// <summary>True when every line a bag could still add is a Chase line (none of the ordinary ones is left).</summary>
+        internal static bool OnlyChaseLeft(IEnumerable<ZoneModifiers.Def> candidates)
+            => candidates.All(d => d.Class == ZoneModifiers.ModifierClass.Chase);
+
+        /// <summary>True when the ordinary (non-Chase) lines among <paramref name="candidates"/> can fill <paramref name="slots"/>
+        /// new lines on their own, so a multi-line plan can never be left with only Chase lines to pick from.</summary>
+        internal static bool CanFillWithoutChase(IEnumerable<ZoneModifiers.Def> candidates, int slots)
+            => candidates.Count(d => d.Class != ZoneModifiers.ModifierClass.Chase) >= slots;
+
+        /// <summary>
+        /// How many new properties a replacing bag puts on after taking <paramref name="removed"/> off, when the item keeps
+        /// <paramref name="kept"/> it can't change (locked line, Slayer, Reinforced, Split Arrows ...) and its tier allows
+        /// <paramref name="cap"/> (owner 2026-11-26): Alteration always puts on ONE (an item with two changeable properties
+        /// loses the second, as Path of Exile's alteration on a two-mod item can); Reforging puts back as many as it took.
+        /// Never past the cap: an item above it (a legacy drop, or one made before a cap cut) comes down to the cap
+        /// (review 2026-11-26). 0 = the bag can't add anything.
+        /// </summary>
+        internal static int ReplacementCount(EssenceKind kind, int removed, int kept, int cap)
+        {
+            var want = kind == EssenceKind.Alteration ? Math.Min(1, removed) : removed;
+            var room = cap == int.MaxValue ? int.MaxValue : Math.Max(0, cap - kept);
+            return Math.Min(want, room);
+        }
+
+        /// <summary><see cref="ReplacementCount"/> for this item: its shown count, what stays, and its tier's live cap.</summary>
+        private static int ReplacementCountFor(WorldObject target, EssenceKind kind, int tier, int removed)
+        {
+            var cap = CapAt(TierDefaultProfile(tier), IsWeapon(target) ? ZoneStat.WeaponModifierCap : ZoneStat.ArmorModifierCap, tier);
+            return ReplacementCount(kind, removed, ShownCount(target) - removed, cap);
+        }
+
+        /// <summary>The confirm text of Alteration and Reforging: what is replaced and what the item ends with, worked out
+        /// from this item (review 2026-11-26: "an item with two ends up with one" was wrong when Reinforced, a locked line,
+        /// a Slayer, Split Arrows, Cleave or Cast on Strike also count), plus warnings for a Rending and for tinkers.</summary>
+        private static string ReplaceConfirmText(EssenceKind kind, WorldObject target)
+        {
+            var replace = ReplaceUnits(target);
+            var shown = ShownCount(target);
+            var adds = ReplacementCountFor(target, kind, ZoneStatResolver.TierOf(target), replace.Count);
+            var after = shown - replace.Count + adds;
+            string Props(int n) => n == 1 ? "1 property" : $"{n} properties";
+
+            var text = kind == EssenceKind.Alteration
+                ? $"{Props(replace.Count)} will be removed and 1 new random property added, so it will have {Props(after)}. This bag only works on an item with one or two properties."
+                : replace.Count == 1
+                    ? $"1 property will be replaced with a new random one, so it will have {Props(after)}."
+                    : $"{Props(replace.Count)} will be replaced with new random ones, so it will have {Props(after)}.";
+            if (kind == EssenceKind.Reforging && adds < replace.Count)
+                text += " It has more properties than its tier now allows, so it comes down to the limit.";
+            text += " A locked property, a Slayer and built-in ones such as Reinforced or Split Arrows stay.";
+            if (replace.Any(u => u.Card == ZoneStatResolver.SpecRendPower))
+                text += " Its Rending is replaced too: it can roll back on, with a new value, but that isn't certain.";
+            var rare = replace.Where(u => u.Def?.Class == ZoneModifiers.ModifierClass.Chase).Select(u => u.Def.Name).ToList();
+            if (rare.Count > 0)
+                text += $" {string.Join(" and ", rare)} {(rare.Count == 1 ? "is" : "are")} among the rarest properties and will very likely not come back.";
+            var tinkered = ZoneStatResolver.ReadTinkerBonus(target).Keys.ToHashSet();
+            if (replace.Any(u => u.Def?.Ints != null && u.Def.Ints.Any(i => tinkered.Contains(i.Item1))))
+                text += " Tinkering on the replaced properties is lost.";
+            return text;
+        }
+
+        /// <summary>
+        /// Alteration and Reforging: <paramref name="count"/> new properties after <paramref name="replace"/> come off, picked one
+        /// at a time through the same planners as Memory (same rules, same loot-chance weights), each seeing the removals and
+        /// the adds before it. A replaced property may roll back on. Null, with nothing consumed, when the item can't take
+        /// that many.
+        /// </summary>
+        private static List<Op> PlanReplacements(WorldObject target, int tier, List<Unit> replace, int count, out string refusal)
+        {
+            var p = TierDefaultProfile(tier);
+            var state = AddState.Of(target, skipCap: true);
+            foreach (var u in replace)
+                state.Remove(u);
+
+            // Decide BEFORE any random pick whether the ordinary lines alone can fill every slot (CodeRabbit 2026-11-26). A refusal
+            // that depended on the picks would be free to retry: a run where a Chase line happened to come up early would succeed,
+            // so repeated tries could push a Chase line onto every bag actually used. Each ordinary pick uses up one ordinary
+            // line and a Chase pick uses none, so "ordinary lines >= slots" guarantees the planner never meets OnlyChaseLeft.
+            if (!IsWeapon(target) && !CanFillWithoutChase(LineCandidates(target, p, tier, state).Defs, count))
+            {
+                refusal = $"Your {target.Name} can't take {count} new {(count == 1 ? "property" : "properties")} without forcing one of the rarest ones, so the bag won't change it.";
+                return null;
+            }
+
+            var adds = new List<Op>();
+            for (var i = 0; i < count; i++)
+            {
+                var op = PlanAdd(target, p, tier, state, out refusal);
+                if (op == null)
+                {
+                    refusal = count == 1
+                        ? $"A bag can't find a new property for your {target.Name}, so it won't change it."
+                        : $"A bag can't find {count} new properties for your {target.Name}, so it won't change it.";
+                    return null;
+                }
+                state.Add(op);
+                adds.Add(op);
+            }
+            refusal = null;
+            return adds;
+        }
+
+        private static Op PlanAddLine(WorldObject target, EvaluatedProfile p, int tier, AddState state, out string refusal)
         {
             refusal = null;
 
-            var present = ZoneStatResolver.Read(target).Select(r => r.Key).ToHashSet();
             var cap = CapAt(p, ZoneStat.ArmorModifierCap, tier);
-            if (removingKey == 0 && LineCount(target) >= cap)   // Exchange removes one first: the count never grows
+            if (!state.SkipCap && LineCount(target) >= cap)   // Exchange and the replacing bags remove first: the count never grows
             {
                 refusal = AtCap(target, cap);
                 return null;
             }
 
-            var piece = ZoneModifiers.PieceMask(target);
-            var candidates = new List<ZoneModifiers.Def>();
-            var weights = new List<double>();
-            foreach (var def in ZoneModifiers.Catalog.Values)
-            {
-                if (IsProtected(def) || present.Contains(def.Key))
-                    continue;
-                if (!ZoneModifiers.SlotAllowed(ZoneModifiers.EffectiveSlotMask(def, p.ModifierSlots), piece))
-                    continue;
-                if (def.Key == ZoneModifiers.JewelProcKey && target.ProcSpell != null)
-                    continue;   // the one proc slot is taken (retail / crafted proc)
-                var chance = ChanceAt(p, ZoneModifiers.LineChanceStat(def.Key), tier);
-                if (chance <= 0)
-                    continue;
-                candidates.Add(def);
-                weights.Add(chance);
-            }
+            var (candidates, weights) = LineCandidates(target, p, tier, state);
 
             if (candidates.Count == 0)
             {
@@ -867,8 +1475,42 @@ namespace ACE.Server.Entity
                 return null;
             }
 
+            // A Chase line's tiny chance only means "rare" next to the ordinary lines. When only Chase lines are left, the weighted
+            // pick would hand one out every time (review 2026-11-26: a capped piece, Reforged, always gained Crit Chance; repeated
+            // Reforging fished Cast on Strike). So a bag refuses then, before anything is used - a deterministic refusal, so
+            // retrying can't fish for it either.
+            if (OnlyChaseLeft(candidates))
+            {
+                refusal = $"Your {target.Name} already has every property a bag can add except the rarest ones ({string.Join(", ", candidates.Select(d => d.Name))}), and a bag never forces one of those.";
+                return null;
+            }
+
             var pick = candidates[WeightedIndex(weights)];
             return new Op { Action = OpAction.Add, Key = pick.Key, Def = pick, Grade = ZoneStatResolver.RollGrade(tier), Profile = p };
+        }
+
+        /// <summary>The lines a bag may add to this piece now, with their loot chances as weights: not protected, not already
+        /// there (or planned), allowed on the slot, the one proc slot free for Cast on Strike, and a chance above 0.</summary>
+        private static (List<ZoneModifiers.Def> Defs, List<double> Weights) LineCandidates(WorldObject target, EvaluatedProfile p, int tier, AddState state)
+        {
+            var piece = ZoneModifiers.PieceMask(target);
+            var defs = new List<ZoneModifiers.Def>();
+            var weights = new List<double>();
+            foreach (var def in ZoneModifiers.Catalog.Values)
+            {
+                if (IsProtected(def) || state.Present.Contains(def.Key))
+                    continue;
+                if (!ZoneModifiers.SlotAllowed(ZoneModifiers.EffectiveSlotMask(def, p.ModifierSlots), piece))
+                    continue;
+                if (def.Key == ZoneModifiers.JewelProcKey && state.ProcSlotTaken)
+                    continue;   // the one proc slot is taken (retail / crafted proc, or a proc line this use keeps or adds)
+                var chance = ChanceAt(p, ZoneModifiers.LineChanceStat(def.Key), tier);
+                if (chance <= 0)
+                    continue;
+                defs.Add(def);
+                weights.Add(chance);
+            }
+            return (defs, weights);
         }
 
         /// <summary>Lines an armour / jewelry / clothing piece carries, as a drop's armor_modifier_cap counts them: every line
@@ -925,14 +1567,14 @@ namespace ACE.Server.Entity
             return !HasOwnImbue(main.GetImbuedEffects(), present);
         }
 
-        private static Op PlanAddCard(WorldObject target, EvaluatedProfile p, int tier, int removingKey, out string refusal)
+        private static Op PlanAddCard(WorldObject target, EvaluatedProfile p, int tier, AddState state, out string refusal)
         {
             refusal = null;
             var physical = target is MeleeWeapon || target is MissileLauncher;
-            var present = ZoneStatResolver.Read(target).Select(r => r.Key).ToHashSet();
+            var present = state.Present;
 
             var cap = CapAt(p, ZoneStat.WeaponModifierCap, tier);
-            if (removingKey == 0 && CardCount(target) >= cap)   // Exchange removes one first: the count never grows
+            if (!state.SkipCap && CardCount(target) >= cap)   // Exchange and the replacing bags remove first: the count never grows
             {
                 refusal = AtCap(target, cap);
                 return null;
@@ -945,7 +1587,7 @@ namespace ACE.Server.Entity
             // an imbue recipe needs an un-imbued weapon, so a weapon with a Rending or Armor Rending card can't take an imbue, and
             // a bag must not add one of those cards next to an imbue either (review 2026-10-04: an own Armor Rending + a Rending
             // card = 4 effects on a 3-slot weapon).
-            var imbues = target.GetImbuedEffects();
+            var imbues = state.Imbues;
             var ownImbue = HasOwnImbue(imbues, present);
             var rends = ownImbue || (imbues & DamageRends) != 0 ? new List<ImbuedEffectType>() : ZoneLootMutator.GetMatchingRends(target.W_DamageType);
             var armorRendFree = !ownImbue && (imbues & ImbuedEffectType.ArmorRending) == 0;
@@ -1023,7 +1665,7 @@ namespace ACE.Server.Entity
         // -- applying ----------------------------------------------------------------------------
 
         /// <summary>Confirmation "yes": find both items again, re-check, plan, consume, then change the item.</summary>
-        private static void Apply(Player player, uint essenceGuid, uint targetGuid)
+        private static void Apply(Player player, uint essenceGuid, uint targetGuid, string promptedState)
         {
             if (player.IsBusy)
             {
@@ -1039,6 +1681,10 @@ namespace ACE.Server.Entity
             try
             {
                 refusal = Verify(player, essence, target);
+                // the item changed under the open prompt (another bag, a tinker, a trade back): what the player agreed to is
+                // no longer what would happen, so nothing is used and they ask again
+                if (refusal == null && promptedState != null && PromptState(essence, target) != promptedState)
+                    refusal = $"Your {target.Name} changed since you chose the bag. Use the bag again.";
                 plan = refusal == null ? BuildPlan(essence, target, out refusal) : null;
             }
             catch (Exception ex)
@@ -1111,10 +1757,39 @@ namespace ACE.Server.Entity
             log.Info($"[SALVAGE BAG] {player.Name} used {essenceName} on {target.Name} (0x{target.Guid}): {result}");
         }
 
-        /// <summary>What an essence can change on an item, as one string: equal before and after = nothing changed.</summary>
+        /// <summary>What a confirm prompt promised: the item's state; for Madness and Tempering the odds the prompt showed; and for Alteration and Reforging how many properties
+        /// go and come (the tier cap can change while the prompt is open - CodeRabbit 2026-11-26). Apply refuses when it
+        /// differs, so a bag is never used on anything but what the player agreed to.</summary>
+        private static string PromptState(WorldObject essence, WorldObject target)
+        {
+            var state = Fingerprint(target);
+            var kind = KindOf(essence.WeenieClassId);
+            var tier = ZoneStatResolver.TierOf(target);
+            // Madness and Tempering show their odds in the prompt; an admin change to them under an open prompt must not apply
+            // odds the player never saw (CodeRabbit 2026-11-26). The rolls themselves stay fresh at "Yes".
+            if (kind == EssenceKind.Chaos)
+            {
+                var m = MadnessSettingsFrom(TierDefaultProfile(tier), tier);
+                return FormattableString.Invariant($"{state}|madness {m.Nothing:R} {m.OverMax:R} {m.Shift:R} {m.Remove:R} {m.OverMaxMin:R} {m.OverMaxMax:R} {m.ShiftRange:R}|{MadnessPromptKeys(target)}");
+            }
+            if (kind == EssenceKind.Edge)
+            {
+                var (up, down, top) = TemperingSettings(TierDefaultProfile(tier), tier);
+                return FormattableString.Invariant($"{state}|tempering {up:R} {down:R} {top}");
+            }
+            if (!IsReplaceKind(kind))
+                return state;
+            var removed = ReplaceUnits(target).Count;
+            return $"{state}|{removed}>{ReplacementCountFor(target, kind, ZoneStatResolver.TierOf(target), removed)}";
+        }
+
+        /// <summary>What an essence can change on an item, as one string: equal before and after = nothing changed. Tinker
+        /// bonuses and the proc spell are in it too (lab retest 2026-11-26): a tinker can land while a bag's prompt is open,
+        /// and the prompt's tinker warning must match what the bag then removes.</summary>
         private static string Fingerprint(WorldObject wo)
             => string.Join("|", wo.GetProperty(PropertyString.ZcModifiers), (int)wo.ImbuedEffect, (int)wo.W_DamageType,
-                wo.GetProperty(PropertyInt.WeaponAugScaleQuality), (int?)wo.SlayerCreatureType, LockedKey(wo), IsTainted(wo), wo.Name);
+                wo.GetProperty(PropertyInt.WeaponAugScaleQuality), (int?)wo.SlayerCreatureType, LockedKey(wo), IsTainted(wo), wo.Name,
+                wo.GetProperty(PropertyString.ZcTinkerBonus), wo.ProcSpell);
 
         /// <summary>A replacement essence after a failed use (the Hunt keeps its monster type and name). True = it is in the pack.</summary>
         private static bool Refund(Player player, uint wcid, int? huntSpecies, string name)
@@ -1147,8 +1822,11 @@ namespace ACE.Server.Entity
                 case EssenceKind.Edge:
                 {
                     var oldQuality = target.GetProperty(PropertyInt.WeaponAugScaleQuality) ?? 0;
+                    var from = WeaponScalingManager.GetQualitySubGrade(oldQuality);
+                    if (plan.Quality == oldQuality)
+                        return $"left the Weapon Grade of your {name} at {from}.";
                     target.SetProperty(PropertyInt.WeaponAugScaleQuality, plan.Quality);
-                    return $"changed the Weapon Grade of your {name} from {WeaponScalingManager.GetQualitySubGrade(oldQuality)} to {WeaponScalingManager.GetQualitySubGrade(plan.Quality)}.";
+                    return $"{(plan.Quality > oldQuality ? "raised" : "lowered")} the Weapon Grade of your {name} from {from} to {WeaponScalingManager.GetQualitySubGrade(plan.Quality)}.";
                 }
 
                 case EssenceKind.Keeping:
@@ -1167,6 +1845,15 @@ namespace ACE.Server.Entity
                 case EssenceKind.Hunt when plan.Ops.Count == 0:
                     target.SlayerCreatureType = plan.Species;
                     return $"made your {name} {SlayerPhrase(plan.Species)}.";
+            }
+
+            if (plan.Kind == EssenceKind.Chaos && plan.Ops.Count == 0)
+            {
+                // nothing changes, or a removal that found nothing it may take - the item is Tainted all the same
+                target.SetProperty(PropertyBool.GearEssenceTainted, true);
+                return plan.Madness == MadnessOutcome.Remove
+                    ? $"clawed at your {name}, but nothing it can reach could be torn off. It is now Tainted."
+                    : $"seethed around your {name}, but nothing changed. It is now Tainted.";
             }
 
             if (plan.Kind == EssenceKind.Fortune && plan.FortuneKept)
@@ -1197,16 +1884,28 @@ namespace ACE.Server.Entity
             {
                 EssenceKind.Loss => $"took {removed} off your {name}.",
                 EssenceKind.Gain => $"added {added} to your {name}.",
-                EssenceKind.Change => $"changed {plan.Ops[0].Before} on your {name} to {regraded}.",
+                EssenceKind.Change => $"rerolled the lowest property on your {name}: {plan.Ops[0].Before} is now {regraded}.",
                 EssenceKind.Fortune => $"changed {plan.Ops[0].Before} on your {name} to {regraded}.",
                 EssenceKind.Renewal => AllUnits(target).Any(u => u.Key == LockedKey(target))
                     ? $"rerolled every unlocked property on your {name}: {regraded}."
                     : $"rerolled every property on your {name}: {regraded}.",
                 EssenceKind.Hunt => $"made your {name} {SlayerPhrase(plan.Species)} ({DescribeCard(target, ZoneStatResolver.SpecSlayer, plan.Ops[0].Grade)}).",
-                EssenceKind.Chaos => plan.ChaosBoost
-                    ? $"surged through your {name}: {regraded}" + (added.Length > 0 ? $", and added {added}" : "") + ". It is now Tainted."
-                    : $"burned every property off your {name}: {removed}. It is now Tainted.",
+                EssenceKind.Chaos => plan.Madness switch
+                {
+                    // CodeRabbit #629: a grade of exactly 1000 (over-max low end set to 0) reached the maximum, it didn't pass it;
+                    // a card the hard clamp holds says so without claiming it was already there
+                    MadnessOutcome.OverMax => plan.Ops[0].Grade <= ZoneStatResolver.GradeMax
+                        ? $"set {plan.Ops[0].Before} on your {name} to its maximum, {regraded}. It is now Tainted."
+                        : CardHeldAtLimit(target, plan.Ops[0])
+                            ? $"drove {plan.Ops[0].Before} on your {name} past its maximum, but its hard limit holds it at {regraded}. It is now Tainted."
+                            : $"drove {plan.Ops[0].Before} on your {name} past its maximum, to {regraded}. It is now Tainted.",
+                    MadnessOutcome.Shift => $"shook every property it can reach on your {name}: "
+                        + string.Join(", ", plan.Ops.Select(o => $"{o.Before} -> {o.Text}")) + ". It is now Tainted.",
+                    _ => $"tore {removed} off your {name}. It is now Tainted.",
+                },
                 EssenceKind.Emptiness => $"took {removed} off your {name}.",
+                EssenceKind.Genesis or EssenceKind.Augmentation => $"added {added} to your {name}.",
+                EssenceKind.Alteration or EssenceKind.Reforging => $"replaced {removed} on your {name} with {added}.",
                 _ => $"took {removed} off your {name} and added {added}.",
             };
         }
@@ -1287,7 +1986,7 @@ namespace ACE.Server.Entity
 
                 case OpAction.Regrade:
                     op.Before = Describe(target, op.Key, op.Def, op.Card, GradeOf(target, op.Key));
-                    SetGradeInPlace(target, op.Key, op.Grade);
+                    SetGradeInPlace(target, op.Key, op.Grade, op.OverMax);
                     return;
             }
         }
@@ -1382,15 +2081,17 @@ namespace ACE.Server.Entity
         private static bool IsArmorLevelLine(ZoneModifiers.Def def) => def.ArmorOnly && def.Ints == null;
 
         /// <summary>Set a key's grade where it already sits in the record, keeping the record (and so the
-        /// appraisal's Modifiers list) in stamp order. AddLine would move it to the end.</summary>
-        private static void SetGradeInPlace(WorldObject target, int key, int grade)
+        /// appraisal's Modifiers list) in stamp order. AddLine would move it to the end. Clamped at GradeMax, so no bag
+        /// and no forge regrade goes past a band's max; only a Bag of Madness passes <paramref name="overMax"/>, and even then
+        /// only a key that may hold one (ZoneStatResolver.GradeCap) goes above 1000.</summary>
+        private static void SetGradeInPlace(WorldObject target, int key, int grade, bool overMax = false)
         {
             var lines = ZoneStatResolver.Read(target);
             var i = lines.FindIndex(l => l.Key == key);
             if (i < 0)
                 return;
             var rec = lines[i];
-            rec.Grade = Math.Clamp(grade, 0, ZoneStatResolver.GradeMax);
+            rec.Grade = Math.Clamp(grade, 0, overMax ? ZoneStatResolver.GradeCap(key) : ZoneStatResolver.GradeMax);
             lines[i] = rec;
             ZoneStatResolver.Write(target, lines);
         }
@@ -1573,7 +2274,7 @@ namespace ACE.Server.Entity
         private static string DescribeCard(WorldObject target, ZoneStatResolver.WeaponSpecial card, int grade)
         {
             var (lo, hi) = ZoneStatResolver.WeaponResolveBand(card, ZoneStatResolver.TierOf(target));
-            var d = Math.Clamp(ZoneStatResolver.ValueForD(lo, hi, grade), card.Band.Lo, card.Band.Hi);
+            var d = ZoneStatResolver.CardValue(card, lo, hi, grade);   // hard clamp, and the over-max ceiling for a Madness grade
             if (ZoneLootMutator.HasBanditHilt(target))
             {
                 // the appraisal shows the hilt's share on top of the card (Compute re-adds it)
@@ -1581,6 +2282,24 @@ namespace ACE.Server.Entity
                 else if (card == ZoneStatResolver.SpecCrush) d += ZoneLootMutator.BanditHiltCritMultiplierBonus;
             }
 
+            // "(over max)" as the appraisal marks it (lab retest 2026-11-26) - only when the value really passed what grade 1000
+            // gives: a card at its hard clamp (T25 Rend Power 5.0) keeps its value (CodeRabbit 2026-11-26)
+            var overMax = grade > ZoneStatResolver.GradeMax && ZoneStatResolver.CardValue(card, lo, hi, grade) > ZoneStatResolver.CardValue(card, lo, hi, ZoneStatResolver.GradeMax) + 1e-9;
+            return DescribeCardValue(card, d) + (overMax ? ZoneStatResolver.OverMaxMarker : "");
+        }
+
+        /// <summary>True when <paramref name="op"/> pushes a weapon card's grade past max but its hard clamp keeps the value where
+        /// grade 1000 puts it (T25 Rend Power at 5.0) - the over-max result message says so (CodeRabbit 2026-11-26).</summary>
+        private static bool CardHeldAtLimit(WorldObject target, Op op)
+        {
+            if (op.Card == null || op.Grade <= ZoneStatResolver.GradeMax)
+                return false;
+            var (lo, hi) = ZoneStatResolver.WeaponResolveBand(op.Card, ZoneStatResolver.TierOf(target));
+            return ZoneStatResolver.CardValue(op.Card, lo, hi, op.Grade) <= ZoneStatResolver.CardValue(op.Card, lo, hi, ZoneStatResolver.GradeMax) + 1e-9;
+        }
+
+        private static string DescribeCardValue(ZoneStatResolver.WeaponSpecial card, double d)
+        {
             if (card == ZoneStatResolver.SpecBite) return FormattableString.Invariant($"+{d * 100:0}% Crit Chance");
             if (card == ZoneStatResolver.SpecCrush) return FormattableString.Invariant($"{d:0.##}x Crit Dmg");
             if (card == ZoneStatResolver.SpecSlayer) return FormattableString.Invariant($"{d:0.##}x Damage");

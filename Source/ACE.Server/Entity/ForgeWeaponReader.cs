@@ -52,6 +52,11 @@ namespace ACE.Server.Entity
             // all - and with no forge or hone on the piece, the unbinding oil never has anything to strip from it either.
             if (ACE.Server.Managers.ZoneControl.ZoneRare.IsRare(wo))
                 return $"{wo.Name} is a rare item and cannot be forged or honed.";
+            // Tainted (a Bag of Madness, owner 2026-11-26): the piece is finished - no bag, forge or hone touches it again. The
+            // forge would also cut a Madness over-max grade back to the band (every non-Madness grade write caps at 1000), and
+            // honing re-stamps the numbers. Dyes come through CheckDyeable, not here, so a Tainted piece can still be dyed.
+            if (GearEssences.IsTainted(wo))
+                return $"{wo.Name} is Tainted and cannot be forged or honed.";
             if (!IsLootGenerated(wo) || ForgeGroups.GetGroup(wo) == null)
                 return $"{wo.Name} was not made by the loot generator, and only loot weapons and armour can be forged.";
             if (HasUnknownTinkerHistory(wo))

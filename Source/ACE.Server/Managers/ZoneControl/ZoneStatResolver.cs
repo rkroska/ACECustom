@@ -39,6 +39,58 @@ namespace ACE.Server.Managers.ZoneControl
     {
         public const int GradeMax = 1000;
 
+        // ── OVER-MAX grades (Bag of Madness, owner 2026-11-26) ─────────────────────
+        //
+        // A grade is "where in the band" a roll sits: 0 = band min, 1000 = band max. The Bag of Madness is the one thing
+        // that may push a property PAST its max, by up to 25% of its range: grade 1100 = max + 10% of the range, 1250 = max
+        // + 25%. Storing the grade (not the value) keeps the item on the live ladder - a later rebalance of the range moves an
+        // over-max item with it, exactly like any other roll.
+        //
+        // WHO MAY HOLD ONE: only the keys in OverMaxKeys (the Madness list), and only up to GradeOverMaxCeiling. Read and
+        // Format clamp every other key to GradeMax, so a hand-edited or foreign record can never smuggle an over-max grade
+        // onto a key Madness does not touch.
+        // WHO MAY WRITE ONE: only GearEssences' Madness ops (SetGradeInPlace with overMax). RollGrade stays 0..1000, AddLine
+        // and StampGraded clamp at GradeMax, GradeFor (migration) clamps at GradeMax, and the forge's regrade goes through the
+        // clamped SetGradeInPlace - so no drop, bag, forge or command can PRODUCE a grade above 1000.
+        // WHO HONOURS ONE: every resolve from a grade - ValueFor / ValueForD (clamped to GradeOverMaxCeiling), CardValue (the
+        // weapon cards, still held to each card's WeaponBand.Lo/Hi, plus Biting Strike's own ceiling), and so Compute (drop
+        // check, equip ApplyIfStale, ladder re-stamp, appraisal, loot properties, bag chat lines).
+
+        /// <summary>The highest grade any record may hold: band max + 25% of the band's range (Bag of Madness).</summary>
+        public const int GradeOverMaxCeiling = 1250;
+
+        /// <summary>
+        /// Biting Strike's own over-max ceiling, in wire units (CriticalFrequency 0..1): 0.625. Owner 2026-08-29 shaped Bite so
+        /// crits stay an EVENT (0.60 at the T25 chase, deliberately not the imbue-era 0.88 near-every-hit zone). 0.625 is exactly
+        /// the default ladder's T25 band (0.50-0.60) at grade 1250, so on the shipped ladder it never bites; it only holds when an
+        /// admin authors a wide weapon_bite pin (e.g. 0.10-0.60, where +25% of the range would read 0.725). A Bandit Hilt adds
+        /// +0.25 on top (Compute), so card + hilt stays at or under 0.875, just below the 0.88 zone. A band whose own max is
+        /// already above 0.625 keeps that max: the ceiling only limits the part above max, it never lowers an in-band value.
+        /// </summary>
+        public const double BiteOverMaxCeiling = 0.625;
+
+        /// <summary>The marker an appraisal line carries when its value is past the band's max (owner 2026-11-26: an over-max value
+        /// should be visible). Placed between the value and the " [min-max]" band on armour lines, at the end on weapon lines.</summary>
+        public const string OverMaxMarker = " (over max)";
+
+        /// <summary>The record keys that may hold an over-max grade - the Bag of Madness list (owner 2026-11-26, spec
+        /// salvage-bags-followup): Max Health (19), Armor Level (25), Damage Rating (28), Crit Damage Rating (29), Healing Boost
+        /// (31), All Attributes (43), and the weapon cards Biting Strike, Rend Power, Slayer and Crushing Blow. Left out on
+        /// purpose: the range-2 lines (32, 33, 47, 48), Cast on Strike (54), Shield Cleaving (hard clamp 1.0), Armor Rend and
+        /// Spell Armor Rend (owner: already hard to balance), the protected lines, slot specials and built-ins.</summary>
+        private static readonly HashSet<int> OverMaxKeys = new HashSet<int>
+        {
+            19, 25, 28, 29, 31, 43,
+            WeaponBiteKey, WeaponRendPowerKey, WeaponSlayerKey, WeaponCrushKey,
+        };
+
+        /// <summary>True when <paramref name="key"/> may hold a grade above <see cref="GradeMax"/> (the Bag of Madness list).</summary>
+        public static bool CanGoOverMax(int key) => OverMaxKeys.Contains(key);
+
+        /// <summary>The highest grade the record may hold for <paramref name="key"/>: <see cref="GradeOverMaxCeiling"/> for a Madness
+        /// key, <see cref="GradeMax"/> for every other one.</summary>
+        public static int GradeCap(int key) => CanGoOverMax(key) ? GradeOverMaxCeiling : GradeMax;
+
         // ── LEGACY core four ─────────────────────────────────────────────────────
         //
         // Records written before 2026-09-14 carry the retired core four as c1..c4. New drops never write them: the four
@@ -137,7 +189,7 @@ namespace ACE.Server.Managers.ZoneControl
         // -5..-10 IS A DELIBERATE GAP so the core block can grow (a fifth core rating) without
         // renumbering weapons. -11..-30 is the WEAPON block; only -11..-19 are defined today.
         // NOTE for anyone touching the record format: a bare '-' in a ZcModifiers string means
-        // "this record contains a weapon key" and NOTHING else - grades are 0..1000 and never
+        // "this record contains a weapon key" and NOTHING else - grades are 0..1250 and never
         // signed. HasWeaponKey below depends on that; keep it true.
         public const int WeaponBiteKey = -11;
         public const int WeaponArmorRendKey = -12;
@@ -250,12 +302,16 @@ namespace ACE.Server.Managers.ZoneControl
 
         // ── grade math ──────────────────────────────────────────────────────────
 
-        /// <summary>Grade -> value inside an inclusive band. Linear, rounded once.</summary>
+        /// <summary>Grade -> value inside an inclusive band. Linear, rounded once. A grade above <see cref="GradeMax"/> (only a
+        /// Bag of Madness writes one) continues the same line past max, up to <see cref="GradeOverMaxCeiling"/> = max + 25% of
+        /// the range; nothing else ever passes one in.</summary>
         public static int ValueFor(int min, int max, int grade)
         {
             if (min > max) (min, max) = (max, min);
-            grade = Math.Clamp(grade, 0, GradeMax);
-            return min + (int)Math.Round((max - min) * (grade / (double)GradeMax));
+            grade = Math.Clamp(grade, 0, GradeOverMaxCeiling);
+            // in double, then saturated: max + 25% of the range can pass int.MaxValue on an extreme band (CodeRabbit 2026-11-26)
+            var v = min + Math.Round(((long)max - min) * (grade / (double)GradeMax));
+            return (int)Math.Clamp(v, int.MinValue, int.MaxValue);
         }
 
         /// <summary>
@@ -268,11 +324,75 @@ namespace ACE.Server.Managers.ZoneControl
         public static double ValueForD(double min, double max, int grade)
         {
             if (min > max) (min, max) = (max, min);
-            grade = Math.Clamp(grade, 0, GradeMax);
+            grade = Math.Clamp(grade, 0, GradeOverMaxCeiling);   // over max: Bag of Madness only - see ValueFor
             return min + (max - min) * (grade / (double)GradeMax);
         }
 
-        /// <summary>Value -> grade (migration of pre-grade items). Flat band = 1000.</summary>
+        /// <summary>
+        /// A weapon card's DISPLAY value at a grade, inside the band (<paramref name="lo"/>, <paramref name="hi"/>) it resolves
+        /// against: <see cref="ValueForD"/> held to the card's hard clamp (WeaponBand.Lo/Hi). For an over-max grade (Bag of
+        /// Madness) the part above the band's max is also held to the card's over-max ceiling (<see cref="BiteOverMaxCeiling"/>
+        /// for Biting Strike), and never lands below what grade 1000 gives. Every path that turns a card grade into a value
+        /// goes through here: the drop roll (ZoneLootMutator), every re-resolve (<see cref="Compute"/>) and the bag chat line.
+        /// </summary>
+        public static double CardValue(WeaponSpecial ws, double lo, double hi, int grade)
+        {
+            var b = ws?.Band;
+            double Clamp(double v) => b == null ? v : Math.Clamp(v, b.Lo, b.Hi);
+            var atMax = Clamp(ValueForD(lo, hi, Math.Min(grade, GradeMax)));
+            if (grade <= GradeMax)
+                return atMax;
+            var over = Clamp(ValueForD(lo, hi, grade));
+            if (ws == SpecBite)
+                over = Math.Min(over, BiteOverMaxCeiling);
+            return Math.Max(atMax, over);
+        }
+
+        /// <summary>The weapon card props whose recorded grade is over max AND whose shown value is really past what grade 1000 gives
+        /// (a card already at its hard clamp, or Biting Strike at its ceiling, is not shown as over max). For the appraisal's
+        /// "(over max)" marker. Empty for anything without an over-max card.</summary>
+        public static HashSet<PropertyFloat> OverMaxCards(WorldObject wo) => OverMaxCards(wo, null);
+
+        /// <summary><see cref="OverMaxCards(WorldObject)"/> against <paramref name="shownValue"/>: the value the caller displays for a
+        /// card prop (the appraisal's if-equipped projection), else the stored prop.</summary>
+        public static HashSet<PropertyFloat> OverMaxCards(WorldObject wo, Func<PropertyFloat, double?> shownValue)
+        {
+            var set = new HashSet<PropertyFloat>();
+            Dictionary<string, ZoneScaling.StatCurve> stats = null;
+            var fetched = false;
+            var tier = TierOf(wo);
+            if (tier <= 0) tier = 11;   // as Compute
+            foreach (var rec in Read(wo))
+            {
+                if (rec.Grade <= GradeMax || !IsWeaponKey(rec.Key) || !TryGetWeapon(rec.Key, out var ws))
+                    continue;
+                if (!fetched)
+                {
+                    stats = ZoneControlManager.GetAnchoredDefaultProfile(tier)?.Stats;
+                    fetched = true;
+                }
+                // compare what the panel SHOWS (the stored prop, hilt share included) with what grade 1000 gives on today's band:
+                // after a band retune the no-nerf rule can keep an older value, and the marker must follow the shown number
+                // (CodeRabbit 2026-11-26), not a value recomputed from the grade
+                var shown = shownValue != null ? shownValue(ws.Prop) : wo.GetProperty(ws.Prop);
+                if (shown == null)
+                    continue;
+                var (lo, hi) = WeaponResolveBand(ws, tier, stats, statsFetched: true);
+                var atMax = EngineValue(ws, CardValue(ws, lo, hi, GradeMax));
+                if (ZoneLootMutator.HasBanditHilt(wo))
+                {
+                    if (ws == SpecBite) atMax += ZoneLootMutator.BanditHiltCritFrequencyBonus;
+                    else if (ws == SpecCrush) atMax += ZoneLootMutator.BanditHiltCritMultiplierBonus;
+                }
+                if (shown.Value > atMax + 1e-6)
+                    set.Add(ws.Prop);
+            }
+            return set;
+        }
+
+        /// <summary>Value -> grade (migration of pre-grade items). Flat band = 1000. Clamped at <see cref="GradeMax"/> on purpose:
+        /// a pre-grade piece above its band's max got there from a ladder retune, not a Bag of Madness, so it is never migrated
+        /// to an over-max grade.</summary>
         public static int GradeFor(int min, int max, int value)
         {
             if (min > max) (min, max) = (max, min);
@@ -578,7 +698,7 @@ namespace ACE.Server.Managers.ZoneControl
         public struct LineRecord
         {
             public int Key;      // catalog key, or a Core* pseudo key
-            public int Grade;    // 0-1000
+            public int Grade;    // 0-1000; up to GradeOverMaxCeiling (1250) on a Bag of Madness key (CanGoOverMax)
         }
 
         public static bool HasRecord(WorldObject wo)
@@ -614,7 +734,7 @@ namespace ACE.Server.Managers.ZoneControl
         /// no-op path every login takes for every worn piece.
         ///
         /// It is exact, not a heuristic: Format writes catalog keys as positive integers and grades
-        /// as 0..1000 (a legacy 'cN' key carries no sign either), so the ONLY '-' a well-formed record can contain is the
+        /// as 0..1250 (a legacy 'cN' key carries no sign either), so the ONLY '-' a well-formed record can contain is the
         /// sign of a weapon key. Keep that true if you ever extend the format.
         /// </summary>
         public static bool HasWeaponKey(WorldObject wo)
@@ -648,6 +768,8 @@ namespace ACE.Server.Managers.ZoneControl
                 return null;
             var grades = Read(wo)
                 .Where(r => !(ZoneModifiers.TryGet(r.Key, out var d) && (d.Class == ZoneModifiers.ModifierClass.Trash || d.SlotSpecial)))
+                // an over-max line (Bag of Madness) counts as a perfect 1000: S stays "every line perfect", never an average
+                // lifted by one line past max
                 .Select(r => Math.Clamp(r.Grade, 0, GradeMax))
                 .ToList();
             if (grades.Count == 0)
@@ -675,7 +797,7 @@ namespace ACE.Server.Managers.ZoneControl
                     key = -(keyTok[1] - '0');   // LEGACY core four: its own pseudo key, resolved through CoreWindow as before
                 else if (!int.TryParse(keyTok, NumberStyles.Integer, CultureInfo.InvariantCulture, out key))
                     continue;
-                list.Add(new LineRecord { Key = key, Grade = Math.Clamp(grade, 0, GradeMax) });
+                list.Add(new LineRecord { Key = key, Grade = Math.Clamp(grade, 0, GradeCap(key)) });   // over max: Madness keys only
             }
             return list;
         }
@@ -688,7 +810,7 @@ namespace ACE.Server.Managers.ZoneControl
                 if (sb.Length > 0) sb.Append(';');
                 if (IsCoreKey(l.Key)) sb.Append('c').Append(-l.Key);   // a legacy record written back keeps its legacy form
                 else sb.Append(l.Key.ToString(CultureInfo.InvariantCulture));
-                sb.Append(':').Append(Math.Clamp(l.Grade, 0, GradeMax).ToString(CultureInfo.InvariantCulture));
+                sb.Append(':').Append(Math.Clamp(l.Grade, 0, GradeCap(l.Key)).ToString(CultureInfo.InvariantCulture));
             }
             return sb.ToString();
         }
@@ -702,7 +824,8 @@ namespace ACE.Server.Managers.ZoneControl
                 wo.SetProperty(PropertyString.ZcModifiers, Format(lines));
         }
 
-        /// <summary>Append one grade to the record (a key already present is REPLACED - one line per key per piece).</summary>
+        /// <summary>Append one grade to the record (a key already present is REPLACED - one line per key per piece). Clamped at
+        /// <see cref="GradeMax"/>: every producer that adds a line (drops, bags, the forge) stays inside the band.</summary>
         public static void AddLine(WorldObject wo, int key, int grade)
         {
             if (wo == null) return;
@@ -827,15 +950,24 @@ namespace ACE.Server.Managers.ZoneControl
             public ZoneModifiers.Def Def;     // null for a legacy core key
             public int Min, Max, Value;
             public string Name => Def?.Name ?? (IsCoreKey(Record.Key) ? CoreName(Record.Key) : $"Modifier {Record.Key}");
-            /// <summary>The appraisal text for this line, in the stamp format ("Damage Rating +41 [14-69]").</summary>
-            public string Text => TextAt(Value);
+            /// <summary>True when a Bag of Madness pushed this line past its band's max: the grade is over max and the value really
+            /// is above Max (a narrow band can round back to it).</summary>
+            public bool IsOverMax => Record.Grade > GradeMax && Value > Max;
+
+            /// <summary>The appraisal text for this line, in the stamp format ("Damage Rating +41 [14-69]"). An over-max line
+            /// reads "Damage Rating +80 (over max) [14-69]": the marker sits before the band, so a reader that strips a
+            /// trailing " [min-max]" (the chat lines, AC:Unreal's item info) still finds the band.</summary>
+            public string Text => Render(Value, IsOverMax);
 
             /// <summary>The same text with another value in place of the rolled one - the gear lock shows a suppressed line
-            /// at what it actually gives there (owner 2026-10-05: "Show the real value").</summary>
-            public string TextAt(int value)
+            /// at what it actually gives there (owner 2026-10-05: "Show the real value"). Never marked over max.</summary>
+            public string TextAt(int value) => Render(value, false);
+
+            private string Render(int value, bool overMax)
             {
+                var mark = overMax ? OverMaxMarker : "";
                 if (Def == null)
-                    return $"{Name} +{value} [{Min}-{Max}]";
+                    return $"{Name} +{value}{mark} [{Min}-{Max}]";
                 // Both args, always: key 44 (Pct HP Damage, the Gauntlets special) is the one ValFmt with a
                 // SECOND placeholder - "{0} ({1:0.#} pct of max HP per hit)" - and string.Format throws
                 // FormatException on a missing index, which killed the whole appraisal packet. The four call
@@ -843,7 +975,7 @@ namespace ACE.Server.Managers.ZoneControl
                 // Extra args are ignored by string.Format, so every other ValFmt is unaffected.
                 if (Def.SlotSpecial)
                     return string.IsNullOrEmpty(Def.ValFmt) ? Name : $"{Name} {string.Format(Def.ValFmt, value, value / 10.0)}";
-                return $"{Name} {string.Format(Def.ValFmt ?? "+{0}", value, value / 10.0)} [{Min}-{Max}]";
+                return $"{Name} {string.Format(Def.ValFmt ?? "+{0}", value, value / 10.0)}{mark} [{Min}-{Max}]";
             }
         }
 
@@ -904,7 +1036,8 @@ namespace ACE.Server.Managers.ZoneControl
                         defStatsFetched = true;
                     }
                     var (wlo, whi) = WeaponResolveBand(ws, tier, defStats, statsFetched: true);
-                    var display = Math.Clamp(ValueForD(wlo, whi, rec.Grade), ws.Band.Lo, ws.Band.Hi);
+                    // the card's hard clamp, and for an over-max grade (Bag of Madness) the card's over-max ceiling: CardValue
+                    var display = CardValue(ws, wlo, whi, rec.Grade);
                     // EngineValue is the single display -> engine conversion (Crushing Blow's "- 1.0").
                     // The drop site routes through the same method, so the subtraction happens exactly
                     // once no matter how many times a weapon is re-equipped. See EngineValue.
@@ -975,8 +1108,9 @@ namespace ACE.Server.Managers.ZoneControl
             // alBonus stays 0 without that line, so a lineless piece lands exactly on the tier base.
             // ONE BaseArmorLevel call per Compute, deliberately outside the line loop: since 2026-08-24 it
             // reads the tier Default (armor_base_level), and that is a locked snapshot read.
+            // summed in long and held to int (CodeRabbit #629: an authored band near int.MaxValue at a Madness grade of 1250)
             if (hasArmor)
-                r.ArmorLevel = BaseArmorLevel(tier) + alBonus;
+                r.ArmorLevel = (int)Math.Clamp((long)BaseArmorLevel(tier) + alBonus, int.MinValue, int.MaxValue);
 
             // TINKERING on top of the record (2026-10-05): a Steel tinker raised the item's AL, but the appraisal showed this
             // resolved AL and the next re-stamp SET it back - the tinker was invisible, then lost. Add it back here, so both
@@ -985,8 +1119,8 @@ namespace ACE.Server.Managers.ZoneControl
             {
                 if (kv.Key == (int)PropertyInt.ArmorLevel)
                 {
-                    if (r.ArmorLevel.HasValue)
-                        r.ArmorLevel += kv.Value;
+                    if (r.ArmorLevel.HasValue)   // held to int like the base sum above (CodeRabbit #629)
+                        r.ArmorLevel = (int)Math.Clamp((long)r.ArmorLevel.Value + kv.Value, int.MinValue, int.MaxValue);
                 }
                 else if (r.Ints.TryGetValue((PropertyInt)kv.Key, out var cur))
                     r.Ints[(PropertyInt)kv.Key] = cur + kv.Value;

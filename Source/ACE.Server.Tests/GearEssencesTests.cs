@@ -14,29 +14,122 @@ namespace ACE.Server.Tests
     public class GearEssencesTests
     {
         [TestMethod]
-        public void WcidRange_IsExactlyTheTwelveEssences()
+        public void WcidRange_IsExactlyTheSixteenEssences()
         {
             Assert.IsFalse(GearEssences.IsGearEssence(78780309));
             Assert.IsTrue(GearEssences.IsGearEssence(GearEssences.LossWcid));
             Assert.IsTrue(GearEssences.IsGearEssence(GearEssences.TransmutationWcid));
             Assert.IsTrue(GearEssences.IsGearEssence(GearEssences.TradeWcid));
-            foreach (var free in new uint[] { 78780320, 78780321, 78780322, 78780325 })   // retired single-type essences
+            // the crafting-step bags (2026-11-26) took the retired single-type ids 320-322 and 325
+            foreach (var bag in new uint[] { 78780320, 78780321, 78780322, 78780325 })
+                Assert.IsTrue(GearEssences.IsGearEssence(bag));
+            foreach (var free in new uint[] { 78780326, 78780327, 78780328, 78780329 })
                 Assert.IsFalse(GearEssences.IsGearEssence(free));
             var count = 0;
             for (var wcid = 78780300u; wcid < 78780340u; wcid++)
                 if (GearEssences.IsGearEssence(wcid)) count++;
-            Assert.AreEqual(12, count);
+            Assert.AreEqual(16, count);
         }
 
         [TestMethod]
         public void KindOf_MapsEveryEssenceAndRejectsOthers()
         {
             var kinds = new HashSet<GearEssences.EssenceKind>();
-            for (var wcid = GearEssences.LossWcid; wcid <= GearEssences.TradeWcid; wcid++)
+            for (var wcid = GearEssences.LossWcid; wcid <= GearEssences.ReforgingWcid; wcid++)
                 if (GearEssences.IsGearEssence(wcid))
                     kinds.Add(GearEssences.KindOf(wcid));
-            Assert.AreEqual(12, kinds.Count);   // one kind per essence
-            Assert.ThrowsExactly<System.ArgumentOutOfRangeException>(() => GearEssences.KindOf(78780320));
+            Assert.AreEqual(16, kinds.Count);   // one kind per essence
+            Assert.AreEqual(GearEssences.EssenceKind.Genesis, GearEssences.KindOf(GearEssences.GenesisWcid));
+            Assert.AreEqual(GearEssences.EssenceKind.Augmentation, GearEssences.KindOf(GearEssences.AugmentationWcid));
+            Assert.AreEqual(GearEssences.EssenceKind.Alteration, GearEssences.KindOf(GearEssences.AlterationWcid));
+            Assert.AreEqual(GearEssences.EssenceKind.Reforging, GearEssences.KindOf(GearEssences.ReforgingWcid));
+            Assert.ThrowsExactly<System.ArgumentOutOfRangeException>(() => GearEssences.KindOf(78780326));
+        }
+
+        [TestMethod]
+        public void CountRefusal_GenesisNeedsAnEmptyItem()
+        {
+            Assert.IsNull(GearEssences.CountRefusal(GearEssences.EssenceKind.Genesis, 0, "Ring"));
+            StringAssert.Contains(GearEssences.CountRefusal(GearEssences.EssenceKind.Genesis, 1, "Ring"), "has 1 property.");
+            StringAssert.Contains(GearEssences.CountRefusal(GearEssences.EssenceKind.Genesis, 3, "Ring"), "has 3 properties.");
+        }
+
+        [TestMethod]
+        public void CountRefusal_AugmentationNeedsExactlyOne()
+        {
+            Assert.IsNotNull(GearEssences.CountRefusal(GearEssences.EssenceKind.Augmentation, 0, "Ring"));
+            Assert.IsNull(GearEssences.CountRefusal(GearEssences.EssenceKind.Augmentation, 1, "Ring"));
+            Assert.IsNotNull(GearEssences.CountRefusal(GearEssences.EssenceKind.Augmentation, 2, "Ring"));
+        }
+
+        [TestMethod]
+        public void CountRefusal_AlterationNeedsOneOrTwo()
+        {
+            Assert.IsNotNull(GearEssences.CountRefusal(GearEssences.EssenceKind.Alteration, 0, "Ring"));
+            Assert.IsNull(GearEssences.CountRefusal(GearEssences.EssenceKind.Alteration, 1, "Ring"));
+            Assert.IsNull(GearEssences.CountRefusal(GearEssences.EssenceKind.Alteration, 2, "Ring"));
+            Assert.IsNotNull(GearEssences.CountRefusal(GearEssences.EssenceKind.Alteration, 3, "Ring"));
+        }
+
+        [TestMethod]
+        public void CountRefusal_OtherBagsHaveNoCountRule()
+        {
+            foreach (var kind in new[] { GearEssences.EssenceKind.Reforging, GearEssences.EssenceKind.Gain, GearEssences.EssenceKind.Trade, GearEssences.EssenceKind.Emptiness })
+                for (var count = 0; count <= 6; count++)
+                    Assert.IsNull(GearEssences.CountRefusal(kind, count, "Ring"), $"{kind} at {count}");
+        }
+
+        [TestMethod]
+        public void ReplacementCount_AlterationLeavesOneReforgingKeepsTheCount()
+        {
+            const int noCap = int.MaxValue;
+            Assert.AreEqual(1, GearEssences.ReplacementCount(GearEssences.EssenceKind.Alteration, 1, 0, 4));
+            Assert.AreEqual(1, GearEssences.ReplacementCount(GearEssences.EssenceKind.Alteration, 2, 0, 4));   // the second is forfeit
+            Assert.AreEqual(1, GearEssences.ReplacementCount(GearEssences.EssenceKind.Alteration, 1, 1, 4));   // Reinforced + 1 stays at 2
+            for (var removed = 1; removed <= 6; removed++)
+                Assert.AreEqual(removed, GearEssences.ReplacementCount(GearEssences.EssenceKind.Reforging, removed, 0, noCap));
+        }
+
+        [TestMethod]
+        public void ReplacementCount_NeverPastTheCap()
+        {
+            // a legacy necklace at 5 of 4: Reforging brings it down to the cap
+            Assert.AreEqual(4, GearEssences.ReplacementCount(GearEssences.EssenceKind.Reforging, 5, 0, 4));
+            // a locked line and Reinforced stay (kept 2) on a 4-cap piece with 3 changeable: room for 2
+            Assert.AreEqual(2, GearEssences.ReplacementCount(GearEssences.EssenceKind.Reforging, 3, 2, 4));
+            // nothing fits when what stays already fills the cap
+            Assert.AreEqual(0, GearEssences.ReplacementCount(GearEssences.EssenceKind.Reforging, 1, 4, 4));
+            Assert.AreEqual(4, GearEssences.ReplacementCount(GearEssences.EssenceKind.Reforging, 4, 0, 4));   // at the cap: unchanged
+        }
+
+        [TestMethod]
+        public void OnlyChaseLeft_TrueOnlyWhenNoOrdinaryLineRemains()
+        {
+            var chase = ZoneModifiers.Catalog.Values.Where(d => d.Class == ZoneModifiers.ModifierClass.Chase).ToList();
+            var ordinary = ZoneModifiers.Catalog.Values.First(d => d.Class != ZoneModifiers.ModifierClass.Chase && d.Class != ZoneModifiers.ModifierClass.None);
+            Assert.IsTrue(chase.Count > 0);
+            Assert.IsTrue(GearEssences.OnlyChaseLeft(chase));
+            Assert.IsFalse(GearEssences.OnlyChaseLeft(chase.Append(ordinary)));
+            Assert.IsFalse(GearEssences.OnlyChaseLeft(new[] { ordinary }));
+        }
+
+        [TestMethod]
+        public void CanFillWithoutChase_CountsOnlyOrdinaryLines()
+        {
+            var chase = ZoneModifiers.Catalog.Values.Where(d => d.Class == ZoneModifiers.ModifierClass.Chase).ToList();
+            var ordinary = ZoneModifiers.Catalog.Values.Where(d => d.Class != ZoneModifiers.ModifierClass.Chase && d.Class != ZoneModifiers.ModifierClass.None).Take(3).ToList();
+            var pool = ordinary.Concat(chase).ToList();
+            Assert.IsTrue(GearEssences.CanFillWithoutChase(pool, 3));
+            Assert.IsFalse(GearEssences.CanFillWithoutChase(pool, 4));   // the 4th slot would need a Chase line: refuse up front
+            Assert.IsFalse(GearEssences.CanFillWithoutChase(chase, 1));
+            Assert.IsTrue(GearEssences.CanFillWithoutChase(pool, 0));
+        }
+
+        [TestMethod]
+        public void IsReplaceKind_OnlyAlterationAndReforging()
+        {
+            foreach (GearEssences.EssenceKind kind in System.Enum.GetValues(typeof(GearEssences.EssenceKind)))
+                Assert.AreEqual(kind == GearEssences.EssenceKind.Alteration || kind == GearEssences.EssenceKind.Reforging, GearEssences.IsReplaceKind(kind), kind.ToString());
         }
 
         [TestMethod]

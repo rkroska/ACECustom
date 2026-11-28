@@ -28,6 +28,8 @@ namespace ACE.Server.Managers.ZoneControl
     ///   58904 T11+ cloak proc (ZcCloakProc: 1 Calming Breeze, 2 Smoke Screen, 3 Artful Dodger, 4 Asheron's Grace) - the panel
     ///         hides the cloak's retail proc spell / weave, so a loot rule reads this instead
     ///   58999 format version - present on every tier 11+ item, so a loot profile can tell an old server from a new one.
+    /// A line or card a Bag of Madness pushed past its max (2026-11-26) sends its real grade, up to 1250 (= max + 25% of the
+    /// range), and its real value; Gear Grade (58900) counts such a line as 1000 and stays 0-1000.
     /// Catalog keys are 19-54 (legacy core resists c1..c4 report as their Always Rolled twins 50-53); weapon keys are
     /// -11..-30. Both are stable (saved records), so these ids are too. NEVER renumber: loot profiles in the wild use them.
     /// </summary>

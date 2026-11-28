@@ -1483,6 +1483,11 @@ namespace ACE.Server.Network.Structure
 
             CreatureSkill skill = examiner.GetCreatureSkill(checkSkill);
 
+            // Bag of Madness (owner 2026-11-26): a card pushed past its band's max says so at the end of its line. Not while the
+            // zone lock holds (the line then shows the fallback, not the rolled value).
+            var overMaxCards = zcLocked ? new HashSet<PropertyFloat>() : ZoneStatResolver.OverMaxCards(weapon, p => ZcFloat(weapon, p));
+            string OverMax(PropertyFloat prop) => overMaxCards.Contains(prop) ? ZoneStatResolver.OverMaxMarker : "";
+
             // Slayer. The forge-only all-creatures flag (PropertyBool 50052) has no species to name.
             var slayerAll = weapon.GetProperty(PropertyBool.SlayerAllCreatures) == true;
             if (weapon.SlayerCreatureType.HasValue || slayerAll)
@@ -1493,7 +1498,7 @@ namespace ACE.Server.Network.Structure
                 var niceName = slayerAll
                     ? "All Creatures"
                     : CreatureNameRegex().Replace(weapon.SlayerCreatureType.ToString(), " $1");
-                effectDescriptions.Add($"- {niceName} Slayer: {bonus:0.##}x Damage");
+                effectDescriptions.Add($"- {niceName} Slayer: {bonus:0.##}x Damage{OverMax(PropertyFloat.SlayerDamageBonus)}");
             }
 
             // Biting Strike - shown from the if-equipped value, like every other card
@@ -1501,7 +1506,7 @@ namespace ACE.Server.Network.Structure
             if (critFrequency.HasValue)
             {
                 var val = zcLocked ? WorldObject.LockedCritFrequency(weapon, critFrequency) : critFrequency.Value;   // locked: the combat fallback crit rate
-                effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
+                effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance{OverMax(PropertyFloat.CriticalFrequency)}");
             }
 
             // Cleaving (multi-target): the raw prop stores TOTAL targets (extra + 1), so raw-prop
@@ -1550,7 +1555,7 @@ namespace ACE.Server.Network.Structure
             if (ZcFloat(weapon, PropertyFloat.CriticalMultiplier) > 1.0f)
             {
                 var val = zcLocked ? WorldObject.LockedCritDamageMultiplier(weapon, ZcFloat(weapon, PropertyFloat.CriticalMultiplier)) + 1.0 : ZcFloat(weapon, PropertyFloat.CriticalMultiplier).Value + 1.0;   // locked: the combat fallback (T10 cap, or a plain 2x crit with the master switch off)
-                effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
+                effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg{OverMax(PropertyFloat.CriticalMultiplier)}");
             }
 
             // Crippling Blow - hidden only when it is actually inert on THIS weapon. An item panel
@@ -1625,7 +1630,7 @@ namespace ACE.Server.Network.Structure
                     // never stacked - but that is an implementation detail of the resist chain and has
                     // no business on a player-facing line. A rend is a rend.
                     var bonusPct = zcLocked && !zcT10 ? 0.0 : (mod - 1.0);   // locked: the retail rend (T10); master switch off: skipped
-                    effectDescriptions.Add($"- {type.DisplayName()}: +{bonusPct:P0} Dmg");
+                    effectDescriptions.Add($"- {type.DisplayName()}: +{bonusPct:P0} Dmg{(rendOverride.HasValue ? OverMax((PropertyFloat)ACE.Server.Managers.ZoneControl.ZoneLootMutator.RendingModOverridePropId) : "")}");
                 }
             }
 

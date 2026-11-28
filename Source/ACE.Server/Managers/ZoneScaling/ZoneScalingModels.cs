@@ -420,6 +420,25 @@ namespace ACE.Server.Managers.ZoneScaling
         public const string BagWeightTransmutation = "bag_weight_transmutation";
         public const string BagWeightEmptiness = "bag_weight_emptiness";
         public const string BagWeightExchange = "bag_weight_exchange";
+        // The crafting-step bags (owner 2026-11-26): extras, default 0.
+        public const string BagWeightGenesis = "bag_weight_genesis";
+        public const string BagWeightAugmentation = "bag_weight_augmentation";
+        public const string BagWeightAlteration = "bag_weight_alteration";
+        public const string BagWeightReforging = "bag_weight_reforging";
+        // Bag of Tempering (owner 2026-11-26): one Weapon Grade sub-grade step a use. Read from the item's tier Default when the bag
+        // is used (GearEssences.TemperingSettings). No change = 1 - up - down.
+        public const string BagTemperingUpChance = "bag_tempering_up_chance";         // default 0.60
+        public const string BagTemperingDownChance = "bag_tempering_down_chance";     // default 0.10
+        public const string BagTemperingMaxSubgrade = "bag_tempering_max_subgrade";   // rung 0 = F- .. 14 = A+ (default); S never
+        // Bag of Madness (owner 2026-11-26 redesign): four outcomes, read as weights from the item's tier Default on use
+        // (GearEssences.MadnessSettingsFrom); the item is Tainted every time. Ranges are fractions of the property's range.
+        public const string BagMadnessNothingChance = "bag_madness_nothing_chance";   // default 0.30
+        public const string BagMadnessOverMaxChance = "bag_madness_overmax_chance";   // default 0.30: one property SET to max + min..max
+        public const string BagMadnessShiftChance = "bag_madness_shift_chance";       // default 0.30: every property moved +-shift
+        public const string BagMadnessRemoveChance = "bag_madness_remove_chance";     // default 0.10: one property removed
+        public const string BagMadnessOverMaxMin = "bag_madness_overmax_min";         // default 0.10 (of the range, above max)
+        public const string BagMadnessOverMaxMax = "bag_madness_overmax_max";         // default 0.25 (= the 1250 grade ceiling)
+        public const string BagMadnessShift = "bag_madness_shift";                    // default 0.15 (either way)
         // Special behaviour knobs (read by the combat side)
         public const string BattleMendThreshold = "battlemend_threshold";  // HP fraction below which Battle Mending fires (default .25)
         public const string BattleMendCooldown = "battlemend_cooldown";    // seconds (default 60)
@@ -818,6 +837,13 @@ namespace ACE.Server.Managers.ZoneScaling
             PcoinFalloffKillsPerHour, PcoinFalloffMult,
             // item bounty drops (2026-11-10) - APPEND-ONLY
             BountyOdds,
+            // the crafting-step Salvage Bags (2026-11-26) - APPEND-ONLY, name-matched wire
+            BagWeightGenesis, BagWeightAugmentation, BagWeightAlteration, BagWeightReforging,
+            // Bag of Tempering sub-grade steps (2026-11-26) - APPEND-ONLY, name-matched wire
+            BagTemperingUpChance, BagTemperingDownChance, BagTemperingMaxSubgrade,
+            // Bag of Madness redesign (2026-11-26) - APPEND-ONLY, name-matched wire
+            BagMadnessNothingChance, BagMadnessOverMaxChance, BagMadnessShiftChance, BagMadnessRemoveChance,
+            BagMadnessOverMaxMin, BagMadnessOverMaxMax, BagMadnessShift,
         };
 
         /// <summary>
