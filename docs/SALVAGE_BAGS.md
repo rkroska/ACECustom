@@ -5,9 +5,17 @@ renamed to Salvage Bags 2026-10-04 (owner). The code keeps the original names (`
 `GearEssence*` properties); everything a player or admin sees says "bag".
 Code: `Source/ACE.Server/Entity/GearEssences.cs`. Weenies: `Database/Updates/World/2026-10-02-00-Salvage-Bags.sql`.
 The 2026-11-26 follow-up (Second Thoughts, Tempering, Madness) and the four new bags need database updates that are not in
-this repository: the server admins apply them, as with other ILT content. A world update adds the four new bag weenies and
-the new Use text; a shard update refreshes the Use text on bags players already hold, which keep their own copy of the old
-text until then. The behaviour and the confirm prompts are code, so they are right either way.
+this repository. As with other ILT content, the author of this change hands two finished SQL scripts to the server admins
+with the release; the admins review and run them and don't have to write anything:
+- **World script** (`ace_world`, run any time, safe to re-run): adds the four new bag weenies (78780320, 78780321,
+  78780322, 78780325) and sets the new Use text (PropertyString 14) on Second Thoughts (78780312), Tempering (78780313) and
+  Madness (78780318). Only bags that drop after it read the new text.
+- **Shard script** (`ace_shard`, run with the server stopped): sets the same Use text on those three kinds of bags that
+  players already hold, since each bag keeps its own copy of the text from when it dropped. It shows a count of affected
+  bags first, updates them in one transaction, and checks afterwards that no old text is left. An online player's bags
+  are saved from memory, so with the server running they would write the old text back.
+
+Skipping either script changes only the wording: the behaviour and the confirm prompts are code, so they are right either way.
 
 | WCID | Name | What it does |
 |------|------|--------------|
