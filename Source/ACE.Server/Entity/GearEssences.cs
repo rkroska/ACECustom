@@ -974,6 +974,18 @@ namespace ACE.Server.Entity
 
         /// <summary>A shift outcome's new grade: <paramref name="current"/> moved by <paramref name="delta"/> grade points, held to
         /// 0..1250 - it may pass the max.</summary>
+        /// <summary>The confirm prompt's words for the over-max outcome, from the grade points the roll really uses
+        /// (MadnessOverMaxGrades), not the raw settings: an end of 0, or one so small it rounds to 0 points (0.0001), lands on
+        /// the maximum itself, so the prompt says "set to its maximum" there (CodeRabbit #629).</summary>
+        internal static string MadnessOverMaxText(MadnessSettings s)
+        {
+            var (lo, hi) = MadnessOverMaxGrades(s);
+            string Pct(int grade) => FormattableString.Invariant($"{(grade - ZoneStatResolver.GradeMax) * 100.0 / ZoneStatResolver.GradeMax:0.#}%");
+            if (hi <= ZoneStatResolver.GradeMax) return "set to its maximum";
+            if (lo <= ZoneStatResolver.GradeMax) return $"set to its maximum or past it, by up to {Pct(hi)} of its range";
+            return $"set past its maximum, by {Pct(lo)} to {Pct(hi)} of its range";
+        }
+
         internal static int MadnessShifted(int current, int delta) => Math.Clamp(current + delta, 0, ZoneStatResolver.GradeOverMaxCeiling);
 
         /// <summary>One Madness result, decided before anything is used: the outcome, the new grade per record key (over max: one
@@ -1074,12 +1086,7 @@ namespace ACE.Server.Entity
                 : removable.Count < units.Count
                     ? $"{Pct(s.Remove)}: one of these is removed at random: {string.Join(", ", removable.Select(u => UnitName(target, u)))}.\n"
                     : $"{Pct(s.Remove)}: one random property below is removed.\n";
-            // an admin may set the over-max range's low end to 0, so the roll can land on the maximum itself (CodeRabbit #629)
-            var overMaxText = s.OverMaxMax <= 0.0
-                ? "set to its maximum"
-                : s.OverMaxMin <= 0.0
-                    ? $"set to its maximum or past it, by up to {RangePct(s.OverMaxMax)} of its range"
-                    : $"set past its maximum, by {RangePct(s.OverMaxMin)} to {RangePct(s.OverMaxMax)} of its range";
+            var overMaxText = MadnessOverMaxText(s);
             return $"One of these happens, and then the item is Tainted: no bag will work on it again.\n"
                 + $"{Pct(s.Nothing)}: nothing changes.\n"
                 + $"{Pct(s.OverMax)}: one random property below is {overMaxText}.\n"

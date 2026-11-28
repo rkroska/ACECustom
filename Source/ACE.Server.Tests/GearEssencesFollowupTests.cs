@@ -309,6 +309,19 @@ namespace ACE.Server.Tests
         }
 
         [TestMethod]
+        public void Madness_OverMaxText_FollowsTheRoundedGrades()
+        {
+            GearEssences.MadnessSettings S(double lo, double hi) => GearEssences.MadnessDefaults with { OverMaxMin = lo, OverMaxMax = hi };
+            Assert.AreEqual("set past its maximum, by 10% to 25% of its range", GearEssences.MadnessOverMaxText(GearEssences.MadnessDefaults));
+            Assert.AreEqual("set to its maximum", GearEssences.MadnessOverMaxText(S(0, 0)));
+            // CodeRabbit #629: 0.0001 rounds to 0 grade points, so the roll lands on the maximum itself
+            Assert.AreEqual((1000, 1000), GearEssences.MadnessOverMaxGrades(S(0.0001, 0.0001)));
+            Assert.AreEqual("set to its maximum", GearEssences.MadnessOverMaxText(S(0.0001, 0.0001)));
+            Assert.AreEqual("set to its maximum or past it, by up to 25% of its range", GearEssences.MadnessOverMaxText(S(0.0001, 0.25)));
+            Assert.AreEqual("set to its maximum or past it, by up to 25% of its range", GearEssences.MadnessOverMaxText(S(0, 0.25)));
+        }
+
+        [TestMethod]
         public void Madness_OverMax_SetsOnePropertyToMaxPlus10To25PctOfRange()
         {
             Assert.AreEqual((1100, 1250), GearEssences.MadnessOverMaxGrades(GearEssences.MadnessDefaults));
