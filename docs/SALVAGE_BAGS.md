@@ -5,8 +5,8 @@ renamed to Salvage Bags 2026-10-04 (owner). The code keeps the original names (`
 `GearEssence*` properties); everything a player or admin sees says "bag".
 Code: `Source/ACE.Server/Entity/GearEssences.cs`. Weenies: `Database/Updates/World/2026-10-02-00-Salvage-Bags.sql`.
 The 2026-11-26 follow-up (Second Thoughts, Tempering, Madness) and the four new bags need database updates that are not in
-this repository. As with other ILT content, the author of this change hands two finished SQL scripts to the server admins
-with the release; the admins review and run them and don't have to write anything:
+this repository. As with other ILT content, the ILT admins keep the two finished SQL scripts with their own world content
+and run them for the release; nobody has to write them, and a server that isn't ILT's needs neither:
 - **World script** (`ace_world`, run any time, safe to re-run): adds the four new bag weenies (78780320, 78780321,
   78780322, 78780325) and sets the new Use text (PropertyString 14) on Second Thoughts (78780312), Tempering (78780313) and
   Madness (78780318). Only bags that drop after it read the new text.
